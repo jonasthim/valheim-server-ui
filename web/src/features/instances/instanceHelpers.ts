@@ -51,9 +51,17 @@ export function canInstall(state: InstanceState | undefined): boolean {
 }
 
 /** Derive a valid instance id slug from a free-text display name. */
+// Instance ids are ASCII. Letters with diacritics are transliterated
+// ("Fnaskhörna" -> "fnaskhorna", "Ångström" -> "angstrom") instead of being
+// dropped; a few Nordic letters have no combining form and are mapped by hand.
+const TRANSLITERATE: Record<string, string> = { ø: 'o', æ: 'ae', ð: 'd', þ: 'th', ß: 'ss', œ: 'oe', ł: 'l' }
+
 export function slugify(name: string): string {
   const slug = name
     .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[øæðþßœł]/g, (c) => TRANSLITERATE[c] ?? c)
     .trim()
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/-+/g, '-')
