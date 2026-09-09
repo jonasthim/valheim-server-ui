@@ -163,12 +163,68 @@ const PRESET_OPTIONS = [
   { value: 'hammer', label: 'Hammer' },
 ]
 
-const MODIFIER_FIELDS: { key: ModifierKey; label: string; options: string[] }[] = [
-  { key: 'combat', label: 'Combat', options: ['veryeasy', 'easy', 'hard', 'veryhard'] },
-  { key: 'deathpenalty', label: 'Death penalty', options: ['casual', 'veryeasy', 'easy', 'hard', 'hardcore'] },
-  { key: 'resources', label: 'Resources', options: ['muchless', 'less', 'more', 'muchmore', 'most'] },
-  { key: 'raids', label: 'Raids', options: ['none', 'muchless', 'less', 'more', 'muchmore'] },
-  { key: 'portals', label: 'Portals', options: ['casual', 'hard', 'veryhard'] },
+// Options in the game's own slider order with a human label; "" is the
+// middle "Normal" step, which is not passed to the server (see selectData).
+type ModifierOption = { value: string; label: string }
+const NORMAL: ModifierOption = { value: '', label: 'Normal' }
+const MODIFIER_FIELDS: { key: ModifierKey; label: string; options: ModifierOption[] }[] = [
+  {
+    key: 'combat',
+    label: 'Combat',
+    options: [
+      { value: 'veryeasy', label: 'Very easy' },
+      { value: 'easy', label: 'Easy' },
+      NORMAL,
+      { value: 'hard', label: 'Hard' },
+      { value: 'veryhard', label: 'Very hard' },
+    ],
+  },
+  {
+    key: 'deathpenalty',
+    label: 'Death penalty',
+    options: [
+      { value: 'casual', label: 'Casual' },
+      { value: 'veryeasy', label: 'Very easy' },
+      { value: 'easy', label: 'Easy' },
+      NORMAL,
+      { value: 'hard', label: 'Hard' },
+      { value: 'hardcore', label: 'Hardcore' },
+    ],
+  },
+  {
+    key: 'resources',
+    label: 'Resources',
+    options: [
+      { value: 'muchless', label: 'Much less' },
+      { value: 'less', label: 'Less' },
+      NORMAL,
+      { value: 'more', label: 'More' },
+      { value: 'muchmore', label: 'Much more' },
+      { value: 'most', label: 'Most' },
+    ],
+  },
+  {
+    key: 'raids',
+    label: 'Raids',
+    options: [
+      { value: 'none', label: 'None' },
+      { value: 'muchless', label: 'Much less' },
+      { value: 'less', label: 'Less' },
+      NORMAL,
+      { value: 'more', label: 'More' },
+      { value: 'muchmore', label: 'Much more' },
+    ],
+  },
+  {
+    key: 'portals',
+    label: 'Portals',
+    options: [
+      { value: 'casual', label: 'Casual' },
+      NORMAL,
+      { value: 'hard', label: 'Hard' },
+      { value: 'veryhard', label: 'Very hard' },
+    ],
+  },
 ]
 
 const SETKEY_OPTIONS: { value: string; label: string; description: string }[] = [
@@ -179,11 +235,11 @@ const SETKEY_OPTIONS: { value: string; label: string; description: string }[] = 
   { value: 'fire', label: 'Fire hazards', description: 'Wood can catch fire and spread outside the Ashlands' },
 ]
 
-// The empty value means "-modifier is not passed": with a preset selected the
-// game uses that preset's value for the rule, without one it uses its own
-// default. Label it accordingly so "Default" is never mistaken for "normal".
-function selectData(options: string[], hasPreset: boolean) {
-  return [{ value: '', label: hasPreset ? 'From preset' : 'Game default' }, ...options.map((o) => ({ value: o, label: o }))]
+// The empty value means "-modifier is not passed": without a preset the game
+// runs the rule at Normal; with a preset it runs the preset's value for that
+// rule, so the middle step is labelled "From preset" instead of "Normal".
+function selectData(options: ModifierOption[], hasPreset: boolean) {
+  return options.map((o) => (o.value === '' && hasPreset ? { value: '', label: 'From preset' } : o))
 }
 
 function presetLabel(value: string) {
@@ -322,7 +378,7 @@ export function InstanceConfigForm({
               <Text size="xs" c="dimmed">
                 {form.values.config.preset
                   ? `Rules left on "From preset" use the ${presetLabel(form.values.config.preset)} preset's values; pick a value to override just that rule.`
-                  : 'No preset selected: rules left on "Game default" use the game\'s normal difficulty; pick a value to change a rule.'}
+                  : 'No preset selected: every rule runs at Normal unless you pick another value.'}
               </Text>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 {MODIFIER_FIELDS.map((f) => (
