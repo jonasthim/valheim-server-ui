@@ -172,10 +172,11 @@ const MODIFIER_FIELDS: { key: ModifierKey; label: string; options: string[] }[] 
 ]
 
 const SETKEY_OPTIONS: { value: string; label: string; description: string }[] = [
-  { value: 'nobuildcost', label: 'No build cost', description: 'No build cost' },
-  { value: 'playerevents', label: 'Player-based raids', description: 'Player-based raids' },
-  { value: 'passivemobs', label: 'Passive mobs', description: 'Passive mobs' },
-  { value: 'nomap', label: 'No map', description: 'No map' },
+  { value: 'nobuildcost', label: 'No build cost', description: 'Building requires no materials' },
+  { value: 'playerevents', label: 'Player-based raids', description: 'Raids follow each player\'s own progress' },
+  { value: 'passivemobs', label: 'Passive mobs', description: 'Enemies do not attack until provoked' },
+  { value: 'nomap', label: 'No map', description: 'Map and minimap are disabled' },
+  { value: 'fire', label: 'Fire hazards', description: 'Wood can catch fire and spread outside the Ashlands' },
 ]
 
 // The empty value means "-modifier is not passed": with a preset selected the
@@ -340,7 +341,7 @@ export function InstanceConfigForm({
               >
                 <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs">
                   {SETKEY_OPTIONS.map((o) => (
-                    <Checkbox key={o.value} value={o.value} label={o.description} />
+                    <Checkbox key={o.value} value={o.value} label={o.label} description={o.description} />
                   ))}
                 </SimpleGrid>
               </Checkbox.Group>

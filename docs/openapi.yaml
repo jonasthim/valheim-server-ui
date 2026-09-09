@@ -1270,7 +1270,7 @@ components:
         modifiers: { $ref: '#/components/schemas/Modifiers' }
         setkeys:
           type: array
-          items: { type: string, enum: [nobuildcost, playerevents, passivemobs, nomap] }
+          items: { type: string, enum: [nobuildcost, playerevents, passivemobs, nomap, fire] }
         save_interval_sec: { type: integer, minimum: 60, default: 1800 }
         game_backups: { type: integer, minimum: 0, default: 4 }
         game_backup_short_sec: { type: integer, minimum: 60, default: 7200 }

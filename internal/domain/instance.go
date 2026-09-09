@@ -32,7 +32,8 @@ var ModifierValues = map[string][]string{
 var ModifierOrder = []string{"combat", "deathpenalty", "resources", "raids", "portals"}
 
 // SetKeys accepted by -setkey.
-var SetKeys = []string{"nobuildcost", "playerevents", "passivemobs", "nomap"}
+// "fire" (Fire hazards, Ashlands update) lets fire spread outside the Ashlands.
+var SetKeys = []string{"nobuildcost", "playerevents", "passivemobs", "nomap", "fire"}
 
 // Modifiers holds -modifier values; empty string means "not set".
 type Modifiers struct {

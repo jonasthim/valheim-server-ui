@@ -163,7 +163,7 @@ joined (ids, kinds, timestamps, enabled flags) is a real column.
 | `crossplay`           | bool                                                                           | `-crossplay`            |
 | `preset`              | `""`, normal, casual, easy, hard, hardcore, immersive, hammer                  | `-preset`               |
 | `modifiers`           | object: combat∈{veryeasy,easy,hard,veryhard}, deathpenalty∈{casual,veryeasy,easy,hard,hardcore}, resources∈{muchless,less,more,muchmore,most}, raids∈{none,muchless,less,more,muchmore}, portals∈{casual,hard,veryhard}; omit key = default | `-modifier k v` (repeated) |
-| `setkeys`             | subset of {nobuildcost, playerevents, passivemobs, nomap}                      | `-setkey k` (repeated)  |
+| `setkeys`             | subset of {nobuildcost, playerevents, passivemobs, nomap, fire}                      | `-setkey k` (repeated)  |
 | `save_interval_sec`   | int, default 1800                                                              | `-saveinterval`         |
 | `game_backups`        | int, default 4  (Valheim's own rolling saves)                                  | `-backups`              |
 | `game_backup_short_sec` | int, default 7200                                                            | `-backupshort`          |

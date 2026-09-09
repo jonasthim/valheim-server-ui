@@ -2696,7 +2696,7 @@ export interface components {
             /** @enum {string} */
             preset?: "" | "normal" | "casual" | "easy" | "hard" | "hardcore" | "immersive" | "hammer";
             modifiers?: components["schemas"]["Modifiers"];
-            setkeys?: ("nobuildcost" | "playerevents" | "passivemobs" | "nomap")[];
+            setkeys?: ("nobuildcost" | "playerevents" | "passivemobs" | "nomap" | "fire")[];
             /** @default 1800 */
             save_interval_sec: number;
             /** @default 4 */
