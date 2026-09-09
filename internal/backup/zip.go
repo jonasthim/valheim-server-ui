@@ -3,6 +3,7 @@ package backup
 import (
 	"archive/zip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -162,7 +163,7 @@ func extractZipFile(f *zip.File, dest string) error {
 	if err != nil {
 		return fmt.Errorf("create %s: %w", dest, err)
 	}
-	if _, err := io.Copy(out, rc); err != nil { //nolint:gosec // restored save files, size bounded by the zip's own entries
+	if err := copyDeclared(out, rc, f.UncompressedSize64); err != nil {
 		_ = out.Close()
 		_ = os.Remove(tmp)
 		return fmt.Errorf("write %s: %w", dest, err)
@@ -193,6 +194,9 @@ func extractBackupZip(zipPath, saveDir string) (string, error) {
 		return "", fmt.Errorf("open backup zip: %w", err)
 	}
 	defer func() { _ = zr.Close() }()
+	if err := checkArchiveBudget(zr.File, maxArchiveUncompressedBytes); err != nil {
+		return "", err
+	}
 
 	worldsDir := filepath.Join(saveDir, "worlds_local")
 	if err := os.MkdirAll(worldsDir, 0o750); err != nil {
@@ -258,6 +262,9 @@ func validateBackupZipContent(zipPath string) (string, error) {
 		return "", domain.E(domain.CodeValidationFailed, "not a valid zip file")
 	}
 	defer func() { _ = zr.Close() }()
+	if err := checkArchiveBudget(zr.File, maxArchiveUncompressedBytes); err != nil {
+		return "", err
+	}
 
 	var manifestWorld, dbStem string
 	for _, f := range zr.File {
@@ -287,8 +294,39 @@ func copyZipEntry(f *zip.File, out *os.File) error {
 		return fmt.Errorf("open zip entry %s: %w", f.Name, err)
 	}
 	defer func() { _ = rc.Close() }()
-	if _, err := io.Copy(out, rc); err != nil { //nolint:gosec // world import zip entries, staged to a temp file for validation
+	if err := copyDeclared(out, rc, f.UncompressedSize64); err != nil {
 		return fmt.Errorf("read zip entry %s: %w", f.Name, err)
+	}
+	return nil
+}
+
+// maxArchiveUncompressedBytes caps the declared uncompressed total of a
+// backup or world archive (world databases are hundreds of MB, not tens of GB).
+const maxArchiveUncompressedBytes = 16 << 30
+
+// checkArchiveBudget rejects archives whose declared uncompressed total
+// exceeds the budget before anything is written.
+func checkArchiveBudget(files []*zip.File, budget uint64) error {
+	var total uint64
+	for _, f := range files {
+		total += f.UncompressedSize64
+		if total > budget {
+			return domain.Ef(domain.CodeValidationFailed, "archive expands to more than %d bytes", budget)
+		}
+	}
+	return nil
+}
+
+// copyDeclared copies at most the declared entry size and fails when the
+// entry inflates past it (a lying header, i.e. a zip bomb).
+func copyDeclared(dst io.Writer, src io.Reader, declared uint64) error {
+	limit := int64(declared) //nolint:gosec // declared comes from a zip header; values past int64 are rejected by the budget check
+	n, err := io.Copy(dst, io.LimitReader(src, limit+1))
+	if err != nil {
+		return err
+	}
+	if n > limit {
+		return errors.New("entry larger than its declared size")
 	}
 	return nil
 }

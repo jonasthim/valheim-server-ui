@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -53,6 +54,7 @@ func handleImportWorlds(d *Deps) http.HandlerFunc {
 			WriteError(w, domain.E(domain.CodeInternal, "backup service not configured"))
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxArchiveUploadBytes)
 		if err := r.ParseMultipartForm(64 << 20); err != nil { //nolint:gosec // G120: 64MiB is the documented in-memory cap (spec WP-06); larger parts spill to a temp file rather than memory, and this route requires the operator role
 			WriteError(w, domain.Wrap(domain.CodeValidationFailed, "invalid multipart form", err))
 			return
@@ -98,7 +100,7 @@ func handleImportWorlds(d *Deps) http.HandlerFunc {
 // worldNameParam reads and validates the {worldName} URL parameter.
 func worldNameParam(r *http.Request) (string, error) {
 	name := chi.URLParam(r, "worldName")
-	if name == "" || filepath.Base(name) != name {
+	if name == "" || name == "." || name == ".." || filepath.Base(name) != name || strings.ContainsRune(name, 0) {
 		return "", domain.E(domain.CodeValidationFailed, "invalid world name")
 	}
 	return name, nil
@@ -166,7 +168,11 @@ func handleRegenerateWorld(d *Deps) http.HandlerFunc {
 			WriteError(w, err)
 			return
 		}
-		world := chi.URLParam(r, "worldName")
+		world, err := worldNameParam(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
 		var body struct {
 			StopIfRunning bool `json:"stop_if_running"`
 		}
@@ -183,3 +189,6 @@ func handleRegenerateWorld(d *Deps) http.HandlerFunc {
 		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 	}
 }
+
+// maxArchiveUploadBytes bounds a world or backup upload request body.
+const maxArchiveUploadBytes = 4 << 30

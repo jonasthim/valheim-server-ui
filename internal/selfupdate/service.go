@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
@@ -82,12 +83,21 @@ func (s *Service) EnqueueUpgrade(ctx context.Context, version, requestedBy strin
 		return nil, domain.E(domain.CodeConflict, "a self-upgrade job is already active")
 	}
 
+	if version != "" && !releaseTagPattern.MatchString(version) {
+		return nil, domain.E(domain.CodeValidationFailed, "version must look like v1.2.3")
+	}
 	rel, err := s.resolveRelease(ctx, version)
 	if err != nil {
 		return nil, err
 	}
 
 	info := s.checker.Info()
+	// Never move backwards through this path: an older release may carry
+	// fixed vulnerabilities. `valheim-ui self-upgrade --rollback` on the host
+	// is the deliberate way back to the previous binary.
+	if parseVersion(info.CurrentVersion).ok && Compare(rel.Tag, info.CurrentVersion) < 0 {
+		return nil, domain.Ef(domain.CodeConflict, "refusing to downgrade from %s to %s", info.CurrentVersion, rel.Tag)
+	}
 	if !info.CanSelfUpgrade {
 		reason := info.Reason
 		if reason == "" {
@@ -150,3 +160,6 @@ func (s *Service) resolveRelease(ctx context.Context, version string) (*Release,
 	}
 	return rel, nil
 }
+
+// releaseTagPattern is the tag shape the release workflow publishes.
+var releaseTagPattern = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$`)

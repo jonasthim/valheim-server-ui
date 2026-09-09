@@ -32,6 +32,32 @@ Restart=on-failure
 RestartSec=10
 LimitNOFILE=100000
 Nice=-5
+# Hardening. Mods run inside this process as arbitrary code, so the game gets
+# no more of the host than it needs: its own data tree, HOME (also under
+# /var/lib/valheim) and network sockets. NoNewPrivileges blocks sudo from the
+# game process entirely; the manager's unit keeps sudo for unitctl.
+# MemoryDenyWriteExecute is deliberately absent: the Unity/Mono runtime JITs.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/valheim
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

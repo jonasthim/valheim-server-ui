@@ -39,7 +39,9 @@ func registerModRoutes(r chi.Router, d *Deps) {
 
 	r.With(RequireRole(domain.RoleViewer), guard).
 		Get("/instances/{instanceId}/mods/configs", listModConfigsHandler(d))
-	r.With(RequireRole(domain.RoleViewer), guard).
+	// Config files often hold mod secrets (webhook URLs, API keys): reading
+	// their contents is an operator action; the file list stays viewer-level.
+	r.With(RequireRole(domain.RoleOperator), guard).
 		Get("/instances/{instanceId}/mods/configs/{fileName}", getModConfigHandler(d))
 	r.With(RequireRole(domain.RoleOperator), guard).
 		Put("/instances/{instanceId}/mods/configs/{fileName}", updateModConfigHandler(d))

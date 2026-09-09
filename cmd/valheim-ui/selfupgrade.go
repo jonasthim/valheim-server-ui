@@ -59,7 +59,8 @@ func runSelfUpgrade(args []string) error {
 	// the data directory is unwritable elsewhere: config.Load falls back to
 	// defaults for a missing file, so this only fails on a genuinely broken
 	// config.yaml.
-	if _, err := config.Load(*cfgPath); err != nil {
+	cfg, err := config.Load(*cfgPath)
+	if err != nil {
 		return err
 	}
 
@@ -78,10 +79,19 @@ func runSelfUpgrade(args []string) error {
 	case *check:
 		return selfUpgradeCheck(client)
 	case *apply:
-		return selfUpgradeApply(client, real, *targetVersion)
+		return selfUpgradeApply(client, newCLIUpgrader(cfg, real), *targetVersion)
 	default: // --rollback
-		return selfUpgradeRollback(real)
+		return selfUpgradeRollback(newCLIUpgrader(cfg, real))
 	}
+}
+
+// newCLIUpgrader mirrors wire_selfupdate.go: staged downloads under the data
+// dir, installed by unitctl when the wrapper supports it.
+func newCLIUpgrader(cfg config.Config, exePath string) *selfupdate.Upgrader {
+	up := selfupdate.NewUpgrader(exePath, version, &http.Client{Timeout: 10 * time.Minute})
+	up.SetStagingDir(filepath.Join(cfg.DataDir, "staging"))
+	up.SetPrivileged(cfg.UnitctlPath, selfupdate.NewPrivilegedProbe(cfg.UnitctlPath, cfg.Supervisor == "systemd"))
+	return up
 }
 
 func selfUpgradeCheck(client *selfupdate.Client) error {
@@ -109,7 +119,7 @@ func selfUpgradeCheck(client *selfupdate.Client) error {
 	return nil
 }
 
-func selfUpgradeApply(client *selfupdate.Client, exePath, tag string) error {
+func selfUpgradeApply(client *selfupdate.Client, upgrader *selfupdate.Upgrader, tag string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -119,7 +129,6 @@ func selfUpgradeApply(client *selfupdate.Client, exePath, tag string) error {
 	}
 
 	fmt.Printf("installing %s (currently running %s)\n", rel.Tag, version)
-	upgrader := selfupdate.NewUpgrader(exePath, version, http.DefaultClient)
 	prevPath, err := upgrader.Apply(ctx, rel, os.Stdout)
 	if err != nil {
 		return fmt.Errorf("self-upgrade: %w", err)
@@ -129,10 +138,7 @@ func selfUpgradeApply(client *selfupdate.Client, exePath, tag string) error {
 	return nil
 }
 
-func selfUpgradeRollback(exePath string) error {
-	// version isn't known to be accurate here (the running process may
-	// already be the bad build), but Rollback doesn't need it.
-	upgrader := selfupdate.NewUpgrader(exePath, version, http.DefaultClient)
+func selfUpgradeRollback(upgrader *selfupdate.Upgrader) error {
 	if err := upgrader.Rollback(); err != nil {
 		return fmt.Errorf("self-upgrade: %w", err)
 	}

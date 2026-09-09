@@ -39,10 +39,13 @@ account automatically:
 - On the first SSO login of an identity, the manager looks for a local user whose
   email equals the token's `email` claim (case-insensitive).
 - The match is used only when the provider vouches for the address:
-  `email_verified` is `true`, or the provider does not send that claim at all
-  (Entra ID, for instance). An explicit `email_verified: false` never links; a
-  separate account is created instead, so an unverified address registered at
-  the IdP cannot take over a local account.
+  `email_verified` must be `true`. An explicit `false` never links, and a token
+  without the claim is not linked either unless **Link accounts without an
+  email_verified claim** (`link_unverified_email`) is on in Settings; even then
+  an account with the admin role is never linked that way. A separate account
+  is created instead (with **Auto-create users** on), so an address registered
+  at a self-service IdP cannot take over a local account. When a link is
+  skipped for this reason the manager logs a warning saying so.
 - The link keeps everything on the local account: username, password (local
   login keeps working), role and history. With **Sync roles** on, the role is
   re-evaluated from the groups on that login like any other SSO login.

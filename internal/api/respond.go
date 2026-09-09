@@ -23,6 +23,7 @@ type errorBody struct {
 // WriteJSON writes v with the given status.
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	if v == nil {
 		return

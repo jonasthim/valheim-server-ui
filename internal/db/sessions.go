@@ -79,6 +79,19 @@ func (s *Sessions) DeleteByUser(ctx context.Context, userID int64) error {
 	return nil
 }
 
+// DeleteByUserExcept removes every session of userID except keepID (pass ""
+// to remove all). Used when a password changes so other sessions die while
+// the one performing the change may survive.
+func (s *Sessions) DeleteByUserExcept(ctx context.Context, userID int64, keepID string) error {
+	if keepID == "" {
+		return s.DeleteByUser(ctx, userID)
+	}
+	if _, err := s.DB.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ? AND id <> ?`, userID, keepID); err != nil {
+		return fmt.Errorf("delete sessions for user %d: %w", userID, err)
+	}
+	return nil
+}
+
 // DeleteExpired removes sessions whose expiry has passed. Safe to call
 // periodically; not required for correctness since Get re-validates expiry.
 func (s *Sessions) DeleteExpired(ctx context.Context, now time.Time) error {

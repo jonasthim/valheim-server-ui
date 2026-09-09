@@ -2600,6 +2600,11 @@ export interface components {
             /** @default true */
             auto_create_users: boolean;
             /**
+             * @description Link a login without an email_verified claim to a local account with the same email (never an admin account)
+             * @default false
+             */
+            link_unverified_email: boolean;
+            /**
              * @description Re-apply role mapping on every login
              * @default true
              */

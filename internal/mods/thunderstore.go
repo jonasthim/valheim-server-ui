@@ -8,10 +8,12 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -387,8 +389,11 @@ func (t *Thunderstore) Search(_ context.Context, q domain.PackageSearch) (*domai
 	}
 
 	total := len(matched)
+	if page > maxPage {
+		page = maxPage
+	}
 	start := (page - 1) * pageSize
-	if start > total {
+	if start < 0 || start > total {
 		start = total
 	}
 	end := start + pageSize
@@ -553,6 +558,9 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 	if version == "" {
 		return "", domain.E(domain.CodeValidationFailed, "version is required")
 	}
+	if err := validateVersionString(version); err != nil {
+		return "", fmt.Errorf("version: %w", err)
+	}
 
 	dest := filepath.Join(t.pkgsDir(), fmt.Sprintf("%s-%s-%s.zip", owner, name, version))
 	if fi, err := os.Stat(dest); err == nil && fi.Size() > 0 {
@@ -562,8 +570,17 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 	}
 
 	url := fmt.Sprintf(downloadURLFormat, owner, name, version)
-	if v, ok := t.versionEntry(owner, name, version); ok && v.DownloadURL != "" {
-		url = v.DownloadURL
+	var expectedSize int64
+	if v, ok := t.versionEntry(owner, name, version); ok {
+		if v.DownloadURL != "" {
+			url = v.DownloadURL
+		}
+		expectedSize = v.FileSize
+	}
+	// The index is data from a third party: only fetch from Thunderstore over
+	// TLS, on every redirect hop, and never more than the declared size.
+	if err := checkDownloadURL(url); err != nil {
+		return "", err
 	}
 
 	if err := os.MkdirAll(t.pkgsDir(), 0o750); err != nil {
@@ -576,7 +593,14 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 	}
 	req.Header.Set("User-Agent", t.userAgent)
 
-	resp, err := t.http.Do(req)
+	client := *t.http // shallow copy so the redirect policy is per download
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return errors.New("too many redirects")
+		}
+		return checkDownloadURL(req.URL.String())
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", domain.Wrap(domain.CodeUpstreamError, "download package", err)
 	}
@@ -584,13 +608,20 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 	if resp.StatusCode != http.StatusOK {
 		return "", domain.Ef(domain.CodeUpstreamError, "download %s-%s@%s failed: %s", owner, name, version, resp.Status)
 	}
+	limit := int64(maxPackageBytes)
+	if expectedSize > 0 && expectedSize < limit {
+		limit = expectedSize
+	}
 
 	tmp, err := os.CreateTemp(t.pkgsDir(), "download-*.zip.tmp")
 	if err != nil {
 		return "", fmt.Errorf("create temp download file: %w", err)
 	}
 	tmpPath := tmp.Name()
-	_, copyErr := io.Copy(tmp, resp.Body)
+	written, copyErr := io.Copy(tmp, io.LimitReader(resp.Body, limit+1))
+	if copyErr == nil && written > limit {
+		copyErr = fmt.Errorf("package larger than the allowed %d bytes", limit)
+	}
 	closeErr := tmp.Close()
 	if copyErr != nil {
 		_ = os.Remove(tmpPath)
@@ -610,3 +641,46 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 	}
 	return dest, nil
 }
+
+// maxPackageBytes caps a single Thunderstore package download when the index
+// does not declare a size (Valheim packs are a few hundred MB at most).
+const maxPackageBytes = 512 << 20
+
+// thunderstoreHosts are the only hosts a package may be fetched from.
+func isThunderstoreHost(host string) bool {
+	host = strings.ToLower(host)
+	return host == "thunderstore.io" || strings.HasSuffix(host, ".thunderstore.io")
+}
+
+// checkDownloadURL enforces https + a Thunderstore host for package downloads
+// (including every redirect hop), so a poisoned index cannot make the manager
+// fetch from an arbitrary address.
+func checkDownloadURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return domain.Ef(domain.CodeUpstreamError, "invalid package download URL %q", raw)
+	}
+	if u.Scheme != "https" || !isThunderstoreHost(u.Hostname()) {
+		return domain.Ef(domain.CodeUpstreamError, "refusing package download from %q: only https://thunderstore.io is allowed", u.Host)
+	}
+	return nil
+}
+
+// validateVersionString accepts Thunderstore version numbers (digits and
+// dots, optionally a short suffix) so a version can never shape a cache path.
+func validateVersionString(v string) error {
+	if len(v) > 64 {
+		return domain.E(domain.CodeValidationFailed, "too long")
+	}
+	for _, r := range v {
+		switch {
+		case r >= '0' && r <= '9', r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r == '.', r == '-', r == '_':
+		default:
+			return domain.E(domain.CodeValidationFailed, "must contain only letters, digits, dots, dashes and underscores")
+		}
+	}
+	return nil
+}
+
+// maxPage bounds the page number so (page-1)*pageSize cannot overflow.
+const maxPage = 1_000_000

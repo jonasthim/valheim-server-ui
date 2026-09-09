@@ -58,8 +58,16 @@ func wireSelfUpdate(ctx context.Context, deps *api.Deps, runner *jobs.Runner, pl
 		return s.App.AutoUpgrade
 	}
 
+	// Root-owned binary layout: the manager stages a verified download under
+	// the data dir and the sudo wrapper installs it. Older installs (or the
+	// direct supervisor used in development) fall back to renaming in place.
+	stagingDir := filepath.Join(deps.Cfg.DataDir, "staging")
+	privileged := selfupdate.NewPrivilegedProbe(deps.Cfg.UnitctlPath, deps.Cfg.Supervisor == "systemd")
 	checker := selfupdate.New(client, version, real, interval, autoUpgrade, playersOnline, deps.Bus, deps.Log)
-	upgrader := selfupdate.NewUpgrader(real, version, http.DefaultClient)
+	checker.SetInstallMode(stagingDir, privileged)
+	upgrader := selfupdate.NewUpgrader(real, version, &http.Client{Timeout: 10 * time.Minute})
+	upgrader.SetStagingDir(stagingDir)
+	upgrader.SetPrivileged(deps.Cfg.UnitctlPath, privileged)
 	svc := selfupdate.NewService(client, checker, upgrader, runner, deps.Log)
 
 	// The checker calls back into the service to actually perform an

@@ -834,7 +834,7 @@ paths:
         schema: { type: string }
     get:
       tags: [mods]
-      x-role: viewer
+      x-role: operator
       responses:
         '200':
           content:
@@ -1185,6 +1185,10 @@ components:
           default: viewer
           description: Role for users without a mapped group; deny blocks login
         auto_create_users: { type: boolean, default: true }
+        link_unverified_email:
+          type: boolean
+          default: false
+          description: Link a login without an email_verified claim to a local account with the same email (never an admin account)
         sync_roles: { type: boolean, default: true, description: Re-apply role mapping on every login }
         redirect_uri: { type: string, readOnly: true, description: 'Computed from base_url; register this at the provider' }
 

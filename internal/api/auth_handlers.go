@@ -107,7 +107,7 @@ func authLoginHandler(d *Deps) http.HandlerFunc {
 		}
 		usr, err := d.Auth.Login(r.Context(), w, r, in.Username, in.Password)
 		if err != nil {
-			d.audit(r, "auth.login.failed", "", in.Username, nil)
+			d.audit(r, "auth.login.failed", "", truncateForAudit(in.Username, 64), nil)
 			WriteError(w, err)
 			return
 		}
@@ -163,7 +163,7 @@ func authChangePasswordHandler(d *Deps) http.HandlerFunc {
 			WriteError(w, err)
 			return
 		}
-		if err := d.Users.ChangePassword(r.Context(), usr.ID, in.CurrentPassword, in.NewPassword); err != nil {
+		if err := d.Users.ChangePasswordFromRequest(r.Context(), r, usr.ID, in.CurrentPassword, in.NewPassword); err != nil {
 			WriteError(w, err)
 			return
 		}
@@ -194,4 +194,13 @@ func oidcCallbackHandler(d *Deps) http.HandlerFunc {
 		// handler doing it after the fact.
 		d.Auth.OIDCCallback(w, r)
 	}
+}
+
+// truncateForAudit bounds attacker-controlled strings written to the audit
+// log (a failed login records the attempted username).
+func truncateForAudit(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

@@ -1,34 +1,151 @@
 #!/bin/bash
 # /usr/local/lib/valheim-ui/unitctl — the only command the valheim user may sudo.
-# Usage: unitctl <start|stop|restart|enable|disable> <instance-id>
+#
+#   unitctl <start|stop|restart|enable|disable> <instance-id>
+#   unitctl apply-upgrade <release-tag>     install a staged, verified binary
+#   unitctl rollback-upgrade                restore the previous binary
+#   unitctl capabilities                    list the verbs this build supports
+#
 # The instance id is validated against the same pattern the manager uses
 # (domain.InstanceIDPattern) so the unit name can never escape valheim@*.service.
+#
+# apply-upgrade is what keeps the manager binary root-owned while still
+# letting the manager upgrade itself: the manager downloads and verifies a
+# release as the valheim user into /var/lib/valheim/staging, and this wrapper
+# checks the staged file against the SHA256SUMS published with that release
+# before copying it into the root-owned bin directory. A local process running
+# as valheim therefore cannot install an arbitrary binary.
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
+BIN_DIR=/var/lib/valheim/bin
+STAGING_DIR=/var/lib/valheim/staging
+REPO=jonasthim/valheim-server-ui
+SERVICE_USER=valheim
+
+usage() {
   echo "usage: unitctl <start|stop|restart|enable|disable> <instance-id>" >&2
+  echo "       unitctl apply-upgrade <release-tag> | rollback-upgrade | capabilities" >&2
   exit 2
-fi
+}
 
+[[ $# -ge 1 ]] || usage
 action="$1"
-inst="$2"
-
-if ! [[ "$inst" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]]; then
-  echo "unitctl: invalid instance id" >&2
-  exit 2
-fi
-
-unit="valheim@${inst}.service"
 
 case "$action" in
-  start|stop|restart)
-    exec /bin/systemctl "$action" "$unit"
+  start|stop|restart|enable|disable)
+    [[ $# -eq 2 ]] || usage
+    inst="$2"
+    if ! [[ "$inst" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]]; then
+      echo "unitctl: invalid instance id" >&2
+      exit 2
+    fi
+    exec /usr/bin/systemctl "$action" "valheim@${inst}.service"
     ;;
-  enable|disable)
-    exec /bin/systemctl "$action" "$unit"
+  capabilities)
+    [[ $# -eq 1 ]] || usage
+    echo "apply-upgrade rollback-upgrade"
+    exit 0
+    ;;
+  apply-upgrade)
+    [[ $# -eq 2 ]] || usage
+    tag="$2"
+    ;;
+  rollback-upgrade)
+    [[ $# -eq 1 ]] || usage
     ;;
   *)
     echo "unitctl: action not allowed: $action" >&2
     exit 2
     ;;
 esac
+
+# ---- upgrade verbs (run as root) -------------------------------------------
+
+ensure_bin_dir() {
+  if [[ -L "$BIN_DIR" ]]; then
+    echo "unitctl: $BIN_DIR is a symlink; refusing" >&2
+    exit 1
+  fi
+  install -d -o root -g root -m 0755 "$BIN_DIR"
+  # Older installs left the directory and binary owned by the service user;
+  # take them over so a compromised game process cannot rewrite the manager.
+  chown root:root "$BIN_DIR"
+  chmod 0755 "$BIN_DIR"
+  for f in "$BIN_DIR/valheim-ui" "$BIN_DIR/valheim-ui.prev"; do
+    [[ -f "$f" && ! -L "$f" ]] && chown root:root "$f" && chmod 0755 "$f"
+  done
+  return 0
+}
+
+if [[ "$action" == "rollback-upgrade" ]]; then
+  ensure_bin_dir
+  prev="$BIN_DIR/valheim-ui.prev"
+  cur="$BIN_DIR/valheim-ui"
+  if [[ ! -f "$prev" || -L "$prev" ]]; then
+    echo "unitctl: no previous binary at $prev" >&2
+    exit 1
+  fi
+  rm -f "$cur.rolledback"
+  mv -f "$cur" "$cur.rolledback"
+  if ! mv -f "$prev" "$cur"; then
+    mv -f "$cur.rolledback" "$cur"
+    echo "unitctl: restoring the previous binary failed" >&2
+    exit 1
+  fi
+  rm -f "$cur.rolledback"
+  echo "rolled back to the previous binary"
+  exit 0
+fi
+
+# apply-upgrade <tag>
+if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  echo "unitctl: invalid release tag" >&2
+  exit 2
+fi
+staged="$STAGING_DIR/valheim-ui.new"
+if [[ ! -f "$staged" || -L "$staged" ]]; then
+  echo "unitctl: no staged binary at $staged" >&2
+  exit 1
+fi
+if [[ "$(stat -c %U "$staged")" != "$SERVICE_USER" ]]; then
+  echo "unitctl: staged binary is not owned by $SERVICE_USER" >&2
+  exit 1
+fi
+if [[ "$(head -c 4 "$staged" | od -An -c | tr -d ' ')" != "177ELF" ]]; then
+  echo "unitctl: staged file is not an ELF binary" >&2
+  exit 1
+fi
+
+# The staged file must be byte-identical to the binary published in the
+# release: compare against the SHA256SUMS the release workflow signs off.
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+sums_url="https://github.com/$REPO/releases/download/$tag/SHA256SUMS"
+if ! curl -fsSL --proto '=https' --tlsv1.2 --max-time 60 -o "$tmp/SHA256SUMS" "$sums_url"; then
+  echo "unitctl: could not fetch $sums_url" >&2
+  exit 1
+fi
+expected="$(awk '$2 == "valheim-ui" { print $1 }' "$tmp/SHA256SUMS" | head -n1)"
+if [[ -z "$expected" ]]; then
+  echo "unitctl: release $tag publishes no checksum for the raw binary; it predates privileged upgrades" >&2
+  exit 1
+fi
+actual="$(sha256sum "$staged" | awk '{ print $1 }')"
+if [[ "$expected" != "$actual" ]]; then
+  echo "unitctl: staged binary does not match the checksum published for $tag" >&2
+  exit 1
+fi
+
+ensure_bin_dir
+cur="$BIN_DIR/valheim-ui"
+install -o root -g root -m 0755 "$staged" "$cur.tmp"
+if [[ -f "$cur" ]]; then
+  mv -f "$cur" "$cur.prev"
+fi
+if ! mv -f "$cur.tmp" "$cur"; then
+  [[ -f "$cur.prev" ]] && mv -f "$cur.prev" "$cur"
+  echo "unitctl: installing the new binary failed" >&2
+  exit 1
+fi
+rm -f "$staged"
+echo "installed $tag as $cur (previous kept at $cur.prev)"

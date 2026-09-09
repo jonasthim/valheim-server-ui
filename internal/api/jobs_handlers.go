@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"regexp"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -84,7 +85,12 @@ func getJobLogHandler(d *Deps) http.HandlerFunc {
 			WriteError(w, domain.E(domain.CodeInternal, "jobs service not configured"))
 			return
 		}
-		lines, err := d.Jobs.Log(r.Context(), chi.URLParam(r, "jobId"))
+		jobID := chi.URLParam(r, "jobId")
+		if !jobIDPattern.MatchString(jobID) {
+			WriteError(w, domain.NotFound("job"))
+			return
+		}
+		lines, err := d.Jobs.Log(r.Context(), jobID)
 		if err != nil {
 			WriteError(w, err)
 			return
@@ -112,3 +118,8 @@ func cancelJobHandler(d *Deps) http.HandlerFunc {
 		WriteJSON(w, http.StatusOK, map[string]any{"job": job})
 	}
 }
+
+// jobIDPattern bounds a job id to the characters a runner-issued UUID (or a
+// test fixture id) can contain, so it can never name a path or carry a NUL
+// byte before it reaches the log file lookup; anything else is a 404.
+var jobIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)

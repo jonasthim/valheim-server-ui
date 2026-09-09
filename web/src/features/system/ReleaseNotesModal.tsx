@@ -2,7 +2,7 @@
 // dashboard banner and the settings Application card.
 import { Anchor, Modal, ScrollArea, Stack, Text } from '@mantine/core'
 import type { AppUpdateInfo } from '../../api/types'
-import { fmtAgo } from '../../lib/format'
+import { fmtAgo, safeHref } from '../../lib/format'
 
 export function ReleaseNotesModal({
   opened,
@@ -33,7 +33,7 @@ export function ReleaseNotesModal({
           </Text>
         </ScrollArea.Autosize>
         {appUpdate.release_url && (
-          <Anchor href={appUpdate.release_url} target="_blank" rel="noreferrer" size="sm">
+          <Anchor href={safeHref(appUpdate.release_url)} target="_blank" rel="noreferrer" size="sm">
             View release on GitHub
           </Anchor>
         )}

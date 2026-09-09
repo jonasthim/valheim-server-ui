@@ -87,6 +87,9 @@ func extractBepInExPack(zipPath, serverDir string) error {
 		return fmt.Errorf("open bepinex pack zip: %w", err)
 	}
 	defer func() { _ = r.Close() }()
+	if err := checkArchiveBudget(r.File, maxPackageUncompressedBytes); err != nil {
+		return err
+	}
 
 	names := make([]string, 0, len(r.File))
 	cleaned := make(map[string]string, len(r.File))

@@ -92,6 +92,7 @@ func handleUploadBackup(d *Deps) http.HandlerFunc {
 			WriteError(w, domain.E(domain.CodeInternal, "backup service not configured"))
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxArchiveUploadBytes)
 		if err := r.ParseMultipartForm(64 << 20); err != nil { //nolint:gosec // G120: 64MiB is the documented in-memory cap (spec WP-06); larger parts spill to a temp file rather than memory, and this route requires the operator role
 			WriteError(w, domain.Wrap(domain.CodeValidationFailed, "invalid multipart form", err))
 			return

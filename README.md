@@ -222,6 +222,14 @@ publishes the GitHub release `v<VERSION>` with the binary, `install.sh` and
 checksums, and running installs pick it up through the in-app upgrade
 (see `docs/RUNBOOK.md` §12).
 
+## Security
+
+The threat model, hardening measures and the findings of the latest security review
+(with what was fixed and what is accepted) are in [docs/SECURITY.md](docs/SECURITY.md).
+In short: unprivileged service user, sandboxed game units, a one-command sudo wrapper,
+root-owned binary with checksum-verified upgrades, argon2id passwords, hashed sessions,
+CSRF and security headers, and every input validated before it touches the filesystem.
+
 ## Status and non-goals
 
 v1 targets a single Linux host with systemd. Not in scope: Docker-based game

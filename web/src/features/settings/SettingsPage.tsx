@@ -56,6 +56,7 @@ const EMPTY_SETTINGS: Settings = {
       default_role: 'viewer',
       auto_create_users: true,
       sync_roles: true,
+      link_unverified_email: false,
       redirect_uri: '',
     },
   },
@@ -230,6 +231,11 @@ export function SettingsPage() {
                     label="Sync roles on every login"
                     description="Re-apply the role mapping each time a user signs in"
                     {...form.getInputProps('auth.oidc.sync_roles', { type: 'checkbox' })}
+                  />
+                  <Switch
+                    label="Link accounts without an email_verified claim"
+                    description="Merge an SSO login into a local account with the same email even when the provider does not vouch for the address. Never applies to admin accounts. Leave off unless your provider omits the claim."
+                    {...form.getInputProps('auth.oidc.link_unverified_email', { type: 'checkbox' })}
                   />
 
                   <TextInput

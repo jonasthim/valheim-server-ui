@@ -122,10 +122,7 @@ func (s *Service) OIDCLogin(w http.ResponseWriter, r *http.Request) {
 		api.WriteError(w, err)
 		return
 	}
-	next := r.URL.Query().Get("next")
-	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
-		next = "/"
-	}
+	next := safeNextPath(r.URL.Query().Get("next"))
 	state, err := randToken(16)
 	if err != nil {
 		api.WriteError(w, err)
@@ -282,7 +279,7 @@ func (s *Service) resolveOIDCUser(ctx context.Context, settings domain.OIDCSetti
 	if usr == nil {
 		// Merge with an existing local account that has the same (verified)
 		// email: the SSO identity is linked to it, the password and role stay.
-		if existing := s.matchByVerifiedEmail(ctx, claims); existing != nil {
+		if existing := s.matchByVerifiedEmail(ctx, settings, claims); existing != nil {
 			if existing.Disabled {
 				return nil, false, domain.E(domain.CodeAccountDisabled, "account disabled")
 			}
@@ -481,31 +478,58 @@ func (s *Service) mergeUserInfo(ctx context.Context, rt *oidcRuntime, tok *oauth
 
 // matchByVerifiedEmail returns a local user whose email equals the token's
 // email claim, but only when the provider vouches for the address:
-// email_verified must be true or absent. An explicit false never links, so an
-// unverified address registered at the IdP cannot take over a local account.
-func (s *Service) matchByVerifiedEmail(ctx context.Context, claims map[string]any) *domain.User {
+// email_verified must be true. A provider that omits the claim is trusted
+// only when the administrator has turned on link_unverified_email, and even
+// then never for an account with the admin role, so an address registered at
+// a self-service IdP cannot take over an administrator.
+func (s *Service) matchByVerifiedEmail(ctx context.Context, settings domain.OIDCSettings, claims map[string]any) *domain.User {
 	email, _ := claims["email"].(string)
 	email = strings.TrimSpace(email)
 	if email == "" || !strings.Contains(email, "@") {
 		return nil
 	}
-	if v, present := claims["email_verified"]; present {
+	verified := false
+	present := false
+	if v, ok := claims["email_verified"]; ok {
+		present = true
 		switch t := v.(type) {
 		case bool:
-			if !t {
-				return nil
-			}
+			verified = t
 		case string:
-			if !strings.EqualFold(t, "true") {
-				return nil
-			}
-		default:
-			return nil
+			verified = strings.EqualFold(t, "true")
 		}
+	}
+	if present && !verified {
+		return nil
+	}
+	if !present && !settings.LinkUnverifiedEmail {
+		s.log.Warn("oidc: not linking to a local account by email: the provider sent no email_verified claim (enable link_unverified_email to allow this)", "email", email)
+		return nil
 	}
 	usr, err := s.users.FindByEmail(ctx, email)
 	if err != nil {
 		return nil
 	}
+	if !present && usr.Role == domain.RoleAdmin {
+		s.log.Warn("oidc: refusing to link an unverified email to an administrator account", "email", email, "user", usr.Username)
+		return nil
+	}
 	return usr
+}
+
+// safeNextPath accepts only a same-origin absolute path for the post-login
+// redirect. "//host" and "/\\host" are both rejected: browsers treat a
+// backslash after the leading slash like a second slash, which would turn
+// the value into a cross-origin redirect.
+func safeNextPath(next string) string {
+	if next == "" || next[0] != '/' {
+		return "/"
+	}
+	if len(next) > 1 && (next[1] == '/' || next[1] == '\\') {
+		return "/"
+	}
+	if strings.ContainsAny(next, "\r\n") {
+		return "/"
+	}
+	return next
 }

@@ -24,15 +24,20 @@
 # /var/lib/valheim and /etc/valheim-ui/config.yaml are never overwritten.
 #
 # Layout (kept stable for in-app self-upgrade, see RUNBOOK.md #11):
-#   /var/lib/valheim/bin/valheim-ui   real binary, owned valheim:valheim 0755
-#   /usr/local/bin/valheim-ui         symlink -> the real binary
+#   /var/lib/valheim/bin/valheim-ui        real binary, owned root:root 0755
 #   /var/lib/valheim/bin/valheim-ui.prev   previous binary, kept for rollback
+#   /var/lib/valheim/staging/              valheim-owned; verified downloads wait
+#                                          here for `unitctl apply-upgrade`
+#   /usr/local/bin/valheim-ui              symlink -> the real binary
+# The manager never writes to bin/ itself: it stages a release and asks the
+# root-side sudo wrapper to install it after re-verifying the checksum.
 set -euo pipefail
 
 REPO="jonasthim/valheim-server-ui"
 DATA_DIR="/var/lib/valheim"
 CONF_DIR="/etc/valheim-ui"
 BIN_DIR="$DATA_DIR/bin"
+STAGING_DIR="$DATA_DIR/staging"
 REAL_BIN="$BIN_DIR/valheim-ui"
 SYMLINK="/usr/local/bin/valheim-ui"
 LIB_DIR="/usr/local/lib/valheim-ui"
@@ -41,6 +46,7 @@ STEAMCMD_URL="https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.ta
 BINARY=""
 VERSION="latest"
 LISTEN="127.0.0.1:8080"
+BASE_URL=""
 UNINSTALL=0
 SKIP_DEPS=0
 CHECK=0
@@ -62,6 +68,9 @@ Options:
                       release (skips download and checksum verification).
   --listen ADDR      Address the manager listens on (default 127.0.0.1:8080).
                       Only applied the first time config.yaml is written.
+  --base-url URL     Public URL of the UI (https://valheim.example.com). Needed
+                      for single sign-on and the Origin check on state-changing
+                      requests. Only applied the first time config.yaml is written.
   --skip-deps        Skip installing apt runtime dependencies.
   --uninstall        Remove units, sudoers and the binary. Keeps /var/lib/valheim.
   --check            Print installed vs latest/target version and what would
@@ -75,6 +84,7 @@ while [[ $# -gt 0 ]]; do
     --binary) BINARY="$2"; shift 2 ;;
     --version) VERSION="$2"; shift 2 ;;
     --listen) LISTEN="$2"; shift 2 ;;
+    --base-url) BASE_URL="$2"; shift 2 ;;
     --uninstall) UNINSTALL=1; shift ;;
     --skip-deps) SKIP_DEPS=1; shift ;;
     --check) CHECK=1; shift ;;
@@ -96,38 +106,155 @@ unitctl_content() {
   cat <<'UNITCTL_EOF'
 #!/bin/bash
 # /usr/local/lib/valheim-ui/unitctl — the only command the valheim user may sudo.
-# Usage: unitctl <start|stop|restart|enable|disable> <instance-id>
+#
+#   unitctl <start|stop|restart|enable|disable> <instance-id>
+#   unitctl apply-upgrade <release-tag>     install a staged, verified binary
+#   unitctl rollback-upgrade                restore the previous binary
+#   unitctl capabilities                    list the verbs this build supports
+#
 # The instance id is validated against the same pattern the manager uses
 # (domain.InstanceIDPattern) so the unit name can never escape valheim@*.service.
+#
+# apply-upgrade is what keeps the manager binary root-owned while still
+# letting the manager upgrade itself: the manager downloads and verifies a
+# release as the valheim user into /var/lib/valheim/staging, and this wrapper
+# checks the staged file against the SHA256SUMS published with that release
+# before copying it into the root-owned bin directory. A local process running
+# as valheim therefore cannot install an arbitrary binary.
 set -euo pipefail
 
-if [[ $# -ne 2 ]]; then
+BIN_DIR=/var/lib/valheim/bin
+STAGING_DIR=/var/lib/valheim/staging
+REPO=jonasthim/valheim-server-ui
+SERVICE_USER=valheim
+
+usage() {
   echo "usage: unitctl <start|stop|restart|enable|disable> <instance-id>" >&2
+  echo "       unitctl apply-upgrade <release-tag> | rollback-upgrade | capabilities" >&2
   exit 2
-fi
+}
 
+[[ $# -ge 1 ]] || usage
 action="$1"
-inst="$2"
-
-if ! [[ "$inst" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]]; then
-  echo "unitctl: invalid instance id" >&2
-  exit 2
-fi
-
-unit="valheim@${inst}.service"
 
 case "$action" in
-  start|stop|restart)
-    exec /bin/systemctl "$action" "$unit"
+  start|stop|restart|enable|disable)
+    [[ $# -eq 2 ]] || usage
+    inst="$2"
+    if ! [[ "$inst" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]]; then
+      echo "unitctl: invalid instance id" >&2
+      exit 2
+    fi
+    exec /usr/bin/systemctl "$action" "valheim@${inst}.service"
     ;;
-  enable|disable)
-    exec /bin/systemctl "$action" "$unit"
+  capabilities)
+    [[ $# -eq 1 ]] || usage
+    echo "apply-upgrade rollback-upgrade"
+    exit 0
+    ;;
+  apply-upgrade)
+    [[ $# -eq 2 ]] || usage
+    tag="$2"
+    ;;
+  rollback-upgrade)
+    [[ $# -eq 1 ]] || usage
     ;;
   *)
     echo "unitctl: action not allowed: $action" >&2
     exit 2
     ;;
 esac
+
+# ---- upgrade verbs (run as root) -------------------------------------------
+
+ensure_bin_dir() {
+  if [[ -L "$BIN_DIR" ]]; then
+    echo "unitctl: $BIN_DIR is a symlink; refusing" >&2
+    exit 1
+  fi
+  install -d -o root -g root -m 0755 "$BIN_DIR"
+  # Older installs left the directory and binary owned by the service user;
+  # take them over so a compromised game process cannot rewrite the manager.
+  chown root:root "$BIN_DIR"
+  chmod 0755 "$BIN_DIR"
+  for f in "$BIN_DIR/valheim-ui" "$BIN_DIR/valheim-ui.prev"; do
+    [[ -f "$f" && ! -L "$f" ]] && chown root:root "$f" && chmod 0755 "$f"
+  done
+  return 0
+}
+
+if [[ "$action" == "rollback-upgrade" ]]; then
+  ensure_bin_dir
+  prev="$BIN_DIR/valheim-ui.prev"
+  cur="$BIN_DIR/valheim-ui"
+  if [[ ! -f "$prev" || -L "$prev" ]]; then
+    echo "unitctl: no previous binary at $prev" >&2
+    exit 1
+  fi
+  rm -f "$cur.rolledback"
+  mv -f "$cur" "$cur.rolledback"
+  if ! mv -f "$prev" "$cur"; then
+    mv -f "$cur.rolledback" "$cur"
+    echo "unitctl: restoring the previous binary failed" >&2
+    exit 1
+  fi
+  rm -f "$cur.rolledback"
+  echo "rolled back to the previous binary"
+  exit 0
+fi
+
+# apply-upgrade <tag>
+if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  echo "unitctl: invalid release tag" >&2
+  exit 2
+fi
+staged="$STAGING_DIR/valheim-ui.new"
+if [[ ! -f "$staged" || -L "$staged" ]]; then
+  echo "unitctl: no staged binary at $staged" >&2
+  exit 1
+fi
+if [[ "$(stat -c %U "$staged")" != "$SERVICE_USER" ]]; then
+  echo "unitctl: staged binary is not owned by $SERVICE_USER" >&2
+  exit 1
+fi
+if [[ "$(head -c 4 "$staged" | od -An -c | tr -d ' ')" != "177ELF" ]]; then
+  echo "unitctl: staged file is not an ELF binary" >&2
+  exit 1
+fi
+
+# The staged file must be byte-identical to the binary published in the
+# release: compare against the SHA256SUMS the release workflow signs off.
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+sums_url="https://github.com/$REPO/releases/download/$tag/SHA256SUMS"
+if ! curl -fsSL --proto '=https' --tlsv1.2 --max-time 60 -o "$tmp/SHA256SUMS" "$sums_url"; then
+  echo "unitctl: could not fetch $sums_url" >&2
+  exit 1
+fi
+expected="$(awk '$2 == "valheim-ui" { print $1 }' "$tmp/SHA256SUMS" | head -n1)"
+if [[ -z "$expected" ]]; then
+  echo "unitctl: release $tag publishes no checksum for the raw binary; it predates privileged upgrades" >&2
+  exit 1
+fi
+actual="$(sha256sum "$staged" | awk '{ print $1 }')"
+if [[ "$expected" != "$actual" ]]; then
+  echo "unitctl: staged binary does not match the checksum published for $tag" >&2
+  exit 1
+fi
+
+ensure_bin_dir
+cur="$BIN_DIR/valheim-ui"
+install -o root -g root -m 0755 "$staged" "$cur.tmp"
+if [[ -f "$cur" ]]; then
+  mv -f "$cur" "$cur.prev"
+fi
+if ! mv -f "$cur.tmp" "$cur"; then
+  [[ -f "$cur.prev" ]] && mv -f "$cur.prev" "$cur"
+  echo "unitctl: installing the new binary failed" >&2
+  exit 1
+fi
+rm -f "$staged"
+echo "installed $tag as $cur (previous kept at $cur.prev)"
 UNITCTL_EOF
 }
 
@@ -135,7 +262,9 @@ sudoers_content() {
   cat <<'SUDOERS_EOF'
 # Installed by deploy/install.sh to /etc/sudoers.d/valheim-ui (mode 0440).
 # Grants the manager exactly one root command; unitctl validates its arguments.
-Defaults:valheim !requiretty
+# env_reset and secure_path are stated explicitly so a site edit of
+# /etc/sudoers can never widen what the wrapper sees.
+Defaults:valheim !requiretty, env_reset, secure_path="/usr/sbin:/usr/bin:/sbin:/bin"
 valheim ALL=(root) NOPASSWD: /usr/local/lib/valheim-ui/unitctl
 SUDOERS_EOF
 }
@@ -166,11 +295,29 @@ ExecStart=/usr/local/bin/valheim-ui serve
 Restart=always
 RestartSec=3
 WorkingDirectory=/var/lib/valheim
-# Hardening. NoNewPrivileges must stay off: the manager calls sudo for unitctl.
+# Hardening. NoNewPrivileges and RestrictSUIDSGID must stay off: the manager
+# calls sudo (setuid) for unitctl. Everything else that does not interfere
+# with sudo is on. /var/lib/valheim/bin is root-owned, so the manager cannot
+# rewrite its own binary; upgrades go through `unitctl apply-upgrade`.
 ProtectSystem=strict
 ReadWritePaths=/var/lib/valheim
 PrivateTmp=true
 ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0027
 LimitNOFILE=65536
 
 [Install]
@@ -214,6 +361,32 @@ Restart=on-failure
 RestartSec=10
 LimitNOFILE=100000
 Nice=-5
+# Hardening. Mods run inside this process as arbitrary code, so the game gets
+# no more of the host than it needs: its own data tree, HOME (also under
+# /var/lib/valheim) and network sockets. NoNewPrivileges blocks sudo from the
+# game process entirely; the manager's unit keeps sudo for unitctl.
+# MemoryDenyWriteExecute is deliberately absent: the Unity/Mono runtime JITs.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/valheim
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target
@@ -264,13 +437,34 @@ resolve_latest_tag() {
   return 1
 }
 
+# Runs the installed binary to print its version. Never as root: on an
+# install that predates root-owned binaries the file is writable by the
+# service user, and a compromised game process must not get a root exec by
+# waiting for an admin to run `install.sh --check`.
 installed_version() {
+  local bin=""
   if [[ -x "$SYMLINK" ]]; then
-    "$SYMLINK" version 2>/dev/null || echo "unknown"
+    bin="$SYMLINK"
   elif [[ -x "$REAL_BIN" ]]; then
-    "$REAL_BIN" version 2>/dev/null || echo "unknown"
+    bin="$REAL_BIN"
   else
     echo "(not installed)"
+    return 0
+  fi
+  if id valheim >/dev/null 2>&1; then
+    run_as_valheim "$bin" version 2>/dev/null || echo "unknown"
+  else
+    echo "unknown"
+  fi
+}
+
+# run_as_valheim CMD... executes CMD as the service user with a clean
+# environment (runuser where available, sudo otherwise).
+run_as_valheim() {
+  if command -v runuser >/dev/null 2>&1; then
+    runuser -u valheim -- "$@"
+  else
+    sudo -u valheim -H -- "$@"
   fi
 }
 
@@ -281,12 +475,33 @@ installed_version() {
 # the file open or execs through the symlink.
 install_binary_files() {
   local src="$1"
+  ensure_bin_dir
   if [[ -f "$REAL_BIN" ]]; then
     cp -f "$REAL_BIN" "$REAL_BIN.prev"
+    chown root:root "$REAL_BIN.prev"
   fi
-  install -o valheim -g valheim -m 0755 "$src" "$REAL_BIN.new"
+  install -o root -g root -m 0755 "$src" "$REAL_BIN.new"
   mv -f "$REAL_BIN.new" "$REAL_BIN"
   ln -sfn "$REAL_BIN" "$SYMLINK"
+}
+
+# ensure_bin_dir makes the binary directory a real, root-owned directory.
+# It refuses a symlink (a service-user process could otherwise redirect
+# root's writes) and takes over an older valheim-owned layout in place.
+ensure_bin_dir() {
+  if [[ -L "$BIN_DIR" ]]; then
+    die "$BIN_DIR is a symlink; refusing to install into it"
+  fi
+  install -d -o root -g root -m 0755 "$BIN_DIR"
+  chown root:root "$BIN_DIR"
+  chmod 0755 "$BIN_DIR"
+  local f
+  for f in "$REAL_BIN" "$REAL_BIN.prev"; do
+    if [[ -f "$f" && ! -L "$f" ]]; then
+      chown root:root "$f"
+      chmod 0755 "$f"
+    fi
+  done
 }
 
 download_and_install_binary() {
@@ -372,6 +587,14 @@ if [[ $CHECK -eq 1 ]]; then
   else
     echo "  - $DATA_DIR: would be created"
   fi
+  if [[ -f "$REAL_BIN" ]]; then
+    owner="$(stat -c %U "$REAL_BIN" 2>/dev/null || echo '?')"
+    if [[ "$owner" == "root" ]]; then
+      echo "  - binary ownership: root (privileged upgrades via unitctl)"
+    else
+      echo "  - binary ownership: $owner -> would move to root:root (see RUNBOOK.md #11)"
+    fi
+  fi
   if diff -q <(unitctl_content) "$LIB_DIR/unitctl" >/dev/null 2>&1; then
     echo "  - unitctl: up to date"
   else
@@ -456,8 +679,8 @@ else
   fi
 fi
 install -d -o valheim -g valheim -m 0750 "$DATA_DIR" "$DATA_DIR/instances" "$DATA_DIR/jobs" \
-  "$DATA_DIR/cache" "$DATA_DIR/steamcmd"
-install -d -o valheim -g valheim -m 0755 "$BIN_DIR"
+  "$DATA_DIR/cache" "$DATA_DIR/steamcmd" "$STAGING_DIR"
+ensure_bin_dir
 install -d -m 0755 "$CONF_DIR" "$LIB_DIR"
 
 log "Installing binary"
@@ -489,14 +712,29 @@ chmod 0644 /etc/systemd/system/valheim-ui.service /etc/systemd/system/valheim@.s
 if [[ ! -f "$CONF_DIR/config.yaml" ]]; then
   log "Writing $CONF_DIR/config.yaml"
   config_example_content | sed "s|^listen: .*|listen: \"$LISTEN\"|" > "$CONF_DIR/config.yaml"
+  if [[ -n "$BASE_URL" ]]; then
+    sed -i "s|^base_url: .*|base_url: \"$BASE_URL\"|" "$CONF_DIR/config.yaml"
+  fi
   chown root:valheim "$CONF_DIR/config.yaml"
   chmod 0640 "$CONF_DIR/config.yaml"
+fi
+if ! grep -Eq '^base_url: *"[^"]+"' "$CONF_DIR/config.yaml" 2>/dev/null; then
+  echo "warning: base_url is empty in $CONF_DIR/config.yaml; set it to the public URL (https://...)" >&2
+  echo "         so single sign-on works and state-changing requests are Origin-checked." >&2
 fi
 
 if [[ ! -x "$DATA_DIR/steamcmd/steamcmd.sh" ]]; then
   log "Installing SteamCMD"
-  curl -fsSL "$STEAMCMD_URL" | tar -xz -C "$DATA_DIR/steamcmd"
-  chown -R valheim:valheim "$DATA_DIR/steamcmd"
+  # Download as root (TLS verified), but unpack as the service user with the
+  # archive's ownership and modes ignored: root must never extract a
+  # third-party tarball into a directory the service user controls.
+  steam_tmp="$(mktemp -d)"
+  curl -fsSL --proto '=https' --tlsv1.2 -o "$steam_tmp/steamcmd_linux.tar.gz" "$STEAMCMD_URL"
+  log "SteamCMD tarball sha256: $(sha256sum "$steam_tmp/steamcmd_linux.tar.gz" | cut -d' ' -f1) (Valve publishes no pinned digest; recorded for your audit trail)"
+  chmod 0644 "$steam_tmp/steamcmd_linux.tar.gz"
+  chown valheim:valheim "$DATA_DIR/steamcmd"
+  run_as_valheim tar -xzf "$steam_tmp/steamcmd_linux.tar.gz" -C "$DATA_DIR/steamcmd" --no-same-owner --no-same-permissions
+  rm -rf "$steam_tmp"
   log "Running SteamCMD self-update (this takes a minute)"
   sudo -u valheim -H "$DATA_DIR/steamcmd/steamcmd.sh" +quit >/dev/null 2>&1 \
     || echo "warning: steamcmd self-update reported an error; it usually works on the next run" >&2

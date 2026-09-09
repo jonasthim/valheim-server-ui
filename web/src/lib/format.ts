@@ -3,6 +3,14 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 
 dayjs.extend(relativeTime)
 
+/**
+ * Only http(s) URLs may become hrefs. Third-party data (Thunderstore, GitHub
+ * release metadata) never gets to inject another scheme.
+ */
+export function safeHref(u: string | undefined | null): string | undefined {
+  return u && /^https?:\/\//i.test(u) ? u : undefined
+}
+
 /** "12%" / "0.4%"; undefined renders as a dash. */
 export function fmtPercent(n: number | undefined | null): string {
   if (n === undefined || n === null || Number.isNaN(n)) return '—'

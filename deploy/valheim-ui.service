@@ -22,11 +22,29 @@ ExecStart=/usr/local/bin/valheim-ui serve
 Restart=always
 RestartSec=3
 WorkingDirectory=/var/lib/valheim
-# Hardening. NoNewPrivileges must stay off: the manager calls sudo for unitctl.
+# Hardening. NoNewPrivileges and RestrictSUIDSGID must stay off: the manager
+# calls sudo (setuid) for unitctl. Everything else that does not interfere
+# with sudo is on. /var/lib/valheim/bin is root-owned, so the manager cannot
+# rewrite its own binary; upgrades go through `unitctl apply-upgrade`.
 ProtectSystem=strict
 ReadWritePaths=/var/lib/valheim
 PrivateTmp=true
 ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallArchitectures=native
+UMask=0027
 LimitNOFILE=65536
 
 [Install]

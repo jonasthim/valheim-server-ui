@@ -458,27 +458,32 @@ URL above always serves a working, current installer.
 depends on it — see §6 and RUNBOOK.md §11):
 
 ```
-/var/lib/valheim/bin/                 owned valheim:valheim, mode 0755
-├── valheim-ui                        the real binary, owned valheim:valheim, mode 0755
+/var/lib/valheim/bin/                 owned root:root, mode 0755
+├── valheim-ui                        the real binary, owned root:root, mode 0755
 └── valheim-ui.prev                   previous binary, kept for rollback (upgrades only)
+/var/lib/valheim/staging/             owned valheim:valheim, mode 0750
+├── valheim-ui.new                    a verified download waiting for unitctl apply-upgrade
+└── prev.version                      version the last upgrade replaced (for the UI)
 /usr/local/bin/valheim-ui             symlink -> /var/lib/valheim/bin/valheim-ui
 ```
 
-The real binary lives under `/var/lib/valheim`, owned by the unprivileged
-`valheim` user that runs the manager, specifically so the manager can replace
-its own executable (self-upgrade: download release + verify SHA256SUMS + swap
-the binary via `install`+`rename` + exit) without needing write access to
-root-owned `/usr/local/bin`. `/usr/local/bin/valheim-ui` — a plain symlink — is
-what `ExecStart=`, `sudo -u valheim ... valheim-ui ...` and everything in
-RUNBOOK.md actually invoke; `install.sh` creates and refreshes it on every
-install/upgrade with `ln -sfn`.
+The binary is root-owned so that neither the manager nor a game process
+(mods run in it as the same `valheim` user) can rewrite it. Self-upgrade
+therefore has two halves: the manager downloads, verifies and stages a release
+as `valheim`, and `unitctl apply-upgrade <tag>` (the sudo wrapper, root)
+re-verifies the staged file against the digest published in that release's
+`SHA256SUMS` before swapping it in. `/usr/local/bin/valheim-ui` — a plain
+symlink — is what `ExecStart=`, `sudo -u valheim ... valheim-ui ...` and
+everything in RUNBOOK.md actually invoke; `install.sh` creates and refreshes it
+on every install/upgrade with `ln -sfn`. Root never executes the managed binary
+(the installer runs it as `valheim` to read its version).
 
 `deploy/install.sh` (run as root on Debian 12+/Ubuntu 22.04+, x86_64):
 
 1. `apt-get install` runtime deps: `lib32gcc-s1 lib32stdc++6 libsdl2-2.0-0 libpulse0 libatomic1 ca-certificates curl tar unzip sudo`
    (skippable with `--skip-deps`).
 2. Create system user `valheim` (home `/var/lib/valheim`, nologin), directory tree (§3),
-   plus `/var/lib/valheim/bin` (0755).
+   plus root-owned `/var/lib/valheim/bin` (0755) and `valheim`-owned `staging/` (0750).
 3. Install the `valheim-ui` binary into the layout above: from a downloaded and
    checksum-verified GitHub release asset (default: latest, or `--version
    vX.Y.Z`; resolved via the redirect of `.../releases/latest`, falling back to

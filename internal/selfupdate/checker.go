@@ -22,6 +22,9 @@ type UpgradeFunc func(ctx context.Context, version string) error
 // version seen, and optionally triggers an automatic upgrade. See
 // docs/ARCHITECTURE.md §9/§16.
 type Checker struct {
+	stagingDir string
+	privileged func() bool
+
 	client         *Client
 	currentVersion string
 	exePath        string
@@ -66,9 +69,9 @@ func New(
 		log:            log,
 		notified:       map[string]bool{},
 	}
-	c.mu.Lock()
+	// freshInfo takes c.mu itself (via installMode), so it must not run
+	// under the lock; nothing else can observe c before New returns.
 	c.info = c.freshInfo(nil)
-	c.mu.Unlock()
 	return c
 }
 
@@ -187,20 +190,20 @@ func (c *Checker) Info() *domain.AppUpdateInfo {
 	// Recompute the self-upgrade verdict fresh, keep the rest of the last
 	// known release info as-is.
 	cp := *prev
-	cp.CanSelfUpgrade, cp.Reason = canSelfUpgrade(c.exePath, c.currentVersion)
-	cp.PreviousVersion = readPrevVersion(c.exePath)
+	cp.CanSelfUpgrade, cp.Reason = c.canSelf()
+	cp.PreviousVersion = c.prevVersion()
 	return &cp
 }
 
 // freshInfo builds an AppUpdateInfo from rel (nil meaning "no release yet"
 // or "not checked yet"), always filling CurrentVersion/CanSelfUpgrade/Reason.
 func (c *Checker) freshInfo(rel *Release) *domain.AppUpdateInfo {
-	canSelf, reason := canSelfUpgrade(c.exePath, c.currentVersion)
+	canSelf, reason := c.canSelf()
 	info := &domain.AppUpdateInfo{
 		CurrentVersion:  c.currentVersion,
 		CanSelfUpgrade:  canSelf,
 		Reason:          reason,
-		PreviousVersion: readPrevVersion(c.exePath),
+		PreviousVersion: c.prevVersion(),
 	}
 	now := time.Now().UTC()
 	info.CheckedAt = &now
@@ -215,7 +218,7 @@ func (c *Checker) freshInfo(rel *Release) *domain.AppUpdateInfo {
 		info.LatestVersion = rel.Tag
 		info.UpdateAvailable = c.currentVersion != "dev" && Compare(rel.Tag, c.currentVersion) > 0
 		info.ReleaseURL = rel.HTMLURL
-		info.ReleaseNotes = rel.Body
+		info.ReleaseNotes = truncateNotes(rel.Body, maxReleaseNotesBytes)
 		if !rel.PublishedAt.IsZero() {
 			pub := rel.PublishedAt
 			info.PublishedAt = &pub
@@ -228,6 +231,13 @@ func (c *Checker) freshInfo(rel *Release) *domain.AppUpdateInfo {
 // version must not be "dev"/empty, exePath must resolve (through symlinks)
 // to a regular file, and its directory must be writable by this process.
 func canSelfUpgrade(exePath, version string) (ok bool, reason string) {
+	return canSelfUpgradeWith(exePath, version, "", false)
+}
+
+// canSelfUpgradeWith is canSelfUpgrade for a given install mode: in
+// privileged mode only the staging directory has to be writable (root's
+// unitctl installs the binary); otherwise the binary's own directory must be.
+func canSelfUpgradeWith(exePath, version, stagingDir string, privileged bool) (ok bool, reason string) {
 	if version == "" || version == "dev" {
 		return false, "development build"
 	}
@@ -239,11 +249,46 @@ func canSelfUpgrade(exePath, version string) (ok bool, reason string) {
 	if err != nil || !fi.Mode().IsRegular() {
 		return false, "release asset missing"
 	}
+	if privileged {
+		if stagingDir == "" {
+			return false, "no staging directory configured"
+		}
+		if err := os.MkdirAll(stagingDir, 0o750); err != nil || !dirWritable(stagingDir) {
+			return false, "staging directory not writable: " + stagingDir
+		}
+		return true, ""
+	}
 	dir := filepath.Dir(real)
 	if !dirWritable(dir) {
-		return false, "binary directory not writable: " + dir
+		return false, "binary directory not writable: " + dir + " (re-run install.sh to enable upgrades through unitctl)"
 	}
 	return true, ""
+}
+
+// SetInstallMode tells the checker where staged downloads live and whether
+// the root-side wrapper performs the install (see Upgrader.SetPrivileged).
+func (c *Checker) SetInstallMode(stagingDir string, privileged func() bool) {
+	c.mu.Lock()
+	c.stagingDir = stagingDir
+	c.privileged = privileged
+	c.mu.Unlock()
+}
+
+func (c *Checker) installMode() (string, bool) {
+	c.mu.Lock()
+	dir, p := c.stagingDir, c.privileged
+	c.mu.Unlock()
+	return dir, p != nil && p()
+}
+
+func (c *Checker) canSelf() (bool, string) {
+	dir, privileged := c.installMode()
+	return canSelfUpgradeWith(c.exePath, c.currentVersion, dir, privileged)
+}
+
+func (c *Checker) prevVersion() string {
+	dir, _ := c.installMode()
+	return readPrevVersion(c.exePath, dir)
 }
 
 // dirWritable reports whether this process can create files in dir. It
@@ -264,7 +309,12 @@ func dirWritable(dir string) bool {
 // readPrevVersion returns the version recorded by Upgrader.Apply at
 // "<exePath>.prev.version", or "" if there is none (never upgraded, or the
 // rollback marker was already cleaned up).
-func readPrevVersion(exePath string) string {
+func readPrevVersion(exePath, stagingDir string) string {
+	if stagingDir != "" {
+		if b, err := os.ReadFile(filepath.Join(stagingDir, prevVersionFile)); err == nil {
+			return strings.TrimSpace(string(b))
+		}
+	}
 	real, err := filepath.EvalSymlinks(exePath)
 	if err != nil {
 		real = exePath
@@ -274,4 +324,15 @@ func readPrevVersion(exePath string) string {
 		return ""
 	}
 	return strings.TrimSpace(string(b))
+}
+
+// maxReleaseNotesBytes bounds the release notes carried in every /system
+// response.
+const maxReleaseNotesBytes = 32 << 10
+
+func truncateNotes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "\n…"
 }

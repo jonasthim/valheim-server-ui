@@ -32,8 +32,8 @@ func searchPackagesHandler(d *Deps) http.HandlerFunc {
 		page := 1
 		if v := q.Get("page"); v != "" {
 			n, err := strconv.Atoi(v)
-			if err != nil || n < 1 {
-				WriteValidation(w, domain.FieldError{Field: "page", Message: "must be a positive integer"})
+			if err != nil || n < 1 || n > 1_000_000 {
+				WriteValidation(w, domain.FieldError{Field: "page", Message: "must be a positive integer up to 1000000"})
 				return
 			}
 			page = n

@@ -87,6 +87,7 @@ type Deps struct {
 func NewRouter(d *Deps, spa http.Handler) http.Handler {
 	r := chi.NewRouter()
 	r.Use(realIP)
+	r.Use(securityHeaders)
 	r.Use(middleware.RequestID)
 	r.Use(requestLogger(d.Log))
 	r.Use(middleware.Recoverer)
@@ -148,12 +149,14 @@ func realIP(next http.Handler) http.Handler {
 			host = h
 		}
 		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-			fwd := r.Header.Get("X-Real-IP")
-			if fwd == "" {
-				if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-					parts := strings.Split(xff, ",")
-					fwd = strings.TrimSpace(parts[len(parts)-1])
-				}
+			// Only the last X-Forwarded-For element is trusted: it is the one
+			// the loopback proxy itself appended. X-Real-IP is deliberately
+			// ignored because not every documented proxy overwrites it, and a
+			// client-supplied value would end up in the audit log.
+			fwd := ""
+			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+				parts := strings.Split(xff, ",")
+				fwd = strings.TrimSpace(parts[len(parts)-1])
 			}
 			if fwd != "" && net.ParseIP(fwd) != nil {
 				r.RemoteAddr = net.JoinHostPort(fwd, "0")
@@ -179,4 +182,22 @@ func requestLogger(log *slog.Logger) func(http.Handler) http.Handler {
 				"bytes", ww.BytesWritten(), "dur", time.Since(start).Round(time.Millisecond), "ip", r.RemoteAddr)
 		})
 	}
+}
+
+// securityHeaders adds defence-in-depth response headers. The CSP allows
+// inline styles (Mantine sets style attributes) and https images (Thunderstore
+// icons); scripts, connections and frames are same-origin only.
+func securityHeaders(next http.Handler) http.Handler {
+	const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; " +
+		"frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		h.Set("Content-Security-Policy", csp)
+		next.ServeHTTP(w, r)
+	})
 }

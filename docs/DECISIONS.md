@@ -95,3 +95,26 @@ Update endpoints record `details.changes` (path, from, to) computed from the JSO
 object before and after the change, with secrets masked. Rationale: an audit log that stores
 whole objects cannot answer "what did this edit change?", which is the question operators ask.
 
+## ADR-018 The manager binary is root-owned; upgrades go through the sudo wrapper
+Mods run inside the game process as the same `valheim` user as the manager, so a
+`valheim`-writable manager binary let a malicious mod replace the administrative UI and
+persist across reboots and upgrades. `/var/lib/valheim/bin` is now root-owned; the manager
+stages a verified download in `/var/lib/valheim/staging` and `unitctl apply-upgrade <tag>`
+re-verifies it against the digest published in the release's `SHA256SUMS` before installing
+it. The one-command upgrade story is unchanged; a local compromise can no longer install an
+unpublished binary. Root never executes the managed binary (the installer reads its version
+as `valheim`). Installs that predate the layout keep working in the old mode until the
+installer is re-run.
+
+## ADR-019 Game units are sandboxed; the manager unit keeps only sudo
+`valheim@.service` runs with `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`,
+`PrivateTmp`, an empty capability set, address-family and namespace restrictions and
+`UMask=0027`: a mod gets the instance tree, HOME and network sockets, nothing else, and
+cannot call sudo. `valheim-ui.service` gets the same set minus `NoNewPrivileges` and
+`RestrictSUIDSGID`, which the setuid `sudo` used for `unitctl` needs. `SystemCallFilter`
+and `MemoryDenyWriteExecute` are deliberately left out: the Unity/Mono runtime JITs and
+the syscall surface of the game is not something this project can vouch for.
+
+## ADR-020 Security review findings are tracked in docs/SECURITY.md
+Every finding from the September 2026 review, its severity, status and the accepted
+residual risks live in one document so the next review starts from the last one.

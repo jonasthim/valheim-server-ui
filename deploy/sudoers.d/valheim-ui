@@ -1,4 +1,6 @@
 # Installed by deploy/install.sh to /etc/sudoers.d/valheim-ui (mode 0440).
 # Grants the manager exactly one root command; unitctl validates its arguments.
-Defaults:valheim !requiretty
+# env_reset and secure_path are stated explicitly so a site edit of
+# /etc/sudoers can never widen what the wrapper sees.
+Defaults:valheim !requiretty, env_reset, secure_path="/usr/sbin:/usr/bin:/sbin:/bin"
 valheim ALL=(root) NOPASSWD: /usr/local/lib/valheim-ui/unitctl

@@ -53,6 +53,7 @@ type UserService interface {
 	Delete(ctx context.Context, id int64) error
 	SetPassword(ctx context.Context, id int64, newPassword string) error
 	ChangePassword(ctx context.Context, id int64, current, newPassword string) error
+	ChangePasswordFromRequest(ctx context.Context, r *http.Request, id int64, current, newPassword string) error
 	Count(ctx context.Context) (int, error)
 }
 

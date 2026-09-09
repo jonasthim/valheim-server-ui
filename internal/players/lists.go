@@ -123,6 +123,14 @@ func validateEntries(entries []domain.PlayerListEntry) error {
 			})
 		}
 		seen[e.ID] = true
+		// The comment is written verbatim after "//" on the same line; a
+		// newline would inject extra entries into the list file.
+		if strings.ContainsAny(e.Comment, "\r\n\x00") || len(e.Comment) > 200 {
+			fields = append(fields, domain.FieldError{
+				Field:   fmt.Sprintf("entries[%d].comment", i),
+				Message: "must be a single line of at most 200 characters",
+			})
+		}
 	}
 	return domain.Validation(fields)
 }

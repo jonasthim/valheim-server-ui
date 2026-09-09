@@ -3,6 +3,7 @@ package mods
 import (
 	"archive/zip"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -156,6 +157,9 @@ func extractPackage(zipPath, serverDir, owner, name string) ([]string, error) {
 		return nil, fmt.Errorf("open package zip: %w", err)
 	}
 	defer func() { _ = r.Close() }()
+	if err := checkArchiveBudget(r.File, maxPackageUncompressedBytes); err != nil {
+		return nil, err
+	}
 
 	names := make([]string, 0, len(r.File))
 	cleaned := make(map[string]string, len(r.File)) // original -> cleaned
@@ -217,9 +221,11 @@ func extractOne(f *zip.File, destAbs string) error {
 	}
 	defer func() { _ = rc.Close() }()
 
-	perm := f.Mode().Perm()
-	if perm == 0 {
-		perm = 0o640
+	// Never trust archive modes beyond "executable or not": no setuid bits,
+	// nothing group- or world-writable.
+	perm := os.FileMode(0o640)
+	if f.Mode().Perm()&0o100 != 0 {
+		perm = 0o750
 	}
 	out, err := os.OpenFile(destAbs, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, perm) //nolint:gosec // destAbs is validated against zip-slip and joined under the instance server dir
 	if err != nil {
@@ -227,8 +233,41 @@ func extractOne(f *zip.File, destAbs string) error {
 	}
 	defer func() { _ = out.Close() }()
 
-	if _, err := io.Copy(out, rc); err != nil { //nolint:gosec // package zips come from the Thunderstore CDN or an operator upload, size is bounded by the caller
+	// A zip entry's real size is unknown until inflated: bound it by the size
+	// the header declares (plus one byte to detect a lie) so a small archive
+	// cannot expand into an unbounded write.
+	if err := copyDeclared(out, rc, f.UncompressedSize64); err != nil {
+		return fmt.Errorf("%s: %w", f.Name, err)
+	}
+	return nil
+}
+
+// maxPackageUncompressedBytes caps the total declared size of one package.
+const maxPackageUncompressedBytes = 2 << 30
+
+// checkArchiveBudget rejects archives whose declared uncompressed total
+// exceeds the budget before anything is written.
+func checkArchiveBudget(files []*zip.File, budget uint64) error {
+	var total uint64
+	for _, f := range files {
+		total += f.UncompressedSize64
+		if total > budget {
+			return domain.Ef(domain.CodeValidationFailed, "archive expands to more than %d bytes", budget)
+		}
+	}
+	return nil
+}
+
+// copyDeclared copies at most declared bytes from src and fails if src holds
+// more, which means the zip header lied about the entry's size.
+func copyDeclared(dst io.Writer, src io.Reader, declared uint64) error {
+	limit := int64(declared) //nolint:gosec // declared comes from a zip header; values past int64 are rejected by the budget check
+	n, err := io.Copy(dst, io.LimitReader(src, limit+1))
+	if err != nil {
 		return err
+	}
+	if n > limit {
+		return errors.New("entry larger than its declared size")
 	}
 	return nil
 }
@@ -359,6 +398,9 @@ func readManifest(zipPath string) (manifestFile, error) {
 		return manifestFile{}, fmt.Errorf("open upload zip: %w", err)
 	}
 	defer func() { _ = r.Close() }()
+	if err := checkArchiveBudget(r.File, maxPackageUncompressedBytes); err != nil {
+		return manifestFile{}, err
+	}
 
 	names := make([]string, 0, len(r.File))
 	for _, f := range r.File {

@@ -2,6 +2,7 @@
 // actions, and a dependency count popover. Disabled with a call-to-action
 // when BepInEx itself is not installed yet.
 import { useState } from 'react'
+import { safeHref } from '../../lib/format'
 import {
   ActionIcon,
   Alert,
@@ -149,7 +150,7 @@ export function InstalledModsTable({ id }: { id: string }) {
                             {mod.name}
                           </Text>
                           {mod.website_url && (
-                            <Anchor href={mod.website_url} target="_blank" rel="noreferrer" size="xs">
+                            <Anchor href={safeHref(mod.website_url)} target="_blank" rel="noreferrer" size="xs">
                               <IconExternalLink size={12} />
                             </Anchor>
                           )}

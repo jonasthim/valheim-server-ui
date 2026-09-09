@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -184,21 +185,41 @@ func (s *Service) Login(ctx context.Context, w http.ResponseWriter, r *http.Requ
 		return nil, domain.E(domain.CodeForbidden, "local login is disabled")
 	}
 	username = strings.ToLower(strings.TrimSpace(username))
+	const invalid = "invalid username or password"
+	// Usernames are at most 32 characters (validate.go); anything longer can
+	// never match and is refused before it reaches the lockout table or the
+	// audit log, so an unauthenticated caller cannot grow either with junk.
+	if len(username) > maxUsernameLen {
+		return nil, domain.E(domain.CodeInvalidCredentials, invalid)
+	}
+	ip := remoteIP(r)
+	if locked, until := s.lockout.LockedIP(ip); locked {
+		return nil, domain.Ef(domain.CodeAccountLocked, "too many failed attempts; locked until %s", until.UTC().Format(time.RFC3339))
+	}
 	if locked, until := s.lockout.Locked(username); locked {
 		return nil, domain.Ef(domain.CodeAccountLocked, "too many failed attempts; locked until %s", until.UTC().Format(time.RFC3339))
 	}
-	const invalid = "invalid username or password"
 	usr, err := s.users.GetByUsername(ctx, username)
 	if err != nil {
-		s.lockout.RecordFailure(username)
+		// Spend the same argon2id work as a real check so the response time
+		// does not reveal whether the username exists.
+		_ = VerifyPassword(timingEqualiserHash, password)
+		s.lockout.RecordFailure(username, ip)
 		return nil, domain.E(domain.CodeInvalidCredentials, invalid)
 	}
+	if !usr.HasPassword {
+		_ = VerifyPassword(timingEqualiserHash, password)
+		s.lockout.RecordFailure(username, ip)
+		return nil, domain.E(domain.CodeInvalidCredentials, invalid)
+	}
+	if !VerifyPassword(usr.PasswordHash, password) {
+		s.lockout.RecordFailure(username, ip)
+		return nil, domain.E(domain.CodeInvalidCredentials, invalid)
+	}
+	// Only a caller holding the correct password learns that the account is
+	// disabled; a wrong password answers exactly like an unknown user.
 	if usr.Disabled {
 		return nil, domain.E(domain.CodeAccountDisabled, "account disabled")
-	}
-	if !usr.HasPassword || !VerifyPassword(usr.PasswordHash, password) {
-		s.lockout.RecordFailure(username)
-		return nil, domain.E(domain.CodeInvalidCredentials, invalid)
 	}
 	s.lockout.Reset(username)
 	if err := s.createSession(ctx, w, r, usr); err != nil {
@@ -329,6 +350,8 @@ func errSSOManaged() error {
 	return domain.E(domain.CodeConflict, "this account signs in through single sign-on; its password is managed by the identity provider")
 }
 
+// SetPassword is the administrative reset. Every session of the user is
+// revoked: a stolen session must not survive the credential being replaced.
 func (s *Service) SetPassword(ctx context.Context, id int64, newPassword string) error {
 	usr, err := s.users.Get(ctx, id)
 	if err != nil {
@@ -344,10 +367,30 @@ func (s *Service) SetPassword(ctx context.Context, id int64, newPassword string)
 	if err != nil {
 		return err
 	}
-	return s.users.SetPasswordHash(ctx, id, &h)
+	if err := s.users.SetPasswordHash(ctx, id, &h); err != nil {
+		return err
+	}
+	s.lockout.Reset(usr.Username)
+	return s.sessions.DeleteByUserExcept(ctx, id, "")
 }
 
+// ChangePassword is the self-service change. All other sessions of the user
+// are revoked; keepSessionID (the caller's own session id, or "" to revoke
+// everything) stays valid so the user is not logged out of the tab they are
+// using.
 func (s *Service) ChangePassword(ctx context.Context, id int64, current, newPassword string) error {
+	return s.ChangePasswordKeepingSession(ctx, id, current, newPassword, "")
+}
+
+// ChangePasswordFromRequest is ChangePassword that keeps the session the
+// request carries (the tab performing the change) and revokes all others.
+func (s *Service) ChangePasswordFromRequest(ctx context.Context, r *http.Request, id int64, current, newPassword string) error {
+	return s.ChangePasswordKeepingSession(ctx, id, current, newPassword, SessionIDFromRequest(r))
+}
+
+// ChangePasswordKeepingSession is ChangePassword with an explicit session to
+// preserve; see ChangePassword.
+func (s *Service) ChangePasswordKeepingSession(ctx context.Context, id int64, current, newPassword, keepSessionID string) error {
 	usr, err := s.users.Get(ctx, id)
 	if err != nil {
 		return err
@@ -368,5 +411,49 @@ func (s *Service) ChangePassword(ctx context.Context, id int64, current, newPass
 	if err != nil {
 		return err
 	}
-	return s.users.SetPasswordHash(ctx, id, &h)
+	if err := s.users.SetPasswordHash(ctx, id, &h); err != nil {
+		return err
+	}
+	return s.sessions.DeleteByUserExcept(ctx, id, keepSessionID)
+}
+
+// SessionIDFromRequest returns the hashed id of the session the request
+// carries, or "" when it has none. Handlers pass it to
+// ChangePasswordKeepingSession.
+func SessionIDFromRequest(r *http.Request) string {
+	cookie, err := r.Cookie(CookieName)
+	if err != nil || cookie.Value == "" {
+		return ""
+	}
+	return HashToken(cookie.Value)
+}
+
+// remoteIP is the client address after the router's realIP middleware has
+// rewritten RemoteAddr (loopback proxies only), without the port.
+func remoteIP(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return strings.Trim(host, "[]")
+}
+
+// maxUsernameLen mirrors validate.go's upper bound.
+const maxUsernameLen = 32
+
+// timingEqualiserHash is a real argon2id hash of a throwaway secret, verified
+// against on the "no such user" path so both branches of Login cost the same.
+var timingEqualiserHash = mustHash("timing-equaliser-not-a-real-password")
+
+func mustHash(pw string) string {
+	h, err := HashPassword(pw)
+	if err != nil {
+		// HashPassword only fails when crypto/rand does; nothing sensible can
+		// run without it, and the value is used only to burn CPU time.
+		return ""
+	}
+	return h
 }

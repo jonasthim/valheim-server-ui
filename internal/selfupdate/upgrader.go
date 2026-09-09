@@ -46,6 +46,18 @@ type Upgrader struct {
 	path    string // real path to the binary this process is running from
 	version string // this process's own version, recorded for rollback
 	http    *http.Client
+
+	// stagingDir is where downloads are verified. In privileged mode it is
+	// the directory unitctl reads the staged binary from; otherwise a temp
+	// dir next to the binary is used.
+	stagingDir string
+	// privileged reports whether the root-side sudo wrapper installs the
+	// binary (root-owned bin directory). When false the Upgrader renames the
+	// binary into place itself (development layouts, older installs).
+	privileged  func() bool
+	unitctlPath string
+	// runUnitctl executes the wrapper; tests inject a fake.
+	runUnitctl func(ctx context.Context, args ...string) ([]byte, error)
 }
 
 // NewUpgrader builds an Upgrader for the binary at path (already resolved
@@ -54,7 +66,42 @@ func NewUpgrader(path, currentVersion string, hc *http.Client) *Upgrader {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
-	return &Upgrader{path: path, version: currentVersion, http: hc}
+	return &Upgrader{path: path, version: currentVersion, http: hc, privileged: func() bool { return false }}
+}
+
+// SetStagingDir chooses where verified downloads wait. It is required for
+// privileged mode (unitctl reads <stagingDir>/valheim-ui.new) and optional
+// otherwise.
+func (u *Upgrader) SetStagingDir(dir string) { u.stagingDir = dir }
+
+// SetPrivileged switches the install step to `sudo -n unitctl apply-upgrade
+// <tag>` whenever enabled() reports true (see NewPrivilegedProbe).
+func (u *Upgrader) SetPrivileged(unitctlPath string, enabled func() bool) {
+	u.unitctlPath = unitctlPath
+	if enabled != nil {
+		u.privileged = enabled
+	}
+}
+
+// Privileged reports whether the next Apply would go through unitctl.
+func (u *Upgrader) Privileged() bool { return u.privileged != nil && u.privileged() }
+
+// stagedBinaryName and prevVersionFile are the fixed names unitctl and the
+// checker agree on inside the staging directory.
+const (
+	stagedBinaryName = "valheim-ui.new"
+	prevVersionFile  = "prev.version"
+	unitctlTimeout   = 3 * time.Minute
+)
+
+func (u *Upgrader) unitctl(ctx context.Context, args ...string) ([]byte, error) {
+	if u.runUnitctl != nil {
+		return u.runUnitctl(ctx, args...)
+	}
+	ctx, cancel := context.WithTimeout(ctx, unitctlTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/usr/bin/sudo", append([]string{"-n", u.unitctlPath}, args...)...) //nolint:gosec // fixed sudo path, fixed wrapper path from config, validated args
+	return cmd.CombinedOutput()
 }
 
 // Apply downloads rel's tarball and checksum file, verifies the tarball's
@@ -73,10 +120,19 @@ func (u *Upgrader) Apply(ctx context.Context, rel *Release, log io.Writer) (prev
 		log = io.Discard
 	}
 
-	dir := filepath.Dir(u.path)
-	tmpDir, err := os.MkdirTemp(dir, ".valheim-ui-upgrade-*")
+	privileged := u.Privileged()
+	workDir := filepath.Dir(u.path)
+	if u.stagingDir != "" {
+		if err := os.MkdirAll(u.stagingDir, 0o750); err != nil {
+			return "", fmt.Errorf("selfupdate: create staging dir %s: %w", u.stagingDir, err)
+		}
+		workDir = u.stagingDir
+	} else if privileged {
+		return "", errors.New("selfupdate: privileged mode needs a staging directory")
+	}
+	tmpDir, err := os.MkdirTemp(workDir, ".valheim-ui-upgrade-*")
 	if err != nil {
-		return "", fmt.Errorf("selfupdate: create staging dir next to %s: %w", u.path, err)
+		return "", fmt.Errorf("selfupdate: create staging dir in %s: %w", workDir, err)
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
@@ -112,6 +168,30 @@ func (u *Upgrader) Apply(ctx context.Context, rel *Release, log io.Writer) (prev
 	}
 
 	prevPath = u.path + ".prev"
+	if privileged {
+		// Hand the verified file to the root-side wrapper, which re-checks it
+		// against the release's published checksum and swaps it into the
+		// root-owned bin directory.
+		staged := filepath.Join(u.stagingDir, stagedBinaryName)
+		if err := os.Rename(newPath, staged); err != nil {
+			return "", fmt.Errorf("selfupdate: stage new binary: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(u.stagingDir, prevVersionFile), []byte(u.version), 0o644); err != nil { //nolint:gosec // not a secret
+			_, _ = fmt.Fprintf(log, "warning: could not record previous version: %v\n", err)
+		}
+		_, _ = fmt.Fprintf(log, "installing %s through unitctl apply-upgrade (previous binary kept at %s)\n", rel.Tag, prevPath)
+		out, err := u.unitctl(ctx, "apply-upgrade", rel.Tag)
+		if msg := strings.TrimSpace(string(out)); msg != "" {
+			_, _ = fmt.Fprintln(log, msg)
+		}
+		if err != nil {
+			_ = os.Remove(staged)
+			_ = os.Remove(filepath.Join(u.stagingDir, prevVersionFile))
+			return "", fmt.Errorf("selfupdate: unitctl apply-upgrade: %w", err)
+		}
+		_, _ = fmt.Fprintf(log, "upgrade to %s installed\n", rel.Tag)
+		return prevPath, nil
+	}
 	_, _ = fmt.Fprintf(log, "installing %s (previous binary kept at %s)\n", rel.Tag, prevPath)
 	if err := os.Rename(u.path, prevPath); err != nil {
 		return "", fmt.Errorf("selfupdate: move current binary to %s: %w", prevPath, err)
@@ -138,6 +218,16 @@ func (u *Upgrader) Apply(ctx context.Context, rel *Release, log io.Writer) (prev
 // "<path>.rolledback" until the swap succeeds, in case the rename back
 // fails partway through.
 func (u *Upgrader) Rollback() error {
+	if u.Privileged() {
+		out, err := u.unitctl(context.Background(), "rollback-upgrade")
+		if err != nil {
+			return fmt.Errorf("selfupdate: unitctl rollback-upgrade: %w (%s)", err, strings.TrimSpace(string(out)))
+		}
+		if u.stagingDir != "" {
+			_ = os.Remove(filepath.Join(u.stagingDir, prevVersionFile))
+		}
+		return nil
+	}
 	prevPath := u.path + ".prev"
 	fi, err := os.Stat(prevPath)
 	if err != nil {

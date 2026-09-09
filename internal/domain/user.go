@@ -75,7 +75,11 @@ type OIDCSettings struct {
 	DefaultRole     string          `json:"default_role"` // viewer|operator|admin|deny
 	AutoCreateUsers bool            `json:"auto_create_users"`
 	SyncRoles       bool            `json:"sync_roles"`
-	RedirectURI     string          `json:"redirect_uri,omitempty"` // computed, read-only
+	// LinkUnverifiedEmail lets a login whose token carries no email_verified
+	// claim be linked to an existing local account with the same email.
+	// Off by default; never applies to administrator accounts.
+	LinkUnverifiedEmail bool   `json:"link_unverified_email"`
+	RedirectURI         string `json:"redirect_uri,omitempty"` // computed, read-only
 }
 
 // Settings is the single-row settings document.

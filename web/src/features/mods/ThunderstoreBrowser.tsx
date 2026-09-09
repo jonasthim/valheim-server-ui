@@ -29,7 +29,7 @@ import { useDebouncedValue } from '@mantine/hooks'
 import { IconDatabase, IconExternalLink, IconRefresh, IconSearch } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { useJobDrawer } from '../jobs'
-import { fmtAgo } from '../../lib/format'
+import { fmtAgo, safeHref } from '../../lib/format'
 import type { Mod, PackageSummary } from '../../api/types'
 import { EmptyState } from '../../ui'
 import { findInstalledMod, SORT_OPTIONS } from './helpers'
@@ -240,7 +240,7 @@ function PackageCard({
               by {pkg.owner}
             </Text>
             {pkg.package_url && (
-              <Anchor href={pkg.package_url} target="_blank" rel="noreferrer" size="xs">
+              <Anchor href={safeHref(pkg.package_url)} target="_blank" rel="noreferrer" size="xs">
                 <Group gap={2} wrap="nowrap">
                   Thunderstore <IconExternalLink size={10} />
                 </Group>

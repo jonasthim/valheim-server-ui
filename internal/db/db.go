@@ -37,6 +37,14 @@ func Open(ctx context.Context, path string) (*sql.DB, error) {
 		_ = sqldb.Close()
 		return nil, err
 	}
+	// The database holds password hashes, session ids and the plaintext
+	// secrets the manager needs at runtime: owner-only, whatever the umask.
+	for _, suffix := range []string{"", "-wal", "-shm"} {
+		if err := os.Chmod(path+suffix, 0o600); err != nil && !os.IsNotExist(err) {
+			_ = sqldb.Close()
+			return nil, fmt.Errorf("restrict permissions on %s: %w", path+suffix, err)
+		}
+	}
 	return sqldb, nil
 }
 

@@ -109,25 +109,22 @@ func TestSerialPerInstanceParallelAcrossInstances(t *testing.T) {
 		t.Fatalf("enqueue b1: %v", err)
 	}
 
-	// a1 starts immediately.
-	select {
-	case name := <-started:
-		if name != "a1" {
-			t.Fatalf("expected a1 to start first, got %s", name)
+	// a1 and b1 sit on independent instance queues, so both start right away
+	// (in either order); a2 must not, because it is serialised behind a1.
+	first := map[string]bool{}
+	for len(first) < 2 {
+		select {
+		case name := <-started:
+			if name == "a2" {
+				t.Fatalf("a2 must wait for a1 to finish, but it started")
+			}
+			first[name] = true
+		case <-time.After(2 * time.Second):
+			t.Fatalf("expected a1 and b1 to start, got %v", first)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("a1 never started")
 	}
-
-	// b1, on a different instance queue, must run concurrently with a1
-	// (which is still blocked), proving queues are independent.
-	select {
-	case name := <-started:
-		if name != "b1" {
-			t.Fatalf("expected b1 to start while a1 is blocked, got %s", name)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("b1 never started even though it is on a different instance queue")
+	if !first["a1"] || !first["b1"] {
+		t.Fatalf("expected a1 and b1 to start concurrently, got %v", first)
 	}
 
 	// a2 must NOT start yet: it is serialised behind a1 on the same queue.

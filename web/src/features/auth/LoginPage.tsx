@@ -36,7 +36,8 @@ export function LoginPage() {
   const [formError, setFormError] = useState<string | null>(null)
 
   const rawNext = params.get('next')
-  const next = rawNext && rawNext.startsWith('/') ? rawNext : '/'
+  // Same-origin paths only: "//host" and "/\\host" would leave the site.
+  const next = rawNext && /^\/(?![/\\])/.test(rawNext) ? rawNext : '/'
   const oidcError = params.get('error')
 
   const form = useForm<LoginValues>({

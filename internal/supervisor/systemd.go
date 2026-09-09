@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
@@ -45,7 +47,7 @@ func (s *systemd) SetAutostart(ctx context.Context, id string, on bool) error {
 func (s *systemd) unitctl(ctx context.Context, action, id string) error {
 	ctx, cancel := context.WithTimeout(ctx, unitctlTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "sudo", "-n", s.o.UnitctlPath, action, id)
+	cmd := exec.CommandContext(ctx, sudoPath(), "-n", s.o.UnitctlPath, action, id)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -60,7 +62,7 @@ func (s *systemd) unitctl(ctx context.Context, action, id string) error {
 
 func (s *systemd) Status(ctx context.Context, id string) (Status, error) {
 	unit := UnitName(id)
-	cmd := exec.CommandContext(ctx, "systemctl", "show", unit,
+	cmd := exec.CommandContext(ctx, systemctlPath(), "show", unit,
 		"--property=ActiveState,SubState,MainPID,ExecMainStartTimestamp,Result,UnitFileState")
 	out, err := cmd.Output()
 	if err != nil {
@@ -129,4 +131,32 @@ func parseSystemctlShow(out string) Status {
 	default:
 		return Status{State: state, PID: pid, Since: since, Autostart: false, Detail: detail}
 	}
+}
+
+// sudoPath and systemctlPath resolve the two host binaries once, from the
+// fixed system directories only, so a PATH entry the service user can write
+// to can never substitute them.
+var (
+	sudoOnce, systemctlOnce sync.Once
+	sudoBin, systemctlBin   string
+)
+
+func fixedPathLookup(name string) string {
+	for _, dir := range []string{"/usr/bin", "/bin", "/usr/sbin", "/sbin"} {
+		p := dir + "/" + name
+		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
+			return p
+		}
+	}
+	return name // falls back to PATH lookup (tests, unusual layouts)
+}
+
+func sudoPath() string {
+	sudoOnce.Do(func() { sudoBin = fixedPathLookup("sudo") })
+	return sudoBin
+}
+
+func systemctlPath() string {
+	systemctlOnce.Do(func() { systemctlBin = fixedPathLookup("systemctl") })
+	return systemctlBin
 }

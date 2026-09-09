@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -89,7 +90,7 @@ func (c *Client) Latest(ctx context.Context) (*Release, error) {
 // the CLI) turn that into their own "release not found" error with the
 // requested tag in the message.
 func (c *Client) ByTag(ctx context.Context, tag string) (*Release, error) {
-	return c.get(ctx, fmt.Sprintf("%s/repos/%s/releases/tags/%s", c.base, c.repo, tag), true)
+	return c.get(ctx, fmt.Sprintf("%s/repos/%s/releases/tags/%s", c.base, c.repo, url.PathEscape(tag)), true)
 }
 
 func (c *Client) get(ctx context.Context, url string, allow404 bool) (*Release, error) {
@@ -122,8 +123,14 @@ func (c *Client) get(ctx context.Context, url string, allow404 bool) (*Release, 
 	}
 
 	var rel Release
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
+	// A release document is a few KB; bound it so a huge body (or a huge
+	// release-notes field) cannot be held in memory or re-served to every
+	// dashboard poll.
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxReleaseDocBytes)).Decode(&rel); err != nil {
 		return nil, domain.Wrap(domain.CodeUpstreamError, "decode github release", err)
 	}
 	return &rel, nil
 }
+
+// maxReleaseDocBytes bounds one GitHub release JSON document.
+const maxReleaseDocBytes = 1 << 20

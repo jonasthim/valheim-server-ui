@@ -9,7 +9,7 @@
     "typecheck": "tsc -b --noEmit",
     "lint": "oxlint src",
     "preview": "vite preview",
-    "gen:api": "npx --yes openapi-typescript@7.13.0 ../docs/openapi.yaml -o src/api/schema.d.ts"
+    "gen:api": "npm_config_ignore_scripts=true npx --yes openapi-typescript@7.13.0 ../docs/openapi.yaml -o src/api/schema.d.ts"
   },
   "dependencies": {
     "@mantine/core": "^9.6.0",

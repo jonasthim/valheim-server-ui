@@ -192,6 +192,9 @@ func (c InstanceConfig) Validate() error {
 		if strings.ContainsAny(a, "\x00\n") {
 			add(fmt.Sprintf("extra_args[%d]", i), "invalid characters")
 		}
+		if flag := reservedExtraArg(a); flag != "" {
+			add(fmt.Sprintf("extra_args[%d]", i), "the "+flag+" flag is managed by the instance settings")
+		}
 	}
 	if c.BackupKeepLast < 0 {
 		add("backup_keep_last", "must be >= 0")
@@ -425,3 +428,24 @@ type AppUpdateInfo struct {
 
 // GitHubRepo is the source of manager releases.
 const GitHubRepo = "jonasthim/valheim-server-ui"
+
+// reservedExtraArgs are game flags the manager sets itself or that would let
+// the game write outside the instance directory; extra_args may not repeat
+// or override them.
+var reservedExtraArgs = []string{
+	"-name", "-port", "-world", "-password", "-savedir", "-public", "-crossplay",
+	"-preset", "-modifier", "-setkey", "-saveinterval", "-backups", "-backupshort",
+	"-backuplong", "-logfile", "-crashreport", "-nographics", "-batchmode",
+}
+
+// reservedExtraArg returns the reserved flag that arg matches ("" if none).
+// Matching is case-insensitive and also catches "-logFile=/x".
+func reservedExtraArg(arg string) string {
+	a := strings.ToLower(strings.TrimSpace(arg))
+	for _, f := range reservedExtraArgs {
+		if a == f || strings.HasPrefix(a, f+"=") {
+			return f
+		}
+	}
+	return ""
+}

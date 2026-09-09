@@ -163,7 +163,11 @@ func runAdminResetPassword(args []string) error {
 	if err := users.SetPasswordHash(context.Background(), usr.ID, &hash); err != nil {
 		return err
 	}
-	fmt.Printf("password reset for user %q (id=%d)\n", usr.Username, usr.ID)
+	// A reset is a recovery action: every existing session is revoked.
+	if err := db.NewSessions(sqldb).DeleteByUser(context.Background(), usr.ID); err != nil {
+		return err
+	}
+	fmt.Printf("password reset for user %q (id=%d); all sessions revoked\n", usr.Username, usr.ID)
 	return nil
 }
 
