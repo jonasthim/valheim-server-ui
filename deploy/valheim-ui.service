@@ -1,0 +1,24 @@
+# Installed by deploy/install.sh to /etc/systemd/system/valheim-ui.service
+[Unit]
+Description=Valheim Server UI (manager)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=valheim
+Group=valheim
+Environment=VALHEIM_UI_CONFIG=/etc/valheim-ui/config.yaml
+ExecStart=/usr/local/bin/valheim-ui serve
+Restart=on-failure
+RestartSec=5
+WorkingDirectory=/var/lib/valheim
+# Hardening. NoNewPrivileges must stay off: the manager calls sudo for unitctl.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/valheim
+PrivateTmp=true
+ProtectHome=true
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

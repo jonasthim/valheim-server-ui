@@ -1,0 +1,1564 @@
+openapi: 3.1.0
+info:
+  title: Valheim Server UI API
+  version: 1.0.0
+  description: |
+    HTTP API of valheim-server-ui. All endpoints are under /api/v1.
+    Roles: viewer < operator < admin. Each operation declares the minimum role in `x-role`.
+    Mutating requests must send header `X-Requested-With: valheim-ui` (CSRF guard).
+    Long-running operations return 202 with a Job; follow progress via /events (SSE).
+servers:
+  - url: /api/v1
+tags:
+  - name: auth
+  - name: users
+  - name: settings
+  - name: system
+  - name: instances
+  - name: players
+  - name: worlds
+  - name: backups
+  - name: schedules
+  - name: mods
+  - name: thunderstore
+  - name: jobs
+  - name: events
+  - name: audit
+
+paths:
+  # ------------------------------------------------------------------ auth
+  /auth/status:
+    get:
+      tags: [auth]
+      summary: Public bootstrap info for the login/setup screens
+      x-role: public
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuthStatus' }
+  /auth/setup:
+    post:
+      tags: [auth]
+      summary: Create the first admin (only while no users exist)
+      x-role: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetupRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/UserResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Local login; sets the session cookie
+      x-role: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/UserResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+        '423': { $ref: '#/components/responses/Error' }
+  /auth/logout:
+    post:
+      tags: [auth]
+      x-role: viewer
+      responses:
+        '204': { description: Logged out }
+  /auth/me:
+    get:
+      tags: [auth]
+      x-role: viewer
+      responses:
+        '200': { $ref: '#/components/responses/UserResponse' }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/password:
+    put:
+      tags: [auth]
+      summary: Change own password (local accounts only)
+      x-role: viewer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangePasswordRequest' }
+      responses:
+        '204': { description: Changed }
+        '401': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /auth/oidc/login:
+    get:
+      tags: [auth]
+      summary: Start OIDC authorization code flow (302 to provider)
+      x-role: public
+      parameters:
+        - in: query
+          name: next
+          schema: { type: string }
+          description: SPA path to return to after login (must start with /)
+      responses:
+        '302': { description: Redirect to provider }
+        '404': { $ref: '#/components/responses/Error' }
+  /auth/oidc/callback:
+    get:
+      tags: [auth]
+      summary: OIDC redirect URI (302 to SPA; on failure 302 to /login?error=code)
+      x-role: public
+      responses:
+        '302': { description: Redirect }
+
+  # ------------------------------------------------------------------ users
+  /users:
+    get:
+      tags: [users]
+      x-role: admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [users]
+                properties:
+                  users: { type: array, items: { $ref: '#/components/schemas/User' } }
+    post:
+      tags: [users]
+      x-role: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateUserRequest' }
+      responses:
+        '201': { $ref: '#/components/responses/UserResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /users/{userId}:
+    parameters: [{ $ref: '#/components/parameters/userId' }]
+    get:
+      tags: [users]
+      x-role: admin
+      responses:
+        '200': { $ref: '#/components/responses/UserResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [users]
+      x-role: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUserRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/UserResponse' }
+        '409': { description: 'Would remove last admin', $ref: '#/components/responses/Error' }
+    delete:
+      tags: [users]
+      x-role: admin
+      responses:
+        '204': { description: Deleted }
+        '409': { $ref: '#/components/responses/Error' }
+  /users/{userId}/password:
+    put:
+      tags: [users]
+      summary: Admin sets a user's password
+      x-role: admin
+      parameters: [{ $ref: '#/components/parameters/userId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [new_password]
+              properties:
+                new_password: { type: string, minLength: 10 }
+      responses:
+        '204': { description: Set }
+
+  # ------------------------------------------------------------------ settings / system
+  /settings:
+    get:
+      tags: [settings]
+      x-role: admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+    put:
+      tags: [settings]
+      x-role: admin
+      description: Full replace. `auth.oidc.client_secret` empty string means "keep existing".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Settings' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Settings' }
+        '422': { $ref: '#/components/responses/Error' }
+  /settings/oidc/test:
+    post:
+      tags: [settings]
+      summary: Discover the issuer and report whether the configuration looks valid
+      x-role: admin
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/OIDCSettings' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
+                  issuer: { type: string }
+                  authorization_endpoint: { type: string }
+                  error: { type: string }
+  /system:
+    get:
+      tags: [system]
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SystemInfo' }
+
+  # ------------------------------------------------------------------ instances
+  /instances:
+    get:
+      tags: [instances]
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [instances]
+                properties:
+                  instances: { type: array, items: { $ref: '#/components/schemas/Instance' } }
+    post:
+      tags: [instances]
+      summary: Create an instance and (by default) enqueue the install job
+      x-role: admin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateInstanceRequest' }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [instance]
+                properties:
+                  instance: { $ref: '#/components/schemas/Instance' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [instances]
+      x-role: viewer
+      responses:
+        '200': { $ref: '#/components/responses/InstanceResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+    patch:
+      tags: [instances]
+      summary: Update display name and/or config; sets pending_restart if running
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateInstanceRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/InstanceResponse' }
+        '422': { $ref: '#/components/responses/Error' }
+    delete:
+      tags: [instances]
+      x-role: admin
+      parameters:
+        - in: query
+          name: delete_files
+          schema: { type: boolean, default: false }
+          description: Also remove the instance directory (game files, saves, backups)
+      responses:
+        '204': { description: Deleted }
+        '409': { description: Instance running, $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/start:
+    post:
+      tags: [instances]
+      x-role: operator
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/InstanceStatusResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/stop:
+    post:
+      tags: [instances]
+      x-role: operator
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/InstanceStatusResponse' }
+  /instances/{instanceId}/restart:
+    post:
+      tags: [instances]
+      x-role: operator
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/InstanceStatusResponse' }
+  /instances/{instanceId}/status:
+    get:
+      tags: [instances]
+      x-role: viewer
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '200': { $ref: '#/components/responses/InstanceStatusResponse' }
+  /instances/{instanceId}/install:
+    post:
+      tags: [instances]
+      summary: Install or validate game files with SteamCMD
+      x-role: operator
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/update:
+    post:
+      tags: [instances]
+      summary: Update game files (stops/starts around the update if requested)
+      x-role: operator
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StopIfRunning' }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/update-check:
+    post:
+      tags: [instances]
+      summary: Query Steam for the latest public build id now
+      x-role: viewer
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UpdateInfo' }
+  /instances/{instanceId}/logs:
+    get:
+      tags: [instances]
+      summary: Tail of console.log
+      x-role: viewer
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - in: query
+          name: lines
+          schema: { type: integer, default: 500, maximum: 5000 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lines]
+                properties:
+                  lines: { type: array, items: { type: string } }
+  /instances/{instanceId}/logs/download:
+    get:
+      tags: [instances]
+      x-role: viewer
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '200':
+          content:
+            text/plain: { schema: { type: string } }
+
+  # ------------------------------------------------------------------ players & lists
+  /instances/{instanceId}/players:
+    get:
+      tags: [players]
+      x-role: viewer
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayersResponse' }
+  /instances/{instanceId}/lists/{listKind}:
+    parameters:
+      - { $ref: '#/components/parameters/instanceId' }
+      - in: path
+        name: listKind
+        required: true
+        schema: { $ref: '#/components/schemas/ListKind' }
+    get:
+      tags: [players]
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayerList' }
+    put:
+      tags: [players]
+      summary: Replace the list file (Valheim reloads it live)
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlayerList' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PlayerList' }
+        '422': { $ref: '#/components/responses/Error' }
+
+  # ------------------------------------------------------------------ worlds
+  /instances/{instanceId}/worlds:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [worlds]
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [worlds]
+                properties:
+                  worlds: { type: array, items: { $ref: '#/components/schemas/World' } }
+    post:
+      tags: [worlds]
+      summary: Upload a world (.db + .fwl files, or one zip containing them)
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                files: { type: array, items: { type: string, format: binary } }
+                overwrite: { type: boolean, default: false }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/worlds/{worldName}:
+    parameters:
+      - { $ref: '#/components/parameters/instanceId' }
+      - { $ref: '#/components/parameters/worldName' }
+    delete:
+      tags: [worlds]
+      summary: Delete an inactive world
+      x-role: operator
+      responses:
+        '204': { description: Deleted }
+        '409': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/worlds/{worldName}/download:
+    get:
+      tags: [worlds]
+      x-role: operator
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - { $ref: '#/components/parameters/worldName' }
+      responses:
+        '200':
+          content:
+            application/zip: { schema: { type: string, format: binary } }
+
+  # ------------------------------------------------------------------ backups
+  /instances/{instanceId}/backups:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [backups]
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [backups]
+                properties:
+                  backups: { type: array, items: { $ref: '#/components/schemas/Backup' } }
+    post:
+      tags: [backups]
+      summary: Create a manual backup now
+      x-role: operator
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 200 }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+  /instances/{instanceId}/backups/upload:
+    post:
+      tags: [backups]
+      summary: Upload a backup zip previously downloaded from this UI
+      x-role: operator
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [backup]
+                properties:
+                  backup: { $ref: '#/components/schemas/Backup' }
+  /instances/{instanceId}/backups/{backupId}:
+    parameters:
+      - { $ref: '#/components/parameters/instanceId' }
+      - { $ref: '#/components/parameters/backupId' }
+    delete:
+      tags: [backups]
+      x-role: operator
+      responses:
+        '204': { description: Deleted }
+  /instances/{instanceId}/backups/{backupId}/download:
+    get:
+      tags: [backups]
+      x-role: operator
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - { $ref: '#/components/parameters/backupId' }
+      responses:
+        '200':
+          content:
+            application/zip: { schema: { type: string, format: binary } }
+  /instances/{instanceId}/backups/{backupId}/restore:
+    post:
+      tags: [backups]
+      summary: Restore a backup (creates a pre_restore backup first; instance must be stopped)
+      x-role: operator
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - { $ref: '#/components/parameters/backupId' }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StopIfRunning' }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  # ------------------------------------------------------------------ schedules
+  /instances/{instanceId}/schedules:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [schedules]
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schedules]
+                properties:
+                  schedules: { type: array, items: { $ref: '#/components/schemas/Schedule' } }
+    post:
+      tags: [schedules]
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleInput' }
+      responses:
+        '201': { $ref: '#/components/responses/ScheduleResponse' }
+        '422': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/schedules/{scheduleId}:
+    parameters:
+      - { $ref: '#/components/parameters/instanceId' }
+      - { $ref: '#/components/parameters/scheduleId' }
+    patch:
+      tags: [schedules]
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ScheduleInput' }
+      responses:
+        '200': { $ref: '#/components/responses/ScheduleResponse' }
+    delete:
+      tags: [schedules]
+      x-role: operator
+      responses:
+        '204': { description: Deleted }
+  /instances/{instanceId}/schedules/{scheduleId}/run:
+    post:
+      tags: [schedules]
+      summary: Run the schedule's action now
+      x-role: operator
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - { $ref: '#/components/parameters/scheduleId' }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+
+  # ------------------------------------------------------------------ mods
+  /instances/{instanceId}/mods:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [mods]
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModsOverview' }
+    post:
+      tags: [mods]
+      summary: Install a Thunderstore package (and its dependencies)
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [owner, name]
+              properties:
+                owner: { type: string }
+                name: { type: string }
+                version: { type: string, description: 'Omit for latest' }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/mods/upload:
+    post:
+      tags: [mods]
+      summary: Upload a mod zip (Thunderstore layout with manifest.json) or a single .dll
+      x-role: operator
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '422': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/mods/bepinex:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    post:
+      tags: [mods]
+      summary: Install or upgrade BepInEx (instance must be stopped)
+      x-role: operator
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StopIfRunning' }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+    patch:
+      tags: [mods]
+      summary: Enable or disable the BepInEx loader
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ModsOverview' }
+  /instances/{instanceId}/mods/{modId}:
+    parameters:
+      - { $ref: '#/components/parameters/instanceId' }
+      - { $ref: '#/components/parameters/modId' }
+    patch:
+      tags: [mods]
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [enabled]
+              properties:
+                enabled: { type: boolean }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [mod]
+                properties:
+                  mod: { $ref: '#/components/schemas/Mod' }
+    delete:
+      tags: [mods]
+      x-role: operator
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+  /instances/{instanceId}/mods/{modId}/update:
+    post:
+      tags: [mods]
+      summary: Update a Thunderstore mod to the latest (or given) version
+      x-role: operator
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - { $ref: '#/components/parameters/modId' }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: { type: string }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+  /instances/{instanceId}/mods/configs:
+    get:
+      tags: [mods]
+      x-role: viewer
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files]
+                properties:
+                  files: { type: array, items: { $ref: '#/components/schemas/ConfigFileInfo' } }
+  /instances/{instanceId}/mods/configs/{fileName}:
+    parameters:
+      - { $ref: '#/components/parameters/instanceId' }
+      - in: path
+        name: fileName
+        required: true
+        schema: { type: string }
+    get:
+      tags: [mods]
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConfigFile' }
+    put:
+      tags: [mods]
+      description: Send either `raw` (whole file) or `values` (key updates, comments preserved).
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ConfigFileUpdate' }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ConfigFile' }
+
+  # ------------------------------------------------------------------ thunderstore
+  /thunderstore/packages:
+    get:
+      tags: [thunderstore]
+      x-role: viewer
+      parameters:
+        - { in: query, name: q, schema: { type: string } }
+        - { in: query, name: category, schema: { type: string } }
+        - { in: query, name: sort, schema: { type: string, enum: [rating, downloads, updated, name], default: rating } }
+        - { in: query, name: include_deprecated, schema: { type: boolean, default: false } }
+        - { in: query, name: page, schema: { type: integer, default: 1, minimum: 1 } }
+        - { in: query, name: page_size, schema: { type: integer, default: 50, maximum: 100 } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PackageSearchResult' }
+  /thunderstore/packages/{owner}/{name}:
+    get:
+      tags: [thunderstore]
+      x-role: viewer
+      parameters:
+        - { in: path, name: owner, required: true, schema: { type: string } }
+        - { in: path, name: name, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Package' }
+        '404': { $ref: '#/components/responses/Error' }
+  /thunderstore/categories:
+    get:
+      tags: [thunderstore]
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [categories]
+                properties:
+                  categories: { type: array, items: { type: string } }
+  /thunderstore/refresh:
+    post:
+      tags: [thunderstore]
+      x-role: operator
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+
+  # ------------------------------------------------------------------ jobs
+  /jobs:
+    get:
+      tags: [jobs]
+      x-role: viewer
+      parameters:
+        - { in: query, name: instance, schema: { type: string } }
+        - { in: query, name: status, schema: { $ref: '#/components/schemas/JobStatus' } }
+        - { in: query, name: limit, schema: { type: integer, default: 50, maximum: 200 } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs: { type: array, items: { $ref: '#/components/schemas/Job' } }
+  /jobs/{jobId}:
+    parameters: [{ $ref: '#/components/parameters/jobId' }]
+    get:
+      tags: [jobs]
+      x-role: viewer
+      responses:
+        '200': { $ref: '#/components/responses/JobResponse' }
+  /jobs/{jobId}/log:
+    get:
+      tags: [jobs]
+      x-role: viewer
+      parameters: [{ $ref: '#/components/parameters/jobId' }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lines]
+                properties:
+                  lines: { type: array, items: { type: string } }
+  /jobs/{jobId}/cancel:
+    post:
+      tags: [jobs]
+      x-role: operator
+      parameters: [{ $ref: '#/components/parameters/jobId' }]
+      responses:
+        '200': { $ref: '#/components/responses/JobResponse' }
+        '409': { $ref: '#/components/responses/Error' }
+
+  # ------------------------------------------------------------------ events / audit
+  /events:
+    get:
+      tags: [events]
+      summary: Server-Sent Events stream
+      description: |
+        `text/event-stream`. Event names and JSON payloads:
+        - `instance.status`: InstanceStatus (with instance_id)
+        - `instance.log`: { instance_id, line }
+        - `instance.players`: { instance_id, online: OnlinePlayer[] }
+        - `job.updated`: Job
+        - `job.log`: { job_id, line }
+        - `update.available`: UpdateInfo
+        - `heartbeat`: { ts }
+      x-role: viewer
+      parameters:
+        - { in: query, name: instance, schema: { type: string }, description: Filter instance-scoped events }
+      responses:
+        '200':
+          content:
+            text/event-stream: { schema: { type: string } }
+  /audit:
+    get:
+      tags: [audit]
+      x-role: admin
+      parameters:
+        - { in: query, name: instance, schema: { type: string } }
+        - { in: query, name: user, schema: { type: string } }
+        - { in: query, name: limit, schema: { type: integer, default: 100, maximum: 500 } }
+        - { in: query, name: before, schema: { type: integer, description: 'audit id cursor' } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries: { type: array, items: { $ref: '#/components/schemas/AuditEntry' } }
+
+components:
+  parameters:
+    instanceId: { in: path, name: instanceId, required: true, schema: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,31}$' } }
+    userId: { in: path, name: userId, required: true, schema: { type: integer } }
+    backupId: { in: path, name: backupId, required: true, schema: { type: integer } }
+    scheduleId: { in: path, name: scheduleId, required: true, schema: { type: integer } }
+    modId: { in: path, name: modId, required: true, schema: { type: integer } }
+    jobId: { in: path, name: jobId, required: true, schema: { type: string, format: uuid } }
+    worldName: { in: path, name: worldName, required: true, schema: { type: string } }
+
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    UserResponse:
+      description: User
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [user]
+            properties:
+              user: { $ref: '#/components/schemas/User' }
+    InstanceResponse:
+      description: Instance
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [instance]
+            properties:
+              instance: { $ref: '#/components/schemas/Instance' }
+    InstanceStatusResponse:
+      description: Status
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [status]
+            properties:
+              status: { $ref: '#/components/schemas/InstanceStatus' }
+    JobResponse:
+      description: Job
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [job]
+            properties:
+              job: { $ref: '#/components/schemas/Job' }
+    ScheduleResponse:
+      description: Schedule
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [schedule]
+            properties:
+              schedule: { $ref: '#/components/schemas/Schedule' }
+
+  schemas:
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: |
+                One of: unauthorized, forbidden, not_found, validation_failed, conflict,
+                instance_running, instance_not_installed, instance_busy, port_in_use,
+                last_admin, invalid_credentials, account_locked, account_disabled,
+                setup_done, oidc_disabled, oidc_error, steamcmd_missing, bepinex_missing,
+                package_not_found, upstream_error, internal
+            message: { type: string }
+            details:
+              type: object
+              additionalProperties: true
+              properties:
+                fields:
+                  type: array
+                  items:
+                    type: object
+                    required: [field, message]
+                    properties:
+                      field: { type: string }
+                      message: { type: string }
+
+    Role:
+      type: string
+      enum: [viewer, operator, admin]
+
+    AuthStatus:
+      type: object
+      required: [needs_setup, local_login_enabled, oidc_enabled]
+      properties:
+        needs_setup: { type: boolean }
+        local_login_enabled: { type: boolean }
+        oidc_enabled: { type: boolean }
+        oidc_provider_name: { type: string }
+        app_version: { type: string }
+
+    SetupRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string, minLength: 2, maxLength: 32, pattern: '^[a-z0-9._-]+$' }
+        password: { type: string, minLength: 10, maxLength: 128 }
+        display_name: { type: string, maxLength: 64 }
+        email: { type: string, format: email }
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+
+    ChangePasswordRequest:
+      type: object
+      required: [current_password, new_password]
+      properties:
+        current_password: { type: string }
+        new_password: { type: string, minLength: 10, maxLength: 128 }
+
+    User:
+      type: object
+      required: [id, username, role, disabled, has_password, identities, created_at]
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        display_name: { type: string }
+        email: { type: string }
+        role: { $ref: '#/components/schemas/Role' }
+        disabled: { type: boolean }
+        has_password: { type: boolean, description: false for OIDC-only accounts }
+        identities:
+          type: array
+          items:
+            type: object
+            required: [provider, subject]
+            properties:
+              provider: { type: string }
+              subject: { type: string }
+        created_at: { type: string, format: date-time }
+        last_login_at: { type: string, format: date-time }
+
+    CreateUserRequest:
+      type: object
+      required: [username, role]
+      properties:
+        username: { type: string, minLength: 2, maxLength: 32, pattern: '^[a-z0-9._-]+$' }
+        password: { type: string, minLength: 10, maxLength: 128, description: Omit for OIDC-only accounts }
+        display_name: { type: string, maxLength: 64 }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+
+    UpdateUserRequest:
+      type: object
+      properties:
+        display_name: { type: string, maxLength: 64 }
+        email: { type: string, format: email }
+        role: { $ref: '#/components/schemas/Role' }
+        disabled: { type: boolean }
+
+    OIDCSettings:
+      type: object
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
+        provider_name: { type: string, default: SSO }
+        issuer_url: { type: string }
+        client_id: { type: string }
+        client_secret: { type: string, description: 'Write-only. Empty on read; empty on write keeps the stored value.' }
+        scopes: { type: array, items: { type: string }, default: [openid, profile, email, groups] }
+        groups_claim: { type: string, default: groups }
+        role_mapping:
+          type: object
+          additionalProperties: { $ref: '#/components/schemas/Role' }
+          description: group name → role; highest matching role wins
+        default_role:
+          type: string
+          enum: [viewer, operator, admin, deny]
+          default: viewer
+          description: Role for users without a mapped group; deny blocks login
+        auto_create_users: { type: boolean, default: true }
+        sync_roles: { type: boolean, default: true, description: Re-apply role mapping on every login }
+        redirect_uri: { type: string, readOnly: true, description: 'Computed from base_url; register this at the provider' }
+
+    Settings:
+      type: object
+      required: [auth, updates, thunderstore]
+      properties:
+        auth:
+          type: object
+          required: [local_login_enabled, oidc]
+          properties:
+            local_login_enabled: { type: boolean, default: true }
+            oidc: { $ref: '#/components/schemas/OIDCSettings' }
+        updates:
+          type: object
+          required: [check_interval_minutes]
+          properties:
+            check_interval_minutes: { type: integer, minimum: 0, default: 60, description: 0 disables }
+        thunderstore:
+          type: object
+          required: [index_refresh_hours]
+          properties:
+            index_refresh_hours: { type: integer, minimum: 1, default: 6 }
+
+    SystemInfo:
+      type: object
+      required: [version, data_dir, supervisor, steamcmd_installed, disk_free_bytes, disk_total_bytes, started_at]
+      properties:
+        version: { type: string }
+        commit: { type: string }
+        data_dir: { type: string }
+        supervisor: { type: string, enum: [systemd, direct] }
+        steamcmd_installed: { type: boolean }
+        disk_free_bytes: { type: integer, format: int64 }
+        disk_total_bytes: { type: integer, format: int64 }
+        started_at: { type: string, format: date-time }
+        latest_buildid: { type: string, description: Last known public Valheim build id }
+        buildid_checked_at: { type: string, format: date-time }
+
+    InstanceState:
+      type: string
+      enum: [not_installed, stopped, starting, running, stopping, failed]
+
+    Modifiers:
+      type: object
+      properties:
+        combat: { type: string, enum: [veryeasy, easy, hard, veryhard] }
+        deathpenalty: { type: string, enum: [casual, veryeasy, easy, hard, hardcore] }
+        resources: { type: string, enum: [muchless, less, more, muchmore, most] }
+        raids: { type: string, enum: [none, muchless, less, more, muchmore] }
+        portals: { type: string, enum: [casual, hard, veryhard] }
+
+    InstanceConfig:
+      type: object
+      required: [name, world, password, port, public, crossplay]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        world: { type: string, pattern: '^[A-Za-z0-9_\- ]{1,32}$' }
+        password: { type: string, minLength: 5, maxLength: 32, description: Masked as "********" for viewers }
+        port: { type: integer, minimum: 1024, maximum: 65000 }
+        public: { type: boolean }
+        crossplay: { type: boolean }
+        preset: { type: string, enum: ['', normal, casual, easy, hard, hardcore, immersive, hammer] }
+        modifiers: { $ref: '#/components/schemas/Modifiers' }
+        setkeys:
+          type: array
+          items: { type: string, enum: [nobuildcost, playerevents, passivemobs, nomap] }
+        save_interval_sec: { type: integer, minimum: 60, default: 1800 }
+        game_backups: { type: integer, minimum: 0, default: 4 }
+        game_backup_short_sec: { type: integer, minimum: 60, default: 7200 }
+        game_backup_long_sec: { type: integer, minimum: 60, default: 43200 }
+        extra_args: { type: array, items: { type: string } }
+        bepinex_enabled: { type: boolean, default: false }
+        backup_keep_last: { type: integer, minimum: 0, default: 10 }
+        backup_keep_days: { type: integer, minimum: 0, default: 30 }
+        backup_before_update: { type: boolean, default: true }
+
+    A2SInfo:
+      type: object
+      required: [server_name, players, max_players]
+      properties:
+        server_name: { type: string }
+        map: { type: string }
+        players: { type: integer }
+        max_players: { type: integer }
+        version: { type: string }
+        password_protected: { type: boolean }
+        queried_at: { type: string, format: date-time }
+
+    InstanceStatus:
+      type: object
+      required: [instance_id, state, ready, autostart, pending_restart, players_online]
+      properties:
+        instance_id: { type: string }
+        state: { $ref: '#/components/schemas/InstanceState' }
+        ready: { type: boolean, description: World loaded and accepting players (from log) }
+        pid: { type: integer }
+        since: { type: string, format: date-time }
+        autostart: { type: boolean }
+        pending_restart: { type: boolean }
+        detail: { type: string }
+        players_online: { type: integer }
+        max_players: { type: integer }
+        join_code: { type: string }
+        a2s: { $ref: '#/components/schemas/A2SInfo' }
+        installed_buildid: { type: string }
+        update_available: { type: boolean }
+        bepinex_installed: { type: boolean }
+        bepinex_enabled: { type: boolean }
+        active_job: { $ref: '#/components/schemas/Job' }
+
+    Instance:
+      type: object
+      required: [id, name, config, status, created_at, updated_at]
+      properties:
+        id: { type: string }
+        name: { type: string, description: Display name in the UI (not the in-game server name) }
+        config: { $ref: '#/components/schemas/InstanceConfig' }
+        status: { $ref: '#/components/schemas/InstanceStatus' }
+        paths:
+          type: object
+          properties:
+            root: { type: string }
+            server: { type: string }
+            save: { type: string }
+            backups: { type: string }
+            logs: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    CreateInstanceRequest:
+      type: object
+      required: [id, name, config]
+      properties:
+        id: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,31}$' }
+        name: { type: string, minLength: 1, maxLength: 64 }
+        config: { $ref: '#/components/schemas/InstanceConfig' }
+        autostart: { type: boolean, default: false }
+        install: { type: boolean, default: true, description: Enqueue the SteamCMD install job immediately }
+
+    UpdateInstanceRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        config: { $ref: '#/components/schemas/InstanceConfig' }
+        autostart: { type: boolean }
+
+    StopIfRunning:
+      type: object
+      properties:
+        stop_if_running: { type: boolean, default: false, description: Stop the instance for the operation and start it again afterwards }
+
+    UpdateInfo:
+      type: object
+      required: [instance_id, update_available]
+      properties:
+        instance_id: { type: string }
+        installed_buildid: { type: string }
+        latest_buildid: { type: string }
+        update_available: { type: boolean }
+        checked_at: { type: string, format: date-time }
+
+    OnlinePlayer:
+      type: object
+      required: [name]
+      properties:
+        platform_id: { type: string }
+        name: { type: string }
+        connected_at: { type: string, format: date-time }
+
+    KnownPlayer:
+      type: object
+      required: [platform_id, first_seen_at, last_seen_at, session_count]
+      properties:
+        platform_id: { type: string }
+        name: { type: string }
+        first_seen_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        session_count: { type: integer }
+
+    PlayersResponse:
+      type: object
+      required: [online, known, count_source]
+      properties:
+        online: { type: array, items: { $ref: '#/components/schemas/OnlinePlayer' } }
+        online_count: { type: integer }
+        count_source: { type: string, enum: [a2s, log, none] }
+        known: { type: array, items: { $ref: '#/components/schemas/KnownPlayer' } }
+
+    ListKind:
+      type: string
+      enum: [admin, banned, permitted]
+
+    PlayerList:
+      type: object
+      required: [kind, entries]
+      properties:
+        kind: { $ref: '#/components/schemas/ListKind' }
+        entries:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id: { type: string, description: 'Platform id, e.g. Steam_76561198000000000 or 76561198000000000' }
+              comment: { type: string, description: 'Stored as a trailing // comment on the same line' }
+
+    World:
+      type: object
+      required: [name, active, size_bytes, modified_at]
+      properties:
+        name: { type: string }
+        active: { type: boolean }
+        size_bytes: { type: integer, format: int64 }
+        modified_at: { type: string, format: date-time }
+        has_db: { type: boolean }
+        has_fwl: { type: boolean }
+
+    BackupKind:
+      type: string
+      enum: [manual, scheduled, pre_update, pre_restore, uploaded]
+
+    Backup:
+      type: object
+      required: [id, instance_id, world, kind, filename, size_bytes, created_at]
+      properties:
+        id: { type: integer }
+        instance_id: { type: string }
+        world: { type: string }
+        kind: { $ref: '#/components/schemas/BackupKind' }
+        filename: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        note: { type: string }
+        created_at: { type: string, format: date-time }
+        missing: { type: boolean, description: DB row exists but file is gone }
+
+    ScheduleKind:
+      type: string
+      enum: [restart, backup, update]
+
+    ScheduleInput:
+      type: object
+      required: [kind, cron, enabled]
+      properties:
+        kind: { $ref: '#/components/schemas/ScheduleKind' }
+        cron: { type: string, description: 'Standard 5-field cron, host timezone' }
+        enabled: { type: boolean }
+        only_when_empty: { type: boolean, default: true }
+        note: { type: string, maxLength: 100 }
+
+    Schedule:
+      allOf:
+        - $ref: '#/components/schemas/ScheduleInput'
+        - type: object
+          required: [id, instance_id]
+          properties:
+            id: { type: integer }
+            instance_id: { type: string }
+            next_run_at: { type: string, format: date-time }
+            last_run_at: { type: string, format: date-time }
+            last_result: { type: string, enum: [ok, skipped, failed] }
+            last_job_id: { type: string }
+
+    Mod:
+      type: object
+      required: [id, instance_id, source, owner, name, version, enabled, installed_at]
+      properties:
+        id: { type: integer }
+        instance_id: { type: string }
+        source: { type: string, enum: [thunderstore, manual] }
+        owner: { type: string }
+        name: { type: string }
+        version: { type: string }
+        enabled: { type: boolean }
+        latest_version: { type: string, description: From the Thunderstore index, if known }
+        update_available: { type: boolean }
+        dependencies: { type: array, items: { type: string } }
+        icon_url: { type: string }
+        website_url: { type: string }
+        installed_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ModsOverview:
+      type: object
+      required: [bepinex, mods]
+      properties:
+        bepinex:
+          type: object
+          required: [installed, enabled]
+          properties:
+            installed: { type: boolean }
+            enabled: { type: boolean }
+            version: { type: string }
+            latest_version: { type: string }
+        mods: { type: array, items: { $ref: '#/components/schemas/Mod' } }
+        pending_restart: { type: boolean }
+
+    ConfigFileInfo:
+      type: object
+      required: [name, size_bytes, modified_at]
+      properties:
+        name: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        modified_at: { type: string, format: date-time }
+
+    ConfigEntry:
+      type: object
+      required: [section, key, value]
+      properties:
+        section: { type: string }
+        key: { type: string }
+        value: { type: string }
+        description: { type: string }
+        type: { type: string, description: 'From "# Setting type:" e.g. Boolean, Int32, Single, String, KeyCode, enum name' }
+        default_value: { type: string }
+        acceptable_values: { type: array, items: { type: string } }
+        range: { type: object, properties: { min: { type: string }, max: { type: string } } }
+
+    ConfigFile:
+      type: object
+      required: [name, raw, entries]
+      properties:
+        name: { type: string }
+        raw: { type: string }
+        entries: { type: array, items: { $ref: '#/components/schemas/ConfigEntry' } }
+        modified_at: { type: string, format: date-time }
+
+    ConfigFileUpdate:
+      type: object
+      properties:
+        raw: { type: string }
+        values:
+          type: array
+          items:
+            type: object
+            required: [section, key, value]
+            properties:
+              section: { type: string }
+              key: { type: string }
+              value: { type: string }
+
+    PackageVersion:
+      type: object
+      required: [version, download_url, dependencies, date_created]
+      properties:
+        version: { type: string }
+        description: { type: string }
+        download_url: { type: string }
+        dependencies: { type: array, items: { type: string } }
+        downloads: { type: integer }
+        file_size: { type: integer, format: int64 }
+        date_created: { type: string, format: date-time }
+
+    PackageSummary:
+      type: object
+      required: [owner, name, full_name, latest_version, rating_score, total_downloads, is_deprecated, categories, date_updated]
+      properties:
+        owner: { type: string }
+        name: { type: string }
+        full_name: { type: string }
+        description: { type: string }
+        icon_url: { type: string }
+        package_url: { type: string }
+        latest_version: { type: string }
+        rating_score: { type: integer }
+        total_downloads: { type: integer }
+        is_deprecated: { type: boolean }
+        is_pinned: { type: boolean }
+        categories: { type: array, items: { type: string } }
+        date_updated: { type: string, format: date-time }
+
+    Package:
+      allOf:
+        - $ref: '#/components/schemas/PackageSummary'
+        - type: object
+          required: [versions]
+          properties:
+            website_url: { type: string }
+            versions: { type: array, items: { $ref: '#/components/schemas/PackageVersion' } }
+
+    PackageSearchResult:
+      type: object
+      required: [packages, total, page, page_size, index_updated_at]
+      properties:
+        packages: { type: array, items: { $ref: '#/components/schemas/PackageSummary' } }
+        total: { type: integer }
+        page: { type: integer }
+        page_size: { type: integer }
+        index_updated_at: { type: string, format: date-time }
+
+    JobType:
+      type: string
+      enum: [install, update, backup, restore, world_import, mod_install, mod_update, mod_uninstall, bepinex_install, scheduled_restart, thunderstore_refresh]
+
+    JobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, cancelled]
+
+    Job:
+      type: object
+      required: [id, type, status, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/JobType' }
+        instance_id: { type: string }
+        status: { $ref: '#/components/schemas/JobStatus' }
+        title: { type: string, description: Human readable, e.g. "Install Jotunn 2.29.2" }
+        requested_by: { type: string }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+        error: { type: string }
+        summary:
+          type: object
+          additionalProperties: true
+
+    AuditEntry:
+      type: object
+      required: [id, ts, action]
+      properties:
+        id: { type: integer }
+        ts: { type: string, format: date-time }
+        user_id: { type: integer }
+        username: { type: string }
+        action: { type: string }
+        instance_id: { type: string }
+        target: { type: string }
+        details: { type: object, additionalProperties: true }
+        ip: { type: string }

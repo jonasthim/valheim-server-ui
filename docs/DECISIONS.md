@@ -1,0 +1,60 @@
+# Architecture Decision Records
+
+Short form. Newest at the bottom. Do not delete superseded records; mark them.
+
+## ADR-001 Native SteamCMD + systemd instead of Docker
+Owner preference. Simplest ops on a bare host, direct access to save files and logs,
+no container/systemd impedance mismatch for mods (BepInEx lives inside the game dir).
+
+## ADR-002 Go single binary with embedded React build
+One static artifact (`CGO_ENABLED=0`, `modernc.org/sqlite`), trivial install/upgrade,
+low idle footprint next to a game server that already wants the RAM.
+
+## ADR-003 Per-instance game install (not shared)
+BepInEx and plugins are installed inside the game directory, so a shared install
+would force every instance to run the same mod set. ~1.2 GB per instance is accepted.
+
+## ADR-004 Manager is unprivileged; root only through `unitctl`
+Requested least-privilege model. Options weighed:
+- polkit JS rule scoped to `valheim@*.service`: not available on Ubuntu 22.04 (polkit 0.105).
+- `systemd --user` units with linger: zero root, but fragile session-bus plumbing when
+  the manager itself is a system service; harder to debug for operators.
+- **Chosen**: a fixed system template unit installed once by root, plus a 15-line
+  root-owned wrapper that whitelists actions and validates the instance id, granted via
+  a single sudoers line. Portable to every systemd distro and auditable at a glance.
+Status reads use `systemctl show`, which needs no privileges.
+
+## ADR-005 Launcher is the manager binary (`valheim-ui launch`), driven by `launch.json`
+Rendering the Valheim command line in Go and `execve`-ing avoids shell quoting bugs
+with server names/passwords, keeps `KillSignal=SIGINT` delivered to the game process,
+and makes the argument builder unit-testable. BepInEx env vars are read from the pack's
+own `start_server_bepinex.sh` because their names changed between pack versions.
+
+## ADR-006 Console log via `StandardOutput=append:` file, not journald
+Avoids `systemd-journal` group membership and journalctl parsing; gives a plain file the
+manager can tail, rotate (only while the unit is inactive) and offer for download.
+
+## ADR-007 SSE instead of WebSockets
+All realtime traffic is server→client (logs, status, job progress). SSE works through
+every reverse proxy without upgrade config and needs no client library.
+
+## ADR-008 SQLite + JSON columns for option-heavy objects
+Single-host app, one writer. Instance config, settings and job summaries are JSON
+validated in Go; queried fields are real columns. Migrations via goose embedded SQL.
+
+## ADR-009 Contract-first API
+`docs/openapi.yaml` is written before handlers and frontend. The frontend generates
+its types from it (`openapi-typescript`), so backend and frontend work can proceed in
+parallel by less capable implementers with a shared source of truth.
+
+## ADR-010 Mantine 9 as the component library
+Batteries included (forms, tables, modals, notifications, dropzone) reduces bespoke UI
+code, which is where inexperienced implementers produce the most bugs.
+
+## ADR-011 Password is required (≥5 chars)
+The dedicated server aborts with "Password too short" for shorter/empty passwords.
+The UI enforces Valheim's rule and the "password must not appear in the server name" rule.
+
+## ADR-012 Scheduled restarts cannot warn players
+Valheim has no server console, RCON or broadcast. Mitigation is `only_when_empty`.
+Announcements would require a BepInEx mod and are out of scope for v1.

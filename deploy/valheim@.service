@@ -1,0 +1,29 @@
+# Installed by deploy/install.sh to /etc/systemd/system/valheim@.service
+# One unit per instance: valheim@<id>.service. Never edited by the manager;
+# per-instance settings live in /var/lib/valheim/instances/<id>/launch.json.
+[Unit]
+Description=Valheim dedicated server (%i)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=valheim
+Group=valheim
+WorkingDirectory=/var/lib/valheim/instances/%i/server
+Environment=VALHEIM_UI_CONFIG=/etc/valheim-ui/config.yaml
+ExecStart=/usr/local/bin/valheim-ui launch --instance %i
+StandardOutput=append:/var/lib/valheim/instances/%i/logs/console.log
+StandardError=inherit
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=100000
+Nice=-5
+
+[Install]
+WantedBy=multi-user.target

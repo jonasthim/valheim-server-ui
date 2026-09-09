@@ -1,0 +1,34 @@
+#!/bin/bash
+# /usr/local/lib/valheim-ui/unitctl — the only command the valheim user may sudo.
+# Usage: unitctl <start|stop|restart|enable|disable> <instance-id>
+# The instance id is validated against the same pattern the manager uses
+# (domain.InstanceIDPattern) so the unit name can never escape valheim@*.service.
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo "usage: unitctl <start|stop|restart|enable|disable> <instance-id>" >&2
+  exit 2
+fi
+
+action="$1"
+inst="$2"
+
+if ! [[ "$inst" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]]; then
+  echo "unitctl: invalid instance id" >&2
+  exit 2
+fi
+
+unit="valheim@${inst}.service"
+
+case "$action" in
+  start|stop|restart)
+    exec /bin/systemctl "$action" "$unit"
+    ;;
+  enable|disable)
+    exec /bin/systemctl "$action" "$unit"
+    ;;
+  *)
+    echo "unitctl: action not allowed: $action" >&2
+    exit 2
+    ;;
+esac

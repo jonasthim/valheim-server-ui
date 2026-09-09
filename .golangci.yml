@@ -1,0 +1,28 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - misspell
+    - unconvert
+    - bodyclose
+    - noctx
+    - gosec
+  settings:
+    gosec:
+      excludes:
+        - G304 # file paths are validated via instance.Paths helpers
+        - G204 # subprocess with variable args is inherent (steamcmd, unitctl)
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters: [gosec, errcheck, noctx]
+formatters:
+  enable:
+    - gofmt

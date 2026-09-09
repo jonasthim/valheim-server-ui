@@ -1,0 +1,10 @@
+# Development config used by `make dev-backend`. Not for production.
+listen: "127.0.0.1:8080"
+base_url: "http://localhost:5173"
+data_dir: "./devdata"
+supervisor: "direct"
+steamcmd_path: "./devdata/steamcmd/steamcmd.sh"
+insecure_cookies: true
+log_level: "debug"
+fake_server: true
+fake_server_path: "./testdata/fake-server.sh"

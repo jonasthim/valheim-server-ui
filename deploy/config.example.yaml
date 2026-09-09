@@ -1,0 +1,22 @@
+# /etc/valheim-ui/config.yaml — manager configuration.
+# Every key can be overridden with VALHEIM_UI_<UPPERCASE_KEY>.
+
+# Address the web UI listens on. Keep it on loopback and put a TLS reverse proxy
+# (Caddy, nginx, Traefik) in front for remote access.
+listen: "127.0.0.1:8080"
+
+# Public URL of the UI. Required for OIDC (redirect URI) and used for the CSRF
+# origin check. Example: https://valheim.example.com
+base_url: ""
+
+data_dir: "/var/lib/valheim"
+
+# systemd (production) or direct (development; instances die with the manager)
+supervisor: "systemd"
+unitctl_path: "/usr/local/lib/valheim-ui/unitctl"
+steamcmd_path: "/var/lib/valheim/steamcmd/steamcmd.sh"
+
+# Set true only when serving plain http on a trusted LAN.
+insecure_cookies: false
+
+log_level: "info"

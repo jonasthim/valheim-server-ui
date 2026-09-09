@@ -1,0 +1,4 @@
+# Installed by deploy/install.sh to /etc/sudoers.d/valheim-ui (mode 0440).
+# Grants the manager exactly one root command; unitctl validates its arguments.
+Defaults:valheim !requiretty
+valheim ALL=(root) NOPASSWD: /usr/local/lib/valheim-ui/unitctl
