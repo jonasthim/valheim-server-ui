@@ -114,6 +114,9 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 	}
 	wireScheduler(ctx, deps, inst, runner, playersMgr, hooks)
 
-	// WP-08 (mods, thunderstore) attaches here.
+	// WP-08: BepInEx, Thunderstore and mod config editing.
+	if err := wireMods(ctx, deps, inst, runner); err != nil {
+		return fmt.Errorf("mods: %w", err)
+	}
 	return nil
 }
