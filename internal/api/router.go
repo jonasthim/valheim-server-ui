@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"log/slog"
 	"net"
@@ -20,16 +21,35 @@ import (
 	"github.com/jonasthim/valheim-server-ui/internal/supervisor"
 )
 
-// Authenticator is implemented by the auth package (WP-01).
+// Authenticator is implemented by the auth package (WP-01). Beyond the
+// Authenticate middleware, it also carries the login/setup/logout/OIDC flow
+// so auth_handlers.go can drive it through this interface without the api
+// package importing internal/auth (which itself depends on api.WithUser /
+// api.ClientIP, and would otherwise create an import cycle).
 type Authenticator interface {
 	// Authenticate resolves the session cookie and stores the user in the context
 	// via WithUser. Unauthenticated requests pass through with no user.
 	Authenticate(next http.Handler) http.Handler
+	// Setup creates the first admin account (only while no users exist) and
+	// logs it in by setting the session cookie.
+	Setup(ctx context.Context, w http.ResponseWriter, r *http.Request, username, password, displayName, email string) (*domain.User, error)
+	// Login authenticates a local account and sets the session cookie.
+	Login(ctx context.Context, w http.ResponseWriter, r *http.Request, username, password string) (*domain.User, error)
+	// Logout deletes the current session (if any) and clears the cookie.
+	Logout(ctx context.Context, w http.ResponseWriter, r *http.Request)
+	// OIDCLogin starts the OIDC authorization code + PKCE flow.
+	OIDCLogin(w http.ResponseWriter, r *http.Request)
+	// OIDCCallback completes the OIDC flow and redirects to the SPA.
+	OIDCCallback(w http.ResponseWriter, r *http.Request)
 }
 
 // Auditor records mutating actions (WP-01). A nil Auditor is a no-op.
 type Auditor interface {
 	Record(r *http.Request, action, instanceID, target string, details map[string]any)
+	// List returns audit entries newest-first for GET /audit, optionally
+	// filtered by instance and/or username, paged with a "before id" cursor
+	// (0 = no cursor).
+	List(ctx context.Context, instanceID, username string, limit int, before int64) ([]domain.AuditEntry, error)
 }
 
 // Deps is everything handlers may need. Wave-1 packages add their services here
@@ -141,6 +161,9 @@ func realIP(next http.Handler) http.Handler {
 }
 
 func requestLogger(log *slog.Logger) func(http.Handler) http.Handler {
+	if log == nil {
+		log = slog.Default()
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()

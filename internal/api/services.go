@@ -63,6 +63,9 @@ type SettingsService interface {
 	Put(ctx context.Context, s domain.Settings) (domain.Settings, error)
 	// Redacted returns settings with secrets blanked for API responses.
 	Redacted(s domain.Settings) domain.Settings
+	// TestOIDC discovers issuerURL and reports whether it looks valid,
+	// used by POST /settings/oidc/test.
+	TestOIDC(ctx context.Context, issuerURL string) (ok bool, issuer, authEndpoint, errMsg string)
 }
 
 // WP-03

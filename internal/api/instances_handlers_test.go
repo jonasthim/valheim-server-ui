@@ -38,6 +38,18 @@ func (fakeAuthenticator) Authenticate(next http.Handler) http.Handler {
 	})
 }
 
+// The remaining Authenticator methods are exercised by WP-01's own tests
+// (internal/auth); this fake only needs to satisfy the interface here.
+func (fakeAuthenticator) Setup(context.Context, http.ResponseWriter, *http.Request, string, string, string, string) (*domain.User, error) {
+	return nil, domain.E(domain.CodeInternal, "not implemented in fake")
+}
+func (fakeAuthenticator) Login(context.Context, http.ResponseWriter, *http.Request, string, string) (*domain.User, error) {
+	return nil, domain.E(domain.CodeInternal, "not implemented in fake")
+}
+func (fakeAuthenticator) Logout(context.Context, http.ResponseWriter, *http.Request) {}
+func (fakeAuthenticator) OIDCLogin(w http.ResponseWriter, r *http.Request)           {}
+func (fakeAuthenticator) OIDCCallback(w http.ResponseWriter, r *http.Request)        {}
+
 // fakeAPISupervisor is a minimal in-memory supervisor.Supervisor for handler
 // tests, so /start /stop /status don't need a real spawned process.
 type fakeAPISupervisor struct {
