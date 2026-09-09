@@ -9,6 +9,7 @@ import {
   Badge,
   Box,
   Button,
+  Code,
   Grid,
   Group,
   NavLink,
@@ -95,17 +96,29 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
   const [rawDraft, setRawDraft] = useState<string | undefined>(undefined)
 
   const entries = fileQuery.data?.entries ?? EMPTY_ENTRIES
-  const sections = useMemo(() => {
-    const order: string[] = []
-    const bySection = new Map<string, ConfigEntry[]>()
+  // Server-synced keys lead the file; client-side ("[Not Synced with
+  // Server]") keys collapse into one group, since on a dedicated server they
+  // are not pushed to players and may not take effect.
+  const { serverSections, clientSections, clientCount } = useMemo(() => {
+    const group = () => ({ order: [] as string[], by: new Map<string, ConfigEntry[]>() })
+    const server = group()
+    const client = group()
     for (const e of entries) {
-      if (!bySection.has(e.section)) {
-        bySection.set(e.section, [])
-        order.push(e.section)
+      const g = isClientSideSetting(e) ? client : server
+      if (!g.by.has(e.section)) {
+        g.by.set(e.section, [])
+        g.order.push(e.section)
       }
-      bySection.get(e.section)!.push(e)
+      g.by.get(e.section)!.push(e)
     }
-    return order.map((section) => ({ section, entries: bySection.get(section)! }))
+    const shape = (g: ReturnType<typeof group>) =>
+      g.order.map((section) => ({ section, entries: g.by.get(section)! }))
+    const shapedClient = shape(client)
+    return {
+      serverSections: shape(server),
+      clientSections: shapedClient,
+      clientCount: shapedClient.reduce((n, sec) => n + sec.entries.length, 0),
+    }
   }, [entries])
 
   const formDirty = Object.keys(pending).length > 0
@@ -123,6 +136,17 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
       return next
     })
   }
+
+  const renderEntry = (entry: ConfigEntry) => (
+    <ConfigEntryField
+      key={entryKey(entry.section, entry.key)}
+      entry={entry}
+      value={pending[entryKey(entry.section, entry.key)]}
+      onChange={(v) => setEntryValue(entry, v)}
+      onReset={() => resetEntry(entry)}
+      readOnly={readOnly}
+    />
+  )
 
   function handleSave() {
     if (mode === 'raw') {
@@ -194,13 +218,18 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
           disabled={readOnly}
           styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)', fontSize: 12 } }}
         />
-      ) : sections.length === 0 ? (
+      ) : serverSections.length === 0 && clientSections.length === 0 ? (
         <Text c="dimmed" size="sm">
           No parsed entries in this file — use Raw mode to edit it directly.
         </Text>
       ) : (
-        <Accordion multiple defaultValue={sections.map((s) => s.section)}>
-          {sections.map(({ section, entries: sectionEntries }) => (
+        <Accordion
+          multiple
+          defaultValue={
+            serverSections.length > 0 ? serverSections.map((s) => s.section) : ['__client-side__']
+          }
+        >
+          {serverSections.map(({ section, entries: sectionEntries }) => (
             <Accordion.Item key={section} value={section}>
               <Accordion.Control>
                 <Text size="sm" fw={500}>
@@ -208,21 +237,48 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
                 </Text>
               </Accordion.Control>
               <Accordion.Panel>
-                <Stack gap="sm">
-                  {sectionEntries.map((entry) => (
-                    <ConfigEntryField
-                      key={entryKey(entry.section, entry.key)}
-                      entry={entry}
-                      value={pending[entryKey(entry.section, entry.key)]}
-                      onChange={(v) => setEntryValue(entry, v)}
-                      onReset={() => resetEntry(entry)}
-                      readOnly={readOnly}
-                    />
+                <Stack gap="sm">{sectionEntries.map(renderEntry)}</Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          ))}
+
+          {clientSections.length > 0 && (
+            <Accordion.Item value="__client-side__">
+              <Accordion.Control>
+                <Group gap="xs" wrap="nowrap">
+                  <IconAlertTriangle
+                    size={15}
+                    color="var(--mantine-color-straw-6)"
+                    style={{ flexShrink: 0 }}
+                  />
+                  <Text size="sm" fw={500}>
+                    Client-side settings
+                  </Text>
+                  <Badge size="sm" variant="light" color="gray">
+                    {clientCount}
+                  </Badge>
+                </Group>
+              </Accordion.Control>
+              <Accordion.Panel>
+                <Stack gap="md">
+                  <Alert color="straw" variant="light" icon={<IconAlertTriangle size={16} />}>
+                    These keys are marked <Code>[Not Synced with Server]</Code>. On a dedicated server they
+                    are not pushed to connected players and may have no effect; one-shot actions like presets
+                    reset themselves to their default on the next restart. Edit them only if you also play
+                    from this machine.
+                  </Alert>
+                  {clientSections.map(({ section, entries: sectionEntries }) => (
+                    <Stack key={section} gap="xs">
+                      <Text size="xs" fw={600} c="dimmed" tt="uppercase">
+                        {section || '(root)'}
+                      </Text>
+                      {sectionEntries.map(renderEntry)}
+                    </Stack>
                   ))}
                 </Stack>
               </Accordion.Panel>
             </Accordion.Item>
-          ))}
+          )}
         </Accordion>
       )}
     </Stack>
@@ -299,32 +355,20 @@ function ConfigEntryField({
   }
 
   return (
-    <Stack gap={4}>
-      <Group align="flex-end" wrap="nowrap" gap="xs">
-        <Box style={{ flex: 1, minWidth: 0 }}>{control}</Box>
-        {!readOnly && entry.default_value !== undefined && (
-          <Tooltip label={`Reset to default (${entry.default_value})`}>
-            <ActionIcon
-              variant="subtle"
-              aria-label={`Reset ${entry.key} to default`}
-              disabled={!canReset && !isDirty}
-              onClick={onReset}
-            >
-              <IconRestore size={16} />
-            </ActionIcon>
-          </Tooltip>
-        )}
-      </Group>
-      {isClientSideSetting(entry) && (
-        <Group gap={6} wrap="nowrap" align="center" pl={2}>
-          <IconAlertTriangle size={13} color="var(--mantine-color-straw-6)" style={{ flexShrink: 0 }} />
-          <Text size="xs" c="dimmed">
-            Client-side setting (not synced from the server). On a dedicated server it is not pushed to
-            players and may not take effect; one-shot actions like presets reset themselves on the next
-            restart.
-          </Text>
-        </Group>
+    <Group align="flex-end" wrap="nowrap" gap="xs">
+      <Box style={{ flex: 1, minWidth: 0 }}>{control}</Box>
+      {!readOnly && entry.default_value !== undefined && (
+        <Tooltip label={`Reset to default (${entry.default_value})`}>
+          <ActionIcon
+            variant="subtle"
+            aria-label={`Reset ${entry.key} to default`}
+            disabled={!canReset && !isDirty}
+            onClick={onReset}
+          >
+            <IconRestore size={16} />
+          </ActionIcon>
+        </Tooltip>
       )}
-    </Stack>
+    </Group>
   )
 }
