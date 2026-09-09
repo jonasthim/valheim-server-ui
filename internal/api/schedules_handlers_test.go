@@ -14,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/config"
 	"github.com/jonasthim/valheim-server-ui/internal/db"
@@ -320,6 +321,14 @@ func TestSchedules_RunNow_Succeeds(t *testing.T) {
 	}
 	if a.backupCalls != 1 {
 		t.Fatalf("expected the backup hook to be called once, got %d", a.backupCalls)
+	}
+	// Wait for the enqueued job to finish before the test returns, so the
+	// runner is done writing under the temp dirs and t.TempDir cleanup does
+	// not race it (was an intermittent "directory not empty" on RemoveAll).
+	waitCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if _, err := a.runner.WaitFor(waitCtx, runResp.Job.ID); err != nil {
+		t.Fatalf("wait for backup job: %v", err)
 	}
 }
 
