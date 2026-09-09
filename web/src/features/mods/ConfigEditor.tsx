@@ -29,7 +29,7 @@ import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtBytes } from '../../lib/format'
 import type { ConfigEntry } from '../../api/types'
 import { EmptyState, SectionCard } from '../../ui'
-import { entryKey, isBooleanEntry, isNumericEntry } from './helpers'
+import { entryKey, isBooleanEntry, isClientSideSetting, isNumericEntry } from './helpers'
 import { useConfigFiles, useModConfig, useSaveModConfig } from './useModConfig'
 import { useModsOverview } from './useMods'
 
@@ -299,20 +299,32 @@ function ConfigEntryField({
   }
 
   return (
-    <Group align="flex-end" wrap="nowrap" gap="xs">
-      <Box style={{ flex: 1, minWidth: 0 }}>{control}</Box>
-      {!readOnly && entry.default_value !== undefined && (
-        <Tooltip label={`Reset to default (${entry.default_value})`}>
-          <ActionIcon
-            variant="subtle"
-            aria-label={`Reset ${entry.key} to default`}
-            disabled={!canReset && !isDirty}
-            onClick={onReset}
-          >
-            <IconRestore size={16} />
-          </ActionIcon>
-        </Tooltip>
+    <Stack gap={4}>
+      <Group align="flex-end" wrap="nowrap" gap="xs">
+        <Box style={{ flex: 1, minWidth: 0 }}>{control}</Box>
+        {!readOnly && entry.default_value !== undefined && (
+          <Tooltip label={`Reset to default (${entry.default_value})`}>
+            <ActionIcon
+              variant="subtle"
+              aria-label={`Reset ${entry.key} to default`}
+              disabled={!canReset && !isDirty}
+              onClick={onReset}
+            >
+              <IconRestore size={16} />
+            </ActionIcon>
+          </Tooltip>
+        )}
+      </Group>
+      {isClientSideSetting(entry) && (
+        <Group gap={6} wrap="nowrap" align="center" pl={2}>
+          <IconAlertTriangle size={13} color="var(--mantine-color-straw-6)" style={{ flexShrink: 0 }} />
+          <Text size="xs" c="dimmed">
+            Client-side setting (not synced from the server). On a dedicated server it is not pushed to
+            players and may not take effect; one-shot actions like presets reset themselves on the next
+            restart.
+          </Text>
+        </Group>
       )}
-    </Group>
+    </Stack>
   )
 }

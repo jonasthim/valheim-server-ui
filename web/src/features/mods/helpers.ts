@@ -38,3 +38,14 @@ export function isBooleanEntry(entry: ConfigEntry): boolean {
 export function entryKey(section: string, key: string): string {
   return `${section}::${key}`
 }
+
+/** BepInEx ServerSync mods tag each setting's description with
+ * `[Synced with Server]` or `[Not Synced with Server]`. A not-synced key is
+ * client-side: on a dedicated server, setting it here is never pushed to
+ * connected players and may have no server-side effect. This also covers the
+ * one-shot "action" keys (e.g. AzuExtendedPlayerInventory's `Apply Preset`)
+ * that only run from the in-game configuration manager and reset themselves
+ * to their default on the next load. */
+export function isClientSideSetting(entry: ConfigEntry): boolean {
+  return /\[not synced with server\]/i.test(entry.description ?? '')
+}
