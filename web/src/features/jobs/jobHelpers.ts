@@ -25,6 +25,7 @@ const JOB_TYPE_LABELS: Record<JobType, string> = {
   backup: 'Backup',
   restore: 'Restore',
   world_import: 'Import world',
+  world_regenerate: 'Regenerate world',
   mod_install: 'Install mod',
   mod_update: 'Update mod',
   mod_uninstall: 'Uninstall mod',

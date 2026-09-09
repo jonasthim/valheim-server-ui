@@ -352,18 +352,135 @@ func (s *Service) DeleteWorld(ctx context.Context, instanceID, world string) err
 		return domain.Ef(domain.CodeConflict, "cannot delete the active world %q", world)
 	}
 
-	dir := s.inst.Paths(instanceID).WorldsDir()
+	removed, err := removeWorldFiles(s.inst.Paths(instanceID).WorldsDir(), world)
+	if err != nil {
+		return err
+	}
+	if !removed {
+		return domain.NotFound("world")
+	}
+	return nil
+}
+
+// removeWorldFiles deletes every save file belonging to world: the .db/.fwl
+// pair, their .old siblings and Valheim's own rolling copies
+// (<world>_backup_auto-*, _backup_cloud-*, _backup_restore-*). It reports
+// whether anything was removed.
+func removeWorldFiles(dir, world string) (bool, error) {
 	removed := false
 	for _, suffix := range []string{".db", ".fwl", ".db.old", ".fwl.old"} {
 		p := filepath.Join(dir, world+suffix)
 		if err := os.Remove(p); err == nil {
 			removed = true
 		} else if !os.IsNotExist(err) {
-			return domain.Wrap(domain.CodeInternal, "delete world file", err)
+			return removed, domain.Wrap(domain.CodeInternal, "delete world file", err)
 		}
 	}
-	if !removed {
-		return domain.NotFound("world")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return removed, nil
+		}
+		return removed, domain.Wrap(domain.CodeInternal, "read worlds directory", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		stem := strings.TrimSuffix(name, filepath.Ext(name))
+		if strings.HasPrefix(stem, world+"_backup_") && isValheimBackupStem(stem) {
+			if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+				return removed, domain.Wrap(domain.CodeInternal, "delete world backup copy", err)
+			}
+			removed = true
+		}
+	}
+	return removed, nil
+}
+
+// EnqueueWorldRegenerate queues a job that backs up the active world, deletes
+// its files and (when the instance was running) starts the instance again so
+// Valheim generates a brand-new world with the same name and a new seed.
+func (s *Service) EnqueueWorldRegenerate(ctx context.Context, instanceID, world string, stopIfRunning bool, requestedBy string) (*domain.Job, error) {
+	inst, err := s.inst.Get(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !validWorldName(world) {
+		return nil, domain.Validation([]domain.FieldError{{Field: "world", Message: "invalid world name"}})
+	}
+	if world != inst.Config.World {
+		return nil, domain.Ef(domain.CodeConflict, "%q is not the active world; delete it instead of regenerating", world)
+	}
+	if isBusyState(inst.Status.State) && !stopIfRunning {
+		return nil, domain.Ef(domain.CodeInstanceRunning, "instance %q is running; retry with stop_if_running", instanceID)
+	}
+	if active := s.runner.ActiveFor(instanceID); active != nil {
+		return nil, domain.Ef(domain.CodeInstanceBusy, "job %s (%s) is already running for this instance", active.ID, active.Type)
+	}
+	return s.runner.Enqueue(ctx, jobs.Spec{
+		Type:        domain.JobWorldRegenerate,
+		InstanceID:  instanceID,
+		Title:       fmt.Sprintf("Regenerate world %s", world),
+		RequestedBy: requestedBy,
+	}, func(ctx context.Context, log *jobs.Logger) error {
+		return s.runWorldRegenerate(ctx, instanceID, world, stopIfRunning, log)
+	})
+}
+
+func (s *Service) runWorldRegenerate(ctx context.Context, instanceID, world string, stopIfRunning bool, log *jobs.Logger) error {
+	inst, err := s.inst.Get(ctx, instanceID)
+	if err != nil {
+		return err
+	}
+	if world != inst.Config.World {
+		return domain.Ef(domain.CodeConflict, "%q is no longer the active world", world)
+	}
+	wasRunning := isBusyState(inst.Status.State)
+	if wasRunning && !stopIfRunning {
+		return domain.Ef(domain.CodeInstanceRunning, "instance %q is running; retry with stop_if_running", instanceID)
+	}
+	if wasRunning {
+		log.Printf("stopping instance before regenerating %q", world)
+		if _, err := s.inst.Stop(ctx, instanceID); err != nil {
+			return fmt.Errorf("stop instance: %w", err)
+		}
+		if err := s.waitStopped(ctx, instanceID); err != nil {
+			return err
+		}
+	}
+
+	dir := s.inst.Paths(instanceID).WorldsDir()
+	if _, err := os.Stat(filepath.Join(dir, world+".db")); err == nil {
+		log.Printf("backing up %q before deleting it", world)
+		// Manual kind: never auto-deleted by retention, since this is the only
+		// copy of a world the operator chose to throw away.
+		b, err := s.Create(ctx, instanceID, domain.BackupManual, "before regenerating world "+world)
+		if err != nil {
+			return fmt.Errorf("safety backup: %w", err)
+		}
+		log.Printf("safety backup written: %s", b.Filename)
+		log.SetSummary("backup", b.Filename)
+	} else {
+		log.Printf("world %q has no .db yet (never saved); nothing to back up", world)
+	}
+
+	removed, err := removeWorldFiles(dir, world)
+	if err != nil {
+		return err
+	}
+	log.Printf("deleted save files of %q (removed=%v); Valheim generates a new world with a new seed on the next start", world, removed)
+	log.SetSummary("world", world)
+
+	if wasRunning {
+		log.Printf("starting instance; world generation takes a minute or two")
+		if _, err := s.inst.Start(ctx, instanceID); err != nil {
+			return fmt.Errorf("start instance: %w", err)
+		}
+	}
+	if err := s.inst.PublishStatus(ctx, instanceID); err != nil {
+		s.log.Warn("backup: publish status after regenerate", "instance", instanceID, "err", err)
 	}
 	return nil
 }

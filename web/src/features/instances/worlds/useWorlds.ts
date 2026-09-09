@@ -50,6 +50,29 @@ export function useDeleteWorld(id: string) {
   })
 }
 
+/**
+ * POST /instances/{id}/worlds/{name}/regenerate → 202 Job (opened in the job
+ * drawer). Backs the active world up, deletes its files and lets Valheim create
+ * a fresh world with a new seed on the next start.
+ */
+export function useRegenerateWorld(id: string) {
+  const qc = useQueryClient()
+  const { openJob } = useJobDrawer()
+  return useMutation({
+    mutationFn: ({ name, stopIfRunning }: { name: string; stopIfRunning: boolean }) =>
+      api.post<{ job: Job }>(`/instances/${id}/worlds/${encodeURIComponent(name)}/regenerate`, {
+        stop_if_running: stopIfRunning,
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: worldsKey(id) })
+      qc.invalidateQueries({ queryKey: ['instances', id, 'backups'] })
+      notifySuccess('World regeneration started')
+      openJob(res.job.id)
+    },
+    onError: (err) => notifyError(err, 'Could not regenerate world'),
+  })
+}
+
 /** POST /instances/{id}/worlds (multipart) → 202 Job, opened in the job drawer. */
 export function useUploadWorlds(id: string) {
   const qc = useQueryClient()

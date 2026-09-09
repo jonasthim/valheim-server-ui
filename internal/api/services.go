@@ -87,6 +87,9 @@ type BackupService interface {
 	ListWorlds(ctx context.Context, instanceID string) ([]domain.World, error)
 	EnqueueWorldImport(ctx context.Context, instanceID string, files map[string]io.Reader, overwrite bool, requestedBy string) (*domain.Job, error)
 	DeleteWorld(ctx context.Context, instanceID, world string) error
+	// EnqueueWorldRegenerate backs up and deletes the ACTIVE world's files so
+	// Valheim generates a fresh world (new seed, same name) on the next start.
+	EnqueueWorldRegenerate(ctx context.Context, instanceID, world string, stopIfRunning bool, requestedBy string) (*domain.Job, error)
 	// ExportWorld writes a zip of <world>.db/.fwl to w.
 	ExportWorld(ctx context.Context, instanceID, world string, w io.Writer) error
 }

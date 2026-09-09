@@ -509,6 +509,24 @@ paths:
       responses:
         '204': { description: Deleted }
         '409': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/worlds/{worldName}/regenerate:
+    post:
+      tags: [worlds]
+      summary: |
+        Regenerate the active world: take a backup, delete its save files and let
+        Valheim create a fresh world (new random seed) with the same name on the
+        next start. Only the active world can be regenerated; delete inactive ones.
+      x-role: operator
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - { $ref: '#/components/parameters/worldName' }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StopIfRunning' }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '409': { $ref: '#/components/responses/Error' }
   /instances/{instanceId}/worlds/{worldName}/download:
     get:
       tags: [worlds]
@@ -1578,7 +1596,7 @@ components:
 
     JobType:
       type: string
-      enum: [install, update, backup, restore, world_import, mod_install, mod_update, mod_uninstall, bepinex_install, scheduled_restart, thunderstore_refresh, self_upgrade]
+      enum: [install, update, backup, restore, world_import, world_regenerate, mod_install, mod_update, mod_uninstall, bepinex_install, scheduled_restart, thunderstore_refresh, self_upgrade]
 
     JobStatus:
       type: string

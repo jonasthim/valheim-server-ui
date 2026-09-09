@@ -10,6 +10,7 @@ const (
 	JobBackup              JobType = "backup"
 	JobRestore             JobType = "restore"
 	JobWorldImport         JobType = "world_import"
+	JobWorldRegenerate     JobType = "world_regenerate"
 	JobModInstall          JobType = "mod_install"
 	JobModUpdate           JobType = "mod_update"
 	JobModUninstall        JobType = "mod_uninstall"

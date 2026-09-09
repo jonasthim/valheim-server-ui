@@ -1,6 +1,7 @@
 import { ActionIcon, Badge, Button, Group, Skeleton, Table, Text, Tooltip } from '@mantine/core'
 import { modals } from '@mantine/modals'
-import { IconDownload, IconTrash } from '@tabler/icons-react'
+import { IconDownload, IconRefreshAlert, IconTrash } from '@tabler/icons-react'
+import { openConfirmWorldAction } from './openConfirmWorldAction'
 import { api } from '../../../api/client'
 import type { World } from '../../../api/types'
 import { fmtAgo, fmtBytes } from '../../../lib/format'
@@ -12,8 +13,11 @@ export function WorldsTable({
   canManage,
   onMakeActive,
   onDelete,
+  onRegenerate,
+  instanceRunning,
   makeActivePending,
   deletePending,
+  regeneratePending,
 }: {
   id: string
   worlds: World[]
@@ -21,8 +25,11 @@ export function WorldsTable({
   canManage: boolean
   onMakeActive: (name: string) => void
   onDelete: (name: string) => void
+  onRegenerate: (name: string, stopIfRunning: boolean) => void
+  instanceRunning: boolean
   makeActivePending: boolean
   deletePending: boolean
+  regeneratePending: boolean
 }) {
   function confirmMakeActive(name: string) {
     modals.openConfirmModal({
@@ -39,16 +46,15 @@ export function WorldsTable({
   }
 
   function confirmDelete(name: string) {
-    modals.openConfirmModal({
-      title: 'Delete world',
-      children: (
-        <Text size="sm">
-          Delete <strong>{name}</strong> and its save files? This cannot be undone; consider a backup first.
-        </Text>
-      ),
-      labels: { confirm: 'Delete', cancel: 'Cancel' },
-      confirmProps: { color: 'red' },
-      onConfirm: () => onDelete(name),
+    openConfirmWorldAction({ worldName: name, action: 'delete', instanceRunning, onConfirm: () => onDelete(name) })
+  }
+
+  function confirmRegenerate(name: string) {
+    openConfirmWorldAction({
+      worldName: name,
+      action: 'regenerate',
+      instanceRunning,
+      onConfirm: ({ stopIfRunning }) => onRegenerate(name, stopIfRunning),
     })
   }
 
@@ -120,6 +126,22 @@ export function WorldsTable({
                 )}
               </Table.Td>
               <Table.Td>
+                {canManage && w.active && (
+                  <Group gap="xs" wrap="nowrap" justify="flex-end">
+                    <Tooltip label="Back up, delete the save files and let Valheim create a new world with a new seed">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        color="red"
+                        leftSection={<IconRefreshAlert size={14} />}
+                        loading={regeneratePending}
+                        onClick={() => confirmRegenerate(w.name)}
+                      >
+                        Regenerate
+                      </Button>
+                    </Tooltip>
+                  </Group>
+                )}
                 {canManage && !w.active && (
                   <Group gap="xs" wrap="nowrap" justify="flex-end">
                     <Button size="xs" variant="light" loading={makeActivePending} onClick={() => confirmMakeActive(w.name)}>

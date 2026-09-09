@@ -19,6 +19,7 @@ func registerWorldRoutes(r chi.Router, d *Deps) {
 	r.With(RequireRole(domain.RoleOperator)).Post("/instances/{instanceId}/worlds", handleImportWorlds(d))
 	r.With(RequireRole(domain.RoleOperator)).Delete("/instances/{instanceId}/worlds/{worldName}", handleDeleteWorld(d))
 	r.With(RequireRole(domain.RoleOperator)).Get("/instances/{instanceId}/worlds/{worldName}/download", handleExportWorld(d))
+	r.With(RequireRole(domain.RoleOperator)).Post("/instances/{instanceId}/worlds/{worldName}/regenerate", handleRegenerateWorld(d))
 }
 
 func handleListWorlds(d *Deps) http.HandlerFunc {
@@ -154,5 +155,31 @@ func handleExportWorld(d *Deps) http.HandlerFunc {
 			return
 		}
 		d.audit(r, "world.export", id, world, nil)
+	}
+}
+
+// handleRegenerateWorld → POST /instances/{instanceId}/worlds/{worldName}/regenerate
+func handleRegenerateWorld(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		world := chi.URLParam(r, "worldName")
+		var body struct {
+			StopIfRunning bool `json:"stop_if_running"`
+		}
+		if err := DecodeOptionalJSON(r, &body); err != nil {
+			WriteError(w, err)
+			return
+		}
+		job, err := d.Backups.EnqueueWorldRegenerate(r.Context(), id, world, body.StopIfRunning, RequestedBy(r))
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		d.audit(r, "world.regenerate", id, world, map[string]any{"job_id": job.ID, "stop_if_running": body.StopIfRunning})
+		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 	}
 }

@@ -1302,6 +1302,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/worlds/{worldName}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate the active world: take a backup, delete its save files and let
+         *     Valheim create a fresh world (new random seed) with the same name on the
+         *     next start. Only the active world can be regenerated; delete inactive ones.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                    worldName: components["parameters"]["worldName"];
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["StopIfRunning"];
+                };
+            };
+            responses: {
+                202: components["responses"]["JobResponse"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/worlds/{worldName}/download": {
         parameters: {
             query?: never;
@@ -2943,7 +2983,7 @@ export interface components {
             index_updated_at: string;
         };
         /** @enum {string} */
-        JobType: "install" | "update" | "backup" | "restore" | "world_import" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade";
+        JobType: "install" | "update" | "backup" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade";
         /** @enum {string} */
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";
         Job: {
