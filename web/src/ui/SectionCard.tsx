@@ -25,7 +25,7 @@ export function SectionCard({
     <Paper className={[classes.sectionCard, className].filter(Boolean).join(' ')}>
       {(title || actions) && (
         <div className={classes.sectionHead}>
-          <Stack gap={2} style={{ minWidth: 0 }}>
+          <Stack gap={2} className={classes.sectionHeadText}>
             {title && (
               <Title order={3} size="h4">
                 {title}
@@ -37,7 +37,7 @@ export function SectionCard({
               </Text>
             )}
           </Stack>
-          {actions && <div style={{ flex: 'none' }}>{actions}</div>}
+          {actions && <div className={classes.sectionHeadActions}>{actions}</div>}
         </div>
       )}
       <div className={flush ? classes.sectionBodyFlush : classes.sectionBody}>{children}</div>

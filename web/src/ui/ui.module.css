@@ -53,6 +53,20 @@
   gap: var(--mantine-spacing-md);
   padding: var(--mantine-spacing-md) var(--mantine-spacing-lg);
   border-bottom: 1px solid var(--vh-border);
+  flex-wrap: wrap;
+}
+/* Title+description column: grows, but demands a sensible width so the actions
+   wrap to their own line on narrow screens instead of starving this text down
+   to one word per line. */
+.sectionHeadText {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+/* Actions stay their natural width and right-align, whether beside the title
+   or wrapped onto their own line below it. */
+.sectionHeadActions {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 .sectionBody {
   padding: var(--mantine-spacing-lg);
