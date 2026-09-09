@@ -58,6 +58,9 @@ func (s *Service) ListWorlds(ctx context.Context, instanceID string) ([]domain.W
 			continue // .old siblings deliberately excluded from the world list
 		}
 		stem := strings.TrimSuffix(name, filepath.Ext(name))
+		if isValheimBackupStem(stem) {
+			continue // Valheim's own rolling copies (-backups), not selectable worlds
+		}
 		fi, err := e.Info()
 		if err != nil {
 			continue
@@ -387,4 +390,15 @@ func (s *Service) ExportWorld(ctx context.Context, instanceID, world string, w i
 		return fmt.Errorf("export world %q: %w", world, err)
 	}
 	return nil
+}
+
+// isValheimBackupStem reports whether a world file stem is one of Valheim's
+// own automatic copies (e.g. "Midgard_backup_auto-20260909144803",
+// "_backup_cloud-", "_backup_restore-"), which the manager lists under
+// neither Worlds nor Backups: they are not loadable by name and the manager
+// keeps its own zip backups.
+func isValheimBackupStem(stem string) bool {
+	return strings.Contains(stem, "_backup_auto-") ||
+		strings.Contains(stem, "_backup_cloud-") ||
+		strings.Contains(stem, "_backup_restore-")
 }

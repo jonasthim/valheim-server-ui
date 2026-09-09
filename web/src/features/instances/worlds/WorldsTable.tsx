@@ -85,10 +85,16 @@ export function WorldsTable({
                       Active
                     </Badge>
                   )}
-                  {w.has_db === false && (
-                    <Badge color="red" variant="light">
-                      Missing .db
-                    </Badge>
+                  {w.has_db === false && w.has_fwl !== false && (
+                    <Tooltip
+                      multiline
+                      w={320}
+                      label="Valheim creates the .fwl immediately and writes the .db (the world data) at the first save: every save interval (30 min by default) or when the server stops. Until then the world has no data to back up or download."
+                    >
+                      <Badge color="yellow" variant="light" style={{ cursor: 'help' }}>
+                        Not saved yet
+                      </Badge>
+                    </Tooltip>
                   )}
                   {w.has_fwl === false && (
                     <Badge color="red" variant="light">
