@@ -241,3 +241,33 @@ its own binary without any external tooling:
 - `install.sh` implements the same download-and-verify-and-swap logic for the
   initial install and for installer-driven upgrades, so a fresh `curl | sudo
   bash` run and an in-app self-upgrade produce byte-identical results on disk.
+
+## 12. Releasing
+
+A release is a git tag `vX.Y.Z` plus a GitHub release carrying
+`valheim-ui_linux_amd64.tar.gz`, `install.sh`, `deploy.tar.gz` and
+`SHA256SUMS`. Both `install.sh` and the in-app self-upgrade (§11) resolve the
+latest release from GitHub, so publishing one is all it takes to roll a new
+version out to every install.
+
+The normal way to cut one is to bump the `VERSION` file on `main`:
+
+```bash
+echo 1.0.2 > VERSION
+git commit -am "chore: release v1.0.2"
+git push origin main
+```
+
+The `version` job in `.github/workflows/ci.yml` reads the file on every push
+to `main`; when the tag `v<VERSION>` does not exist yet, the `release` job
+(after backend, frontend and e2e pass) builds the binary with that version
+string, creates the tag at the pushed commit and publishes the release with
+generated notes. A push to `main` whose `VERSION` is already tagged publishes
+nothing, so unrelated commits are safe. The two older paths still work:
+pushing a `v*` tag by hand releases that tag, and the workflow's manual
+"Run workflow" button takes a version to release from any ref.
+
+Installs learn about the release at their next update check (Settings →
+Application, hourly by default); press Upgrade there or re-run the install
+one-liner on the host.
+

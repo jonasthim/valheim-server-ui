@@ -71,3 +71,13 @@ No default admin password ever exists. While the users table is empty the SPA ro
 `/setup`, where the first administrator is created through `POST /api/v1/auth/setup`;
 the endpoint disappears (404 `setup_done`) after the first user. Break-glass afterwards
 is `valheim-ui admin reset-password` on the host.
+
+## ADR-015 Releases are cut from a VERSION file on main
+Publishing a release requires only a normal push to `main`: CI compares `v$(cat VERSION)`
+with the existing tags and, when the tag is new, creates it and publishes the GitHub
+release from that commit. Rationale: the release must be reproducible by anyone (or any
+automation) that can push a branch, without depending on tag-push or workflow-dispatch
+permissions that some tooling and hosted environments lack. Tag pushes and manual
+dispatch remain as escape hatches; the tag CI creates uses `GITHUB_TOKEN`, so it does not
+trigger a second run.
+

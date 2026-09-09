@@ -213,6 +213,11 @@ Requirements: Go 1.26, Node 22. The API contract is `docs/openapi.yaml`; fronten
 types are generated from it (`make gen`). Dependencies stay on their latest
 majors with zero known vulnerabilities; CI runs `govulncheck` and `npm audit`.
 
+Releases are cut by bumping the `VERSION` file on `main`: CI builds, tests and
+publishes the GitHub release `v<VERSION>` with the binary, `install.sh` and
+checksums, and running installs pick it up through the in-app upgrade
+(see `docs/RUNBOOK.md` §12).
+
 ## Status and non-goals
 
 v1 targets a single Linux host with systemd. Not in scope: Docker-based game
