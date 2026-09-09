@@ -99,11 +99,11 @@ export function useUploadMod(id: string) {
   })
 }
 
-/** POST /instances/{id}/mods {owner, name, version?} — install a Thunderstore package. */
+/** POST /instances/{id}/mods {registry?, owner, name, version?} — install a package. */
 export function useInstallPackage(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { owner: string; name: string; version?: string }) =>
+    mutationFn: (body: { registry?: string; owner: string; name: string; version?: string }) =>
       api.post<{ job: Job }>(`/instances/${id}/mods`, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['instances', id, 'mods'] })

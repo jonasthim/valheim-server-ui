@@ -25,7 +25,7 @@ func TestThunderstore_RefreshWritesCache(t *testing.T) {
 
 	// A fresh client pointed at the same cache dir should load it without
 	// hitting the network.
-	reloaded := NewThunderstore(nil, filepath.Dir(ts.cacheDir), func() time.Duration { return time.Hour }, "test-agent", nil)
+	reloaded := newThunderstoreClient(nil, filepath.Dir(filepath.Dir(ts.cacheDir)), func() time.Duration { return time.Hour }, "test-agent", nil)
 	if _, ok := reloaded.LatestVersion("Alice", "CoreLib"); !ok {
 		t.Error("expected reloaded client to have loaded the cached index")
 	}
@@ -144,7 +144,7 @@ func searchIndex() []rawPackage {
 func newSearchThunderstore(t *testing.T) *Thunderstore {
 	t.Helper()
 	srv := newTestThunderstoreServer(t, searchIndex())
-	ts := NewThunderstore(srv.client(), t.TempDir(), func() time.Duration { return time.Hour }, "test-agent", nil)
+	ts := newThunderstoreClient(srv.client(), t.TempDir(), func() time.Duration { return time.Hour }, "test-agent", nil)
 	if err := ts.Refresh(context.Background()); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}

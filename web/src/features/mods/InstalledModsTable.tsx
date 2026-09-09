@@ -209,7 +209,7 @@ export function InstalledModsTable({ id }: { id: string }) {
                   <Table.Td>
                     {canOperate && (
                       <Group gap={4} wrap="nowrap" justify="flex-end">
-                        {mod.source === 'thunderstore' && (
+                        {mod.source !== 'manual' && (
                           <Tooltip label={mod.update_available ? 'Update to latest' : 'Already up to date'}>
                             <ActionIcon
                               variant="subtle"

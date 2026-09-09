@@ -143,13 +143,17 @@ func newModsTestAPI(t *testing.T) *modsTestAPI {
 	}
 	httpClient := &http.Client{Transport: &apiRewriteTransport{base: srvURL}}
 
-	ts := mods.NewThunderstore(httpClient, cfg.CacheDir(), func() time.Duration { return time.Hour }, "test-agent", log)
+	ts := mods.NewThunderstore(
+		domain.RegistryThunderstoreID, domain.RegistryThunderstoreName, domain.RegistryThunderstoreIndexURL,
+		[]string{"thunderstore.io"}, httpClient, cfg.CacheDir(), func() time.Duration { return time.Hour }, "test-agent", log,
+	)
 	if err := ts.Refresh(ctx); err != nil {
 		t.Fatalf("refresh thunderstore index: %v", err)
 	}
 
-	modSvc := mods.NewService(sqldb, ts, instSvc, runner, cfg.CacheDir(), log)
-	tsSvc := mods.NewThunderstoreService(ts, runner)
+	regs := mods.NewRegistries(ts)
+	modSvc := mods.NewService(sqldb, regs, instSvc, runner, cfg.CacheDir(), log)
+	tsSvc := mods.NewThunderstoreService(regs, runner)
 
 	deps := &Deps{
 		Cfg: cfg, Log: log, DB: sqldb, Bus: bus, Supervisor: sup,

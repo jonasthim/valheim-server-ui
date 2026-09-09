@@ -356,6 +356,14 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
   `installed` = `server/BepInEx/core/BepInEx.Preloader.dll` exists; version is read
   from the `manifest.json` we store at `server/BepInEx/valheim-ui-pack.json` on install.
   Enabling/disabling is `InstanceConfig.bepinex_enabled` (launch env), no file moves.
+- **Registries**: the browse/install path supports N Thunderstore-compatible package
+  registries (`internal/mods.Registries`), each a Thunderstore-compatible v1 index. Two
+  ship enabled: `thunderstore` (the default) and `hexium` (`valheim.hexium.gg`). A mod
+  records the registry it came from as its `source`; updates and dependency resolution
+  route back to that same registry, and package downloads are restricted to that
+  registry's own hosts (Thunderstore `thunderstore.io`, Hexium `hexium.gg`). BepInEx is
+  always installed from the default registry. The description below is the Thunderstore
+  registry; Hexium behaves identically with its own index URL and CDN.
 - **Thunderstore client**: `GET https://thunderstore.io/c/valheim/api/v1/package/`
   (≈12 MB, ≈10.5k packages) cached on disk, refreshed every
   `settings.thunderstore.index_refresh_hours` (default 6) or on demand. Search is

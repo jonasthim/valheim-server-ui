@@ -700,7 +700,7 @@ paths:
               schema: { $ref: '#/components/schemas/ModsOverview' }
     post:
       tags: [mods]
-      summary: Install a Thunderstore package (and its dependencies)
+      summary: Install a package from a registry (and its dependencies)
       x-role: operator
       requestBody:
         required: true
@@ -710,6 +710,7 @@ paths:
               type: object
               required: [owner, name]
               properties:
+                registry: { type: string, description: 'Registry id (from GET /thunderstore/registries). Omit for the default (thunderstore).' }
                 owner: { type: string }
                 name: { type: string }
                 version: { type: string, description: 'Omit for latest' }
@@ -856,11 +857,26 @@ paths:
               schema: { $ref: '#/components/schemas/ConfigFile' }
 
   # ------------------------------------------------------------------ thunderstore
+  /thunderstore/registries:
+    get:
+      tags: [thunderstore]
+      summary: List the configured package registries (Thunderstore, Hexium, ...)
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [registries]
+                properties:
+                  registries: { type: array, items: { $ref: '#/components/schemas/Registry' } }
   /thunderstore/packages:
     get:
       tags: [thunderstore]
       x-role: viewer
       parameters:
+        - { in: query, name: registry, schema: { type: string }, description: 'Registry id; omit for the default (thunderstore)' }
         - { in: query, name: q, schema: { type: string } }
         - { in: query, name: category, schema: { type: string } }
         - { in: query, name: sort, schema: { type: string, enum: [rating, downloads, updated, name], default: rating } }
@@ -879,6 +895,7 @@ paths:
       parameters:
         - { in: path, name: owner, required: true, schema: { type: string } }
         - { in: path, name: name, required: true, schema: { type: string } }
+        - { in: query, name: registry, schema: { type: string }, description: 'Registry id; omit for the default (thunderstore)' }
       responses:
         '200':
           content:
@@ -889,6 +906,8 @@ paths:
     get:
       tags: [thunderstore]
       x-role: viewer
+      parameters:
+        - { in: query, name: registry, schema: { type: string }, description: 'Registry id; omit for the default (thunderstore)' }
       responses:
         '200':
           content:
@@ -901,6 +920,7 @@ paths:
   /thunderstore/refresh:
     post:
       tags: [thunderstore]
+      summary: Refresh every configured registry's package index
       x-role: operator
       responses:
         '202': { $ref: '#/components/responses/JobResponse' }
@@ -1489,13 +1509,20 @@ components:
             last_result: { type: string, enum: [ok, skipped, failed] }
             last_job_id: { type: string }
 
+    Registry:
+      type: object
+      required: [id, name]
+      properties:
+        id: { type: string }
+        name: { type: string }
+
     Mod:
       type: object
       required: [id, instance_id, source, owner, name, version, enabled, installed_at]
       properties:
         id: { type: integer }
         instance_id: { type: string }
-        source: { type: string, enum: [thunderstore, manual] }
+        source: { type: string, enum: [thunderstore, hexium, manual] }
         owner: { type: string }
         name: { type: string }
         version: { type: string }

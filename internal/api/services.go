@@ -112,7 +112,7 @@ type ScheduleService interface {
 // WP-08
 type ModService interface {
 	Overview(ctx context.Context, instanceID string) (*domain.ModsOverview, error)
-	EnqueueInstall(ctx context.Context, instanceID, owner, name, version, requestedBy string) (*domain.Job, error)
+	EnqueueInstall(ctx context.Context, instanceID, registry, owner, name, version, requestedBy string) (*domain.Job, error)
 	EnqueueUpload(ctx context.Context, instanceID, filename string, r io.Reader, requestedBy string) (*domain.Job, error)
 	EnqueueBepInExInstall(ctx context.Context, instanceID string, stopIfRunning bool, requestedBy string) (*domain.Job, error)
 	SetBepInExEnabled(ctx context.Context, instanceID string, enabled bool) (*domain.ModsOverview, error)
@@ -126,9 +126,10 @@ type ModService interface {
 
 // WP-08
 type ThunderstoreService interface {
-	Search(ctx context.Context, q domain.PackageSearch) (*domain.PackageSearchResult, error)
-	Package(ctx context.Context, owner, name string) (*domain.Package, error)
-	Categories(ctx context.Context) ([]string, error)
+	Registries() []domain.Registry
+	Search(ctx context.Context, registry string, q domain.PackageSearch) (*domain.PackageSearchResult, error)
+	Package(ctx context.Context, registry, owner, name string) (*domain.Package, error)
+	Categories(ctx context.Context, registry string) ([]string, error)
 	EnqueueRefresh(ctx context.Context, requestedBy string) (*domain.Job, error)
 }
 

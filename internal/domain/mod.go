@@ -12,8 +12,28 @@ type ModSource string
 
 const (
 	ModSourceThunderstore ModSource = "thunderstore"
+	ModSourceHexium       ModSource = "hexium"
 	ModSourceManual       ModSource = "manual"
 )
+
+// Mod registries are Thunderstore-compatible package indexes. Both expose the
+// same v1 package API, so the same client serves either; only the index URL
+// and the host a download may come from differ.
+const (
+	RegistryThunderstoreID       = "thunderstore"
+	RegistryThunderstoreName     = "Thunderstore"
+	RegistryThunderstoreIndexURL = "https://thunderstore.io/c/valheim/api/v1/package/"
+
+	RegistryHexiumID       = "hexium"
+	RegistryHexiumName     = "Hexium"
+	RegistryHexiumIndexURL = "https://valheim.hexium.gg/api/v1/package/"
+)
+
+// Registry is the API projection of one configured package registry.
+type Registry struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
 
 type Mod struct {
 	ID              int64      `json:"id"`

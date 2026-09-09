@@ -5,13 +5,27 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
+
+// newThunderstoreClient builds a *Thunderstore for the Thunderstore registry
+// with the production id/name/index-URL/download-host, so tests exercise the
+// real registry config while the rewriteTransport points the network at an
+// httptest server.
+func newThunderstoreClient(httpClient *http.Client, cacheDir string, refresh func() time.Duration, userAgent string, log *slog.Logger) *Thunderstore {
+	return NewThunderstore(
+		domain.RegistryThunderstoreID, domain.RegistryThunderstoreName, domain.RegistryThunderstoreIndexURL,
+		[]string{"thunderstore.io"}, httpClient, cacheDir, refresh, userAgent, log,
+	)
+}
 
 // rewriteTransport redirects every request to base's scheme+host, keeping the
 // original path/query, so production code that hard-codes the real
@@ -219,7 +233,29 @@ func newMiniThunderstore(t *testing.T) (*Thunderstore, *testThunderstoreServer) 
 	srv.setZip("Alice", "Awesome", "2.0.0", awesomeZip(t))
 
 	cacheDir := t.TempDir()
-	ts := NewThunderstore(srv.client(), cacheDir, func() time.Duration { return time.Hour }, "test-agent", nil)
+	ts := newThunderstoreClient(srv.client(), cacheDir, func() time.Duration { return time.Hour }, "test-agent", nil)
+	if err := ts.Refresh(context.Background()); err != nil {
+		t.Fatalf("refresh: %v", err)
+	}
+	return ts, srv
+}
+
+// newMiniHexium builds a *Thunderstore with the Hexium registry id but backed
+// by the shared thunderstore test server (same v1 index shape and download
+// paths), so tests can verify that an install records the Hexium source
+// without needing a second httptest topology. The real Hexium index URL and
+// cdn.hexium.gg download host are covered separately in registries_test.go.
+func newMiniHexium(t *testing.T) (*Thunderstore, *testThunderstoreServer) {
+	t.Helper()
+	srv := newTestThunderstoreServer(t, miniIndex())
+	srv.setZip("denikson", "BepInExPack_Valheim", "5.4.2202", bepinexPackZip(t))
+	srv.setZip("Alice", "CoreLib", "1.0.0", coreLibZip(t))
+	srv.setZip("Alice", "Awesome", "2.0.0", awesomeZip(t))
+
+	ts := NewThunderstore(
+		domain.RegistryHexiumID, domain.RegistryHexiumName, domain.RegistryThunderstoreIndexURL,
+		[]string{"thunderstore.io"}, srv.client(), t.TempDir(), func() time.Duration { return time.Hour }, "test-agent", nil,
+	)
 	if err := ts.Refresh(context.Background()); err != nil {
 		t.Fatalf("refresh: %v", err)
 	}

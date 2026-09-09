@@ -62,8 +62,9 @@ func writePackInfo(paths domain.InstancePaths, pi packInfo) error {
 	return writeFileAtomic(packInfoPath(paths), data, 0o640)
 }
 
-// bepinexStatus composes the ModsOverview.BepInEx block.
-func bepinexStatus(paths domain.InstancePaths, cfgEnabled bool, ts *Thunderstore) domain.BepInExStatus {
+// bepinexStatus composes the ModsOverview.BepInEx block. reg is the registry
+// BepInEx is fetched from (the default), or nil when none is configured.
+func bepinexStatus(paths domain.InstancePaths, cfgEnabled bool, reg *Thunderstore) domain.BepInExStatus {
 	st := domain.BepInExStatus{
 		Installed: bepinexInstalled(paths),
 		Enabled:   cfgEnabled,
@@ -71,8 +72,10 @@ func bepinexStatus(paths domain.InstancePaths, cfgEnabled bool, ts *Thunderstore
 	if pi, err := readPackInfo(paths); err == nil && pi != nil {
 		st.Version = pi.Version
 	}
-	if latest, ok := ts.LatestVersion(domain.BepInExOwner, domain.BepInExName); ok {
-		st.LatestVersion = latest
+	if reg != nil {
+		if latest, ok := reg.LatestVersion(domain.BepInExOwner, domain.BepInExName); ok {
+			st.LatestVersion = latest
+		}
 	}
 	return st
 }

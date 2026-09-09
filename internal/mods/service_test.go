@@ -37,7 +37,7 @@ func newTestModsService(t *testing.T, ts *Thunderstore) (*Service, *instance.Ser
 	sup := newFakeSupervisor()
 	instSvc := instance.New(sqldb, fakeBus{}, sup, cfg, log)
 	runner := jobs.New(sqldb, fakeBus{}, cfg.JobsDir(), log)
-	modSvc := NewService(sqldb, ts, instSvc, runner, cfg.CacheDir(), log)
+	modSvc := NewService(sqldb, NewRegistries(ts), instSvc, runner, cfg.CacheDir(), log)
 	return modSvc, instSvc, sup, runner
 }
 
@@ -86,7 +86,7 @@ func TestEnqueueInstall_WithDependenciesProducesExpectedTree(t *testing.T) {
 	ctx := context.Background()
 	createTestInstance(t, instSvc, "main")
 
-	job, err := modSvc.EnqueueInstall(ctx, "main", "Alice", "Awesome", "", "tester")
+	job, err := modSvc.EnqueueInstall(ctx, "main", "", "Alice", "Awesome", "", "tester")
 	if err != nil {
 		t.Fatalf("EnqueueInstall: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestEnqueueInstall_UnknownPackage404s(t *testing.T) {
 	ctx := context.Background()
 	createTestInstance(t, instSvc, "main")
 
-	_, err := modSvc.EnqueueInstall(ctx, "main", "Nobody", "Nothing", "", "tester")
+	_, err := modSvc.EnqueueInstall(ctx, "main", "", "Nobody", "Nothing", "", "tester")
 	if err == nil {
 		t.Fatal("expected an error")
 	}
@@ -152,7 +152,7 @@ func TestEnqueueUninstall_RemovesExactlyItsFiles(t *testing.T) {
 	ctx := context.Background()
 	createTestInstance(t, instSvc, "main")
 
-	job, err := modSvc.EnqueueInstall(ctx, "main", "Alice", "Awesome", "", "tester")
+	job, err := modSvc.EnqueueInstall(ctx, "main", "", "Alice", "Awesome", "", "tester")
 	if err != nil {
 		t.Fatalf("EnqueueInstall: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestSetEnabled_TogglesFilesAndPendingRestart(t *testing.T) {
 	ctx := context.Background()
 	createTestInstance(t, instSvc, "main")
 
-	job, err := modSvc.EnqueueInstall(ctx, "main", "Alice", "CoreLib", "", "tester")
+	job, err := modSvc.EnqueueInstall(ctx, "main", "", "Alice", "CoreLib", "", "tester")
 	if err != nil {
 		t.Fatalf("EnqueueInstall: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestEnqueueUpdate_KeepsEnabledFlag(t *testing.T) {
 	srv := newTestThunderstoreServer(t, []rawPackage{pkg})
 	srv.setZip("Alice", "CoreLib", "1.0.0", coreLibZip(t))
 
-	tsClient := NewThunderstore(srv.client(), t.TempDir(), func() time.Duration { return time.Hour }, "test-agent", nil)
+	tsClient := newThunderstoreClient(srv.client(), t.TempDir(), func() time.Duration { return time.Hour }, "test-agent", nil)
 	ctx := context.Background()
 	if err := tsClient.Refresh(ctx); err != nil {
 		t.Fatalf("refresh: %v", err)
@@ -262,7 +262,7 @@ func TestEnqueueUpdate_KeepsEnabledFlag(t *testing.T) {
 	modSvc, instSvc, _, runner := newTestModsService(t, tsClient)
 	createTestInstance(t, instSvc, "main")
 
-	job, err := modSvc.EnqueueInstall(ctx, "main", "Alice", "CoreLib", "", "tester")
+	job, err := modSvc.EnqueueInstall(ctx, "main", "", "Alice", "CoreLib", "", "tester")
 	if err != nil {
 		t.Fatalf("EnqueueInstall: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestConfigEditor_UpdateMarksPendingRestartWhileRunning(t *testing.T) {
 	ctx := context.Background()
 	createTestInstance(t, instSvc, "main")
 
-	job, err := modSvc.EnqueueInstall(ctx, "main", "Alice", "CoreLib", "", "tester")
+	job, err := modSvc.EnqueueInstall(ctx, "main", "", "Alice", "CoreLib", "", "tester")
 	if err != nil {
 		t.Fatalf("EnqueueInstall: %v", err)
 	}
@@ -464,5 +464,76 @@ func TestConfigEditor_UpdateMarksPendingRestartWhileRunning(t *testing.T) {
 	}
 	if !inst.PendingRestart {
 		t.Error("expected pending_restart set after a config edit while running")
+	}
+}
+
+// TestEnqueueInstall_RecordsThunderstoreSource verifies a default-registry
+// install stamps source "thunderstore" on the mod rows.
+func TestEnqueueInstall_RecordsThunderstoreSource(t *testing.T) {
+	ts, _ := newMiniThunderstore(t)
+	modSvc, instSvc, _, runner := newTestModsService(t, ts)
+	ctx := context.Background()
+	createTestInstance(t, instSvc, "main")
+
+	job, err := modSvc.EnqueueInstall(ctx, "main", "", "Alice", "CoreLib", "", "tester")
+	if err != nil {
+		t.Fatalf("EnqueueInstall: %v", err)
+	}
+	mustSucceed(t, runner, job.ID)
+
+	rows, err := modSvc.listModRows(ctx, "main")
+	if err != nil {
+		t.Fatalf("listModRows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Source != domain.ModSourceThunderstore {
+		t.Fatalf("expected one thunderstore mod row, got %+v", rows)
+	}
+}
+
+// TestEnqueueInstall_RecordsHexiumSource verifies that installing from the
+// hexium registry stamps source "hexium" on the mod rows (and its update
+// checks then route back to hexium).
+func TestEnqueueInstall_RecordsHexiumSource(t *testing.T) {
+	hx, _ := newMiniHexium(t)
+	modSvc, instSvc, _, runner := newTestModsService(t, hx)
+	ctx := context.Background()
+	createTestInstance(t, instSvc, "main")
+
+	job, err := modSvc.EnqueueInstall(ctx, "main", domain.RegistryHexiumID, "Alice", "CoreLib", "", "tester")
+	if err != nil {
+		t.Fatalf("EnqueueInstall: %v", err)
+	}
+	mustSucceed(t, runner, job.ID)
+
+	rows, err := modSvc.listModRows(ctx, "main")
+	if err != nil {
+		t.Fatalf("listModRows: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Source != domain.ModSourceHexium {
+		t.Fatalf("expected one hexium mod row, got %+v", rows)
+	}
+
+	// The overview must resolve the latest version through the hexium
+	// registry (source-routed), not silently skip it.
+	overview, err := modSvc.Overview(ctx, "main")
+	if err != nil {
+		t.Fatalf("Overview: %v", err)
+	}
+	if len(overview.Mods) != 1 || overview.Mods[0].LatestVersion != "1.0.0" {
+		t.Fatalf("expected hexium mod latest 1.0.0, got %+v", overview.Mods)
+	}
+}
+
+// TestEnqueueInstall_UnknownRegistryIsValidationError verifies an explicit but
+// unknown registry is rejected rather than silently defaulting.
+func TestEnqueueInstall_UnknownRegistryIsValidationError(t *testing.T) {
+	ts, _ := newMiniThunderstore(t)
+	modSvc, instSvc, _, _ := newTestModsService(t, ts)
+	ctx := context.Background()
+	createTestInstance(t, instSvc, "main")
+
+	_, err := modSvc.EnqueueInstall(ctx, "main", "nope", "Alice", "CoreLib", "", "tester")
+	if err == nil || domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for an unknown registry, got %v", err)
 	}
 }

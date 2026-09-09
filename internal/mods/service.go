@@ -44,19 +44,19 @@ type InstanceAccessor interface {
 // editor for one instance.
 type Service struct {
 	db       *sql.DB
-	ts       *Thunderstore
+	regs     *Registries
 	inst     InstanceAccessor
 	runner   *jobs.Runner
 	cacheDir string // <data>/cache, for staging uploaded files
 	log      *slog.Logger
 }
 
-// NewService constructs the mods service.
-func NewService(db *sql.DB, ts *Thunderstore, inst InstanceAccessor, runner *jobs.Runner, cacheDir string, log *slog.Logger) *Service {
+// NewService constructs the mods service over the configured registries.
+func NewService(db *sql.DB, regs *Registries, inst InstanceAccessor, runner *jobs.Runner, cacheDir string, log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{db: db, ts: ts, inst: inst, runner: runner, cacheDir: cacheDir, log: log}
+	return &Service{db: db, regs: regs, inst: inst, runner: runner, cacheDir: cacheDir, log: log}
 }
 
 func lowerFullName(owner, name string) string { return strings.ToLower(owner + "-" + name) }
@@ -83,15 +83,15 @@ func (s *Service) Overview(ctx context.Context, instanceID string) (*domain.Mods
 	mods := make([]domain.Mod, 0, len(rows))
 	for _, r := range rows {
 		latest := ""
-		if r.Source == domain.ModSourceThunderstore {
-			if v, ok := s.ts.LatestVersion(r.Owner, r.Name); ok {
+		if reg, ok := s.regs.Lookup(string(r.Source)); ok {
+			if v, ok := reg.LatestVersion(r.Owner, r.Name); ok {
 				latest = v
 			}
 		}
 		mods = append(mods, r.toDomain(latest))
 	}
 	return &domain.ModsOverview{
-		BepInEx:        bepinexStatus(inst.Paths, inst.Config.BepInExEnabled, s.ts),
+		BepInEx:        bepinexStatus(inst.Paths, inst.Config.BepInExEnabled, s.regs.Default()),
 		Mods:           mods,
 		PendingRestart: inst.Status.PendingRestart,
 	}, nil
@@ -101,12 +101,16 @@ func (s *Service) Overview(ctx context.Context, instanceID string) (*domain.Mods
 
 func (s *Service) installBepInEx(ctx context.Context, log *jobs.Logger, instanceID string) error {
 	paths := s.inst.Paths(instanceID)
-	version, ok := s.ts.LatestVersion(domain.BepInExOwner, domain.BepInExName)
+	reg := s.regs.Default()
+	if reg == nil {
+		return domain.E(domain.CodePackageNotFound, "no package registry is configured")
+	}
+	version, ok := reg.LatestVersion(domain.BepInExOwner, domain.BepInExName)
 	if !ok {
 		return domain.E(domain.CodePackageNotFound, "bepinex package not found in the thunderstore index")
 	}
 	log.Printf("installing BepInEx %s", version)
-	zipPath, err := s.ts.Download(ctx, domain.BepInExOwner, domain.BepInExName, version)
+	zipPath, err := reg.Download(ctx, domain.BepInExOwner, domain.BepInExName, version)
 	if err != nil {
 		return err
 	}
@@ -196,10 +200,11 @@ func logPlan(log *jobs.Logger, needsBepInEx, bepinexAlready bool, plan []PlanSte
 	}
 }
 
-// installStep downloads and extracts one plan step, inserting or updating its
-// mods row. force makes it (re)install even when st.AlreadyInstalled (used by
-// an explicit "update to this version" request).
-func (s *Service) installStep(ctx context.Context, log *jobs.Logger, instanceID string, st PlanStep, force bool) error {
+// installStep downloads (from reg) and extracts one plan step, inserting or
+// updating its mods row with the given source registry. force makes it
+// (re)install even when st.AlreadyInstalled (used by an explicit "update to
+// this version" request).
+func (s *Service) installStep(ctx context.Context, log *jobs.Logger, instanceID string, reg *Thunderstore, source domain.ModSource, st PlanStep, force bool) error {
 	if st.AlreadyInstalled && !force {
 		return nil
 	}
@@ -216,7 +221,7 @@ func (s *Service) installStep(ctx context.Context, log *jobs.Logger, instanceID 
 	}
 
 	log.Printf("downloading %s-%s@%s", st.Owner, st.Name, st.Version)
-	zipPath, err := s.ts.Download(ctx, st.Owner, st.Name, st.Version)
+	zipPath, err := reg.Download(ctx, st.Owner, st.Name, st.Version)
 	if err != nil {
 		return err
 	}
@@ -243,7 +248,7 @@ func (s *Service) installStep(ctx context.Context, log *jobs.Logger, instanceID 
 	}
 
 	row := modRow{
-		InstanceID: instanceID, Source: domain.ModSourceThunderstore,
+		InstanceID: instanceID, Source: source,
 		Owner: st.Owner, Name: st.Name, Version: st.Version, Enabled: true,
 		Files: files, Deps: st.Dependencies, WebsiteURL: st.WebsiteURL, IconURL: st.IconURL,
 		InstalledAt: now,
@@ -265,13 +270,18 @@ func (s *Service) finishModJob(ctx context.Context, instanceID string) error {
 	return s.inst.PublishStatus(ctx, instanceID)
 }
 
-func (s *Service) runInstall(ctx context.Context, log *jobs.Logger, instanceID, owner, name, version string) error {
+func (s *Service) runInstall(ctx context.Context, log *jobs.Logger, instanceID, registry, owner, name, version string) error {
 	paths := s.inst.Paths(instanceID)
+	reg := s.regs.GetOrDefault(registry)
+	if reg == nil {
+		return domain.E(domain.CodePackageNotFound, "no package registry is configured")
+	}
+	source := domain.ModSource(reg.ID())
 	installed, err := s.installedIndex(ctx, instanceID, 0)
 	if err != nil {
 		return err
 	}
-	plan, needsBepInEx, err := resolvePlan(ctx, s.ts, installed, owner, name, version)
+	plan, needsBepInEx, err := resolvePlan(ctx, reg, installed, owner, name, version)
 	if err != nil {
 		return err
 	}
@@ -283,7 +293,7 @@ func (s *Service) runInstall(ctx context.Context, log *jobs.Logger, instanceID, 
 		}
 	}
 	for _, st := range plan {
-		if err := s.installStep(ctx, log, instanceID, st, false); err != nil {
+		if err := s.installStep(ctx, log, instanceID, reg, source, st, false); err != nil {
 			return err
 		}
 	}
@@ -299,7 +309,7 @@ func planSummary(plan []PlanStep) []string {
 	return out
 }
 
-func (s *Service) EnqueueInstall(ctx context.Context, instanceID, owner, name, version, requestedBy string) (*domain.Job, error) {
+func (s *Service) EnqueueInstall(ctx context.Context, instanceID, registry, owner, name, version, requestedBy string) (*domain.Job, error) {
 	if _, err := s.inst.Get(ctx, instanceID); err != nil {
 		return nil, err
 	}
@@ -309,14 +319,23 @@ func (s *Service) EnqueueInstall(ctx context.Context, instanceID, owner, name, v
 	if err := validateSlug(name); err != nil {
 		return nil, err
 	}
-	if _, err := s.ts.Package(ctx, owner, name); err != nil {
+	if registry != "" {
+		if _, ok := s.regs.Lookup(registry); !ok {
+			return nil, domain.Validation([]domain.FieldError{{Field: "registry", Message: fmt.Sprintf("unknown registry %q", registry)}})
+		}
+	}
+	reg := s.regs.GetOrDefault(registry)
+	if reg == nil {
+		return nil, domain.E(domain.CodePackageNotFound, "no package registry is configured")
+	}
+	if _, err := reg.Package(ctx, owner, name); err != nil {
 		return nil, err
 	}
 
 	title := fmt.Sprintf("Install %s-%s", owner, name)
 	return s.runner.Enqueue(ctx, jobs.Spec{Type: domain.JobModInstall, InstanceID: instanceID, Title: title, RequestedBy: requestedBy},
 		func(ctx context.Context, log *jobs.Logger) error {
-			return s.runInstall(ctx, log, instanceID, owner, name, version)
+			return s.runInstall(ctx, log, instanceID, reg.ID(), owner, name, version)
 		})
 }
 
@@ -486,8 +505,8 @@ func (s *Service) SetEnabled(ctx context.Context, instanceID string, modID int64
 	}
 
 	latest := ""
-	if row.Source == domain.ModSourceThunderstore {
-		if v, ok := s.ts.LatestVersion(row.Owner, row.Name); ok {
+	if reg, ok := s.regs.Lookup(string(row.Source)); ok {
+		if v, ok := reg.LatestVersion(row.Owner, row.Name); ok {
 			latest = v
 		}
 	}
@@ -516,11 +535,15 @@ func (s *Service) EnqueueUninstall(ctx context.Context, instanceID string, modID
 }
 
 func (s *Service) runUpdate(ctx context.Context, log *jobs.Logger, instanceID string, row modRow, version string) error {
+	reg, ok := s.regs.Lookup(string(row.Source))
+	if !ok {
+		return domain.E(domain.CodeValidationFailed, "cannot update a manually-uploaded mod")
+	}
 	installed, err := s.installedIndex(ctx, instanceID, row.ID)
 	if err != nil {
 		return err
 	}
-	plan, needsBepInEx, err := resolvePlan(ctx, s.ts, installed, row.Owner, row.Name, version)
+	plan, needsBepInEx, err := resolvePlan(ctx, reg, installed, row.Owner, row.Name, version)
 	if err != nil {
 		return err
 	}
@@ -534,7 +557,7 @@ func (s *Service) runUpdate(ctx context.Context, log *jobs.Logger, instanceID st
 	}
 	for _, st := range plan {
 		force := strings.EqualFold(st.Owner, row.Owner) && strings.EqualFold(st.Name, row.Name)
-		if err := s.installStep(ctx, log, instanceID, st, force); err != nil {
+		if err := s.installStep(ctx, log, instanceID, reg, row.Source, st, force); err != nil {
 			return err
 		}
 	}
@@ -547,8 +570,8 @@ func (s *Service) EnqueueUpdate(ctx context.Context, instanceID string, modID in
 	if err != nil {
 		return nil, err
 	}
-	if row.Source != domain.ModSourceThunderstore {
-		return nil, domain.E(domain.CodeValidationFailed, "only thunderstore mods can be updated")
+	if _, ok := s.regs.Lookup(string(row.Source)); !ok {
+		return nil, domain.E(domain.CodeValidationFailed, "cannot check updates for a manually-uploaded mod")
 	}
 	title := fmt.Sprintf("Update %s-%s", row.Owner, row.Name)
 	return s.runner.Enqueue(ctx, jobs.Spec{Type: domain.JobModUpdate, InstanceID: instanceID, Title: title, RequestedBy: requestedBy},
@@ -592,42 +615,60 @@ func (s *Service) UpdateConfig(ctx context.Context, instanceID, file string, upd
 
 // ---------------------------------------------------------------- thunderstore
 
-// ThunderstoreService implements api.ThunderstoreService on top of a
-// *Thunderstore client, adding the job-queued index refresh.
+// ThunderstoreService implements api.ThunderstoreService over the configured
+// registries, adding the job-queued index refresh. Browse operations route to
+// one registry by id (empty/unknown → the default registry); refresh updates
+// every registry.
 type ThunderstoreService struct {
-	ts     *Thunderstore
+	regs   *Registries
 	runner *jobs.Runner
 }
 
 // NewThunderstoreService constructs the service.
-func NewThunderstoreService(ts *Thunderstore, runner *jobs.Runner) *ThunderstoreService {
-	return &ThunderstoreService{ts: ts, runner: runner}
+func NewThunderstoreService(regs *Registries, runner *jobs.Runner) *ThunderstoreService {
+	return &ThunderstoreService{regs: regs, runner: runner}
 }
 
-func (s *ThunderstoreService) Search(ctx context.Context, q domain.PackageSearch) (*domain.PackageSearchResult, error) {
-	return s.ts.Search(ctx, q)
+func (s *ThunderstoreService) Registries() []domain.Registry { return s.regs.List() }
+
+func (s *ThunderstoreService) Search(ctx context.Context, registry string, q domain.PackageSearch) (*domain.PackageSearchResult, error) {
+	reg := s.regs.GetOrDefault(registry)
+	if reg == nil {
+		return nil, domain.E(domain.CodePackageNotFound, "no package registry is configured")
+	}
+	return reg.Search(ctx, q)
 }
 
-func (s *ThunderstoreService) Package(ctx context.Context, owner, name string) (*domain.Package, error) {
-	return s.ts.Package(ctx, owner, name)
+func (s *ThunderstoreService) Package(ctx context.Context, registry, owner, name string) (*domain.Package, error) {
+	reg := s.regs.GetOrDefault(registry)
+	if reg == nil {
+		return nil, domain.E(domain.CodePackageNotFound, "no package registry is configured")
+	}
+	return reg.Package(ctx, owner, name)
 }
 
-func (s *ThunderstoreService) Categories(ctx context.Context) ([]string, error) {
-	return s.ts.Categories(ctx)
+func (s *ThunderstoreService) Categories(ctx context.Context, registry string) ([]string, error) {
+	reg := s.regs.GetOrDefault(registry)
+	if reg == nil {
+		return []string{}, nil
+	}
+	return reg.Categories(ctx)
 }
 
 func (s *ThunderstoreService) EnqueueRefresh(ctx context.Context, requestedBy string) (*domain.Job, error) {
 	return s.runner.Enqueue(ctx, jobs.Spec{
-		Type: domain.JobThunderstoreRefresh, InstanceID: "", Title: "Refresh Thunderstore index",
+		Type: domain.JobThunderstoreRefresh, InstanceID: "", Title: "Refresh mod registries",
 		RequestedBy: requestedBy, Exclusive: true,
 	}, func(ctx context.Context, log *jobs.Logger) error {
-		log.Printf("refreshing thunderstore index")
-		if err := s.ts.Refresh(ctx); err != nil {
+		log.Printf("refreshing mod registries")
+		if err := s.regs.RefreshAll(ctx); err != nil {
 			return err
 		}
-		updatedAt := s.ts.IndexUpdatedAt()
-		log.Printf("index refreshed (updated_at=%s)", updatedAt.Format(time.RFC3339))
-		log.SetSummary("updated_at", updatedAt)
+		if def := s.regs.Default(); def != nil {
+			updatedAt := def.IndexUpdatedAt()
+			log.Printf("registries refreshed (updated_at=%s)", updatedAt.Format(time.RFC3339))
+			log.SetSummary("updated_at", updatedAt)
+		}
 		return nil
 	})
 }

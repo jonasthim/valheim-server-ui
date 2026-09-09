@@ -1779,7 +1779,7 @@ export interface paths {
             };
         };
         put?: never;
-        /** Install a Thunderstore package (and its dependencies) */
+        /** Install a package from a registry (and its dependencies) */
         post: {
             parameters: {
                 query?: never;
@@ -1792,6 +1792,8 @@ export interface paths {
             requestBody: {
                 content: {
                     "application/json": {
+                        /** @description Registry id (from GET /thunderstore/registries). Omit for the default (thunderstore). */
+                        registry?: string;
                         owner: string;
                         name: string;
                         /** @description Omit for latest */
@@ -2114,6 +2116,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/thunderstore/registries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the configured package registries (Thunderstore, Hexium, ...) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            registries: components["schemas"]["Registry"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/thunderstore/packages": {
         parameters: {
             query?: never;
@@ -2124,6 +2163,8 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    /** @description Registry id; omit for the default (thunderstore) */
+                    registry?: string;
                     q?: string;
                     category?: string;
                     sort?: "rating" | "downloads" | "updated" | "name";
@@ -2164,7 +2205,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Registry id; omit for the default (thunderstore) */
+                    registry?: string;
+                };
                 header?: never;
                 path: {
                     owner: string;
@@ -2202,7 +2246,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Registry id; omit for the default (thunderstore) */
+                    registry?: string;
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -2238,6 +2285,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Refresh every configured registry's package index */
         post: {
             parameters: {
                 query?: never;
@@ -2909,11 +2957,15 @@ export interface components {
             last_result?: "ok" | "skipped" | "failed";
             last_job_id?: string;
         };
+        Registry: {
+            id: string;
+            name: string;
+        };
         Mod: {
             id: number;
             instance_id: string;
             /** @enum {string} */
-            source: "thunderstore" | "manual";
+            source: "thunderstore" | "hexium" | "manual";
             owner: string;
             name: string;
             version: string;

@@ -2,10 +2,11 @@
 // search, package detail, categories, and the on-demand index refresh.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { Job, Package, PackageSearchResult } from '../../api/types'
+import type { Job, Package, PackageSearchResult, Registry } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
 
 export interface ThunderstoreSearchParams {
+  registry?: string
   q?: string
   category?: string
   sort?: 'rating' | 'downloads' | 'updated' | 'name'
@@ -14,12 +15,22 @@ export interface ThunderstoreSearchParams {
   page_size?: number
 }
 
+/** GET /thunderstore/registries — the configured registries (Thunderstore, Hexium, …). */
+export function useRegistries() {
+  return useQuery({
+    queryKey: ['thunderstore', 'registries'],
+    queryFn: () => api.get<{ registries: Registry[] }>('/thunderstore/registries').then((r) => r.registries),
+    staleTime: 10 * 60_000,
+  })
+}
+
 /** GET /thunderstore/packages */
 export function useThunderstoreSearch(params: ThunderstoreSearchParams) {
   return useQuery({
     queryKey: ['thunderstore', 'packages', params],
     queryFn: () =>
       api.get<PackageSearchResult>('/thunderstore/packages', {
+        registry: params.registry,
         q: params.q,
         category: params.category,
         sort: params.sort,
@@ -32,19 +43,20 @@ export function useThunderstoreSearch(params: ThunderstoreSearchParams) {
 }
 
 /** GET /thunderstore/packages/{owner}/{name} — full detail with versions. */
-export function usePackage(owner: string | undefined, name: string | undefined) {
+export function usePackage(registry: string | undefined, owner: string | undefined, name: string | undefined) {
   return useQuery({
-    queryKey: ['thunderstore', 'package', owner, name],
-    queryFn: () => api.get<Package>(`/thunderstore/packages/${owner}/${name}`),
+    queryKey: ['thunderstore', 'package', registry, owner, name],
+    queryFn: () => api.get<Package>(`/thunderstore/packages/${owner}/${name}`, { registry }),
     enabled: !!owner && !!name,
   })
 }
 
 /** GET /thunderstore/categories */
-export function useCategories() {
+export function useCategories(registry?: string) {
   return useQuery({
-    queryKey: ['thunderstore', 'categories'],
-    queryFn: () => api.get<{ categories: string[] }>('/thunderstore/categories').then((r) => r.categories),
+    queryKey: ['thunderstore', 'categories', registry],
+    queryFn: () =>
+      api.get<{ categories: string[] }>('/thunderstore/categories', { registry }).then((r) => r.categories),
     staleTime: 5 * 60_000,
   })
 }

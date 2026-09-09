@@ -24,12 +24,10 @@ import (
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
-// indexURL is the Thunderstore v1 package index for the Valheim community.
-const indexURL = "https://thunderstore.io/c/valheim/api/v1/package/"
-
-// downloadURLFormat builds the canonical download URL for one package
-// version (ARCHITECTURE.md §12); the index's own download_url is preferred
-// when present, this is the fallback.
+// downloadURLFormat builds the canonical Thunderstore download URL for one
+// package version (ARCHITECTURE.md §12); the index's own download_url is
+// preferred when present, this is the fallback. Hexium always ships a
+// download_url so it needs no format fallback.
 const downloadURLFormat = "https://thunderstore.io/package/download/%s/%s/%s/"
 
 // defaultPageSize / maxPageSize bound PackageSearch.PageSize (openapi.yaml
@@ -90,12 +88,19 @@ type indexEntry struct {
 	totalDownloads int64
 }
 
-// Thunderstore is a cached client for the Thunderstore Valheim package index.
-// All network access goes through the injected *http.Client so tests can use
-// httptest without touching the real registry.
+// Thunderstore is a cached client for one Thunderstore-compatible package
+// registry (Thunderstore or Hexium; both expose the identical v1 package
+// API). All network access goes through the injected *http.Client so tests
+// can use httptest without touching the real registry.
 type Thunderstore struct {
+	id            string   // registry id, e.g. "thunderstore" / "hexium"
+	name          string   // human-facing name
+	indexURL      string   // v1 package index URL
+	downloadHosts []string // hosts a package download may be fetched from
+	downloadFmt   string   // fallback download-URL format (empty = require the index's download_url)
+
 	http      *http.Client
-	cacheDir  string // <data>/cache/thunderstore
+	cacheDir  string // <data>/cache/registries/<id>
 	refresh   func() time.Duration
 	userAgent string
 	log       *slog.Logger
@@ -110,13 +115,16 @@ type Thunderstore struct {
 	nextAttempt time.Time
 }
 
-// NewThunderstore constructs a client and loads any cached index from disk
-// (cacheDir/index.json + index.ts). A missing or corrupt cache is not an
-// error: the client starts empty and Refresh (called by the caller's
-// background loop, see Run) populates it. refresh reports the desired
-// refresh interval (e.g. from settings.thunderstore.index_refresh_hours) and
-// may change at runtime.
-func NewThunderstore(httpClient *http.Client, cacheDir string, refresh func() time.Duration, userAgent string, log *slog.Logger) *Thunderstore {
+// NewThunderstore constructs a client for the registry identified by id/name,
+// fetching from indexURL and only ever downloading packages from
+// downloadHosts (host-suffix match; required because Hexium serves zips from
+// cdn.hexium.gg, not its index host). It loads any cached index from disk
+// (<cacheDir>/registries/<id>/index.json + index.ts). A missing or corrupt
+// cache is not an error: the client starts empty and Refresh (called by the
+// caller's background loop, see Run) populates it. refresh reports the
+// desired refresh interval (e.g. from settings.thunderstore.index_refresh_hours)
+// and may change at runtime.
+func NewThunderstore(id, name, indexURL string, downloadHosts []string, httpClient *http.Client, cacheDir string, refresh func() time.Duration, userAgent string, log *slog.Logger) *Thunderstore {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
@@ -127,18 +135,36 @@ func NewThunderstore(httpClient *http.Client, cacheDir string, refresh func() ti
 		log = slog.Default()
 	}
 	t := &Thunderstore{
-		http:       httpClient,
-		cacheDir:   filepath.Join(cacheDir, "thunderstore"),
-		refresh:    refresh,
-		userAgent:  userAgent,
-		log:        log,
-		byFullName: map[string]*indexEntry{},
+		id:            id,
+		name:          name,
+		indexURL:      indexURL,
+		downloadHosts: downloadHosts,
+		http:          httpClient,
+		cacheDir:      filepath.Join(cacheDir, "registries", id),
+		refresh:       refresh,
+		userAgent:     userAgent,
+		log:           log,
+		byFullName:    map[string]*indexEntry{},
+	}
+	// Thunderstore is the only registry whose download URLs follow a
+	// well-known format; Hexium always supplies download_url in the index.
+	if id == domain.RegistryThunderstoreID {
+		t.downloadFmt = downloadURLFormat
 	}
 	if err := t.loadCache(); err != nil {
-		log.Warn("thunderstore: load cache", "err", err)
+		log.Warn("registry: load cache", "registry", id, "err", err)
 	}
 	return t
 }
+
+// ID returns the registry's stable id ("thunderstore" / "hexium").
+func (t *Thunderstore) ID() string { return t.id }
+
+// Name returns the registry's human-facing name.
+func (t *Thunderstore) Name() string { return t.name }
+
+// IndexURL returns the v1 package index URL this client fetches.
+func (t *Thunderstore) IndexURL() string { return t.indexURL }
 
 func (t *Thunderstore) indexPath() string { return filepath.Join(t.cacheDir, "index.json") }
 func (t *Thunderstore) tsPath() string    { return filepath.Join(t.cacheDir, "index.ts") }
@@ -183,9 +209,9 @@ func (t *Thunderstore) readCachedTimestamp() time.Time {
 // cache and rebuilds the in-memory index. Safe to call concurrently with
 // Search/Package/etc (which read a consistent snapshot).
 func (t *Thunderstore) Refresh(ctx context.Context) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, indexURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.indexURL, nil)
 	if err != nil {
-		return fmt.Errorf("thunderstore: build request: %w", err)
+		return fmt.Errorf("%s: build request: %w", t.id, err)
 	}
 	req.Header.Set("User-Agent", t.userAgent)
 	req.Header.Set("Accept", "application/json")
@@ -240,7 +266,7 @@ func (t *Thunderstore) Refresh(ctx context.Context) error {
 	t.retryMu.Lock()
 	t.nextAttempt = time.Time{}
 	t.retryMu.Unlock()
-	t.log.Info("thunderstore: index refreshed", "packages", len(raws))
+	t.log.Info("registry: index refreshed", "registry", t.id, "packages", len(raws))
 	return nil
 }
 
@@ -308,7 +334,7 @@ func (t *Thunderstore) Run(ctx context.Context) {
 		case <-timer.C:
 		}
 		if err := t.Refresh(ctx); err != nil {
-			t.log.Warn("thunderstore: background refresh failed", "err", err)
+			t.log.Warn("registry: background refresh failed", "registry", t.id, "err", err)
 		}
 	}
 }
@@ -569,7 +595,10 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 		}
 	}
 
-	url := fmt.Sprintf(downloadURLFormat, owner, name, version)
+	var url string
+	if t.downloadFmt != "" {
+		url = fmt.Sprintf(t.downloadFmt, owner, name, version)
+	}
 	var expectedSize int64
 	if v, ok := t.versionEntry(owner, name, version); ok {
 		if v.DownloadURL != "" {
@@ -577,9 +606,13 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 		}
 		expectedSize = v.FileSize
 	}
-	// The index is data from a third party: only fetch from Thunderstore over
-	// TLS, on every redirect hop, and never more than the declared size.
-	if err := checkDownloadURL(url); err != nil {
+	if url == "" {
+		return "", domain.Ef(domain.CodeUpstreamError, "%s: no download URL for %s-%s@%s", t.id, owner, name, version)
+	}
+	// The index is data from a third party: only fetch from the registry's own
+	// hosts over TLS, on every redirect hop, and never more than the declared
+	// size.
+	if err := t.checkDownloadURL(url); err != nil {
 		return "", err
 	}
 
@@ -598,7 +631,7 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 		if len(via) >= 5 {
 			return errors.New("too many redirects")
 		}
-		return checkDownloadURL(req.URL.String())
+		return t.checkDownloadURL(req.URL.String())
 	}
 	resp, err := client.Do(req)
 	if err != nil {
@@ -646,22 +679,30 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 // does not declare a size (Valheim packs are a few hundred MB at most).
 const maxPackageBytes = 512 << 20
 
-// thunderstoreHosts are the only hosts a package may be fetched from.
-func isThunderstoreHost(host string) bool {
+// isAllowedDownloadHost reports whether host is one of this registry's
+// download hosts, matching the host itself or any subdomain of it (so
+// "hexium.gg" allows "cdn.hexium.gg").
+func (t *Thunderstore) isAllowedDownloadHost(host string) bool {
 	host = strings.ToLower(host)
-	return host == "thunderstore.io" || strings.HasSuffix(host, ".thunderstore.io")
+	for _, h := range t.downloadHosts {
+		h = strings.ToLower(h)
+		if host == h || strings.HasSuffix(host, "."+h) {
+			return true
+		}
+	}
+	return false
 }
 
-// checkDownloadURL enforces https + a Thunderstore host for package downloads
-// (including every redirect hop), so a poisoned index cannot make the manager
-// fetch from an arbitrary address.
-func checkDownloadURL(raw string) error {
+// checkDownloadURL enforces https + one of the registry's own hosts for
+// package downloads (including every redirect hop), so a poisoned index
+// cannot make the manager fetch from an arbitrary address.
+func (t *Thunderstore) checkDownloadURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil {
 		return domain.Ef(domain.CodeUpstreamError, "invalid package download URL %q", raw)
 	}
-	if u.Scheme != "https" || !isThunderstoreHost(u.Hostname()) {
-		return domain.Ef(domain.CodeUpstreamError, "refusing package download from %q: only https://thunderstore.io is allowed", u.Host)
+	if u.Scheme != "https" || !t.isAllowedDownloadHost(u.Hostname()) {
+		return domain.Ef(domain.CodeUpstreamError, "refusing package download from %q: not an allowed host for the %s registry", u.Host, t.id)
 	}
 	return nil
 }

@@ -74,9 +74,10 @@ func getModsOverviewHandler(d *Deps) http.HandlerFunc {
 }
 
 type installModRequest struct {
-	Owner   string `json:"owner"`
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	Registry string `json:"registry"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Version  string `json:"version"`
 }
 
 func installModHandler(d *Deps) http.HandlerFunc {
@@ -98,12 +99,12 @@ func installModHandler(d *Deps) http.HandlerFunc {
 			)
 			return
 		}
-		job, err := d.Mods.EnqueueInstall(r.Context(), id, req.Owner, req.Name, req.Version, RequestedBy(r))
+		job, err := d.Mods.EnqueueInstall(r.Context(), id, req.Registry, req.Owner, req.Name, req.Version, RequestedBy(r))
 		if err != nil {
 			WriteError(w, err)
 			return
 		}
-		d.audit(r, "mods.install", id, job.ID, map[string]any{"owner": req.Owner, "name": req.Name, "version": req.Version})
+		d.audit(r, "mods.install", id, job.ID, map[string]any{"registry": req.Registry, "owner": req.Owner, "name": req.Name, "version": req.Version})
 		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 	}
 }

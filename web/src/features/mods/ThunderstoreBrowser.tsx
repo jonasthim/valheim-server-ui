@@ -33,10 +33,17 @@ import { fmtAgo, safeHref } from '../../lib/format'
 import type { Mod, PackageSummary } from '../../api/types'
 import { EmptyState } from '../../ui'
 import { findInstalledMod, SORT_OPTIONS } from './helpers'
-import { useCategories, usePackage, useRefreshThunderstoreIndex, useThunderstoreSearch } from './useThunderstore'
+import {
+  useCategories,
+  usePackage,
+  useRefreshThunderstoreIndex,
+  useRegistries,
+  useThunderstoreSearch,
+} from './useThunderstore'
 import { useInstallPackage } from './useMods'
 
 const PAGE_SIZE = 30
+const DEFAULT_REGISTRY = 'thunderstore'
 
 export function ThunderstoreBrowser({
   id,
@@ -53,12 +60,24 @@ export function ThunderstoreBrowser({
   const canOperate = hasRole('operator')
   const { openJob } = useJobDrawer()
 
+  const [registry, setRegistry] = useState<string>(DEFAULT_REGISTRY)
   const [query, setQuery] = useState('')
   const [debouncedQuery] = useDebouncedValue(query, 300)
   const [category, setCategory] = useState<string>('')
   const [sort, setSort] = useState<'rating' | 'downloads' | 'updated' | 'name'>('rating')
   const [includeDeprecated, setIncludeDeprecated] = useState(false)
   const [page, setPage] = useState(1)
+
+  const registriesQuery = useRegistries()
+  const registries = registriesQuery.data ?? []
+
+  // Switching registry clears the category filter (categories differ per
+  // registry) and returns to page 1.
+  function updateRegistry(v: string) {
+    setRegistry(v)
+    setCategory('')
+    setPage(1)
+  }
 
   // Any filter change jumps back to page 1, applied at the event that caused
   // it rather than as an effect keyed on the (debounced) search value.
@@ -79,8 +98,9 @@ export function ThunderstoreBrowser({
     setPage(1)
   }
 
-  const categoriesQuery = useCategories()
+  const categoriesQuery = useCategories(registry)
   const searchQuery = useThunderstoreSearch({
+    registry,
     q: debouncedQuery || undefined,
     category: category || undefined,
     sort,
@@ -102,6 +122,19 @@ export function ThunderstoreBrowser({
     <Modal opened={opened} onClose={onClose} title="Browse Thunderstore" size="xl">
       <Stack gap="sm">
         <Group align="flex-end" wrap="wrap" gap="sm">
+          {registries.length > 1 && (
+            <Box>
+              <Text size="sm" fw={500} mb={4}>
+                Registry
+              </Text>
+              <SegmentedControl
+                size="xs"
+                value={registry}
+                onChange={updateRegistry}
+                data={registries.map((r) => ({ value: r.id, label: r.name }))}
+              />
+            </Box>
+          )}
           <TextInput
             label="Search"
             placeholder="Package or author name"
@@ -185,6 +218,7 @@ export function ThunderstoreBrowser({
                 <PackageCard
                   key={pkg.full_name}
                   id={id}
+                  registry={registry}
                   pkg={pkg}
                   installed={findInstalledMod(installedMods, pkg.owner, pkg.name)}
                   canOperate={canOperate}
@@ -206,11 +240,13 @@ export function ThunderstoreBrowser({
 
 function PackageCard({
   id,
+  registry,
   pkg,
   installed,
   canOperate,
 }: {
   id: string
+  registry: string
   pkg: PackageSummary
   installed: Mod | undefined
   canOperate: boolean
@@ -242,7 +278,7 @@ function PackageCard({
             {pkg.package_url && (
               <Anchor href={safeHref(pkg.package_url)} target="_blank" rel="noreferrer" size="xs">
                 <Group gap={2} wrap="nowrap">
-                  Thunderstore <IconExternalLink size={10} />
+                  View page <IconExternalLink size={10} />
                 </Group>
               </Anchor>
             )}
@@ -273,13 +309,13 @@ function PackageCard({
             updated {fmtAgo(pkg.date_updated)}
           </Text>
         </Group>
-        {canOperate && <InstallButton id={id} pkg={pkg} />}
+        {canOperate && <InstallButton id={id} registry={registry} pkg={pkg} />}
       </Group>
     </Card>
   )
 }
 
-function InstallButton({ id, pkg }: { id: string; pkg: PackageSummary }) {
+function InstallButton({ id, registry, pkg }: { id: string; registry: string; pkg: PackageSummary }) {
   const [opened, setOpened] = useState(false)
   // The user's explicit pick, if any; otherwise default to the package's
   // latest version once its detail has loaded — derived during render so no
@@ -287,7 +323,7 @@ function InstallButton({ id, pkg }: { id: string; pkg: PackageSummary }) {
   const [explicitVersion, setExplicitVersion] = useState<string | undefined>(undefined)
   const { openJob } = useJobDrawer()
   const install = useInstallPackage(id)
-  const detailQuery = usePackage(opened ? pkg.owner : undefined, opened ? pkg.name : undefined)
+  const detailQuery = usePackage(registry, opened ? pkg.owner : undefined, opened ? pkg.name : undefined)
   const version = explicitVersion ?? detailQuery.data?.latest_version
 
   function toggle() {
@@ -297,7 +333,7 @@ function InstallButton({ id, pkg }: { id: string; pkg: PackageSummary }) {
   function confirmInstall() {
     if (!version) return
     install.mutate(
-      { owner: pkg.owner, name: pkg.name, version },
+      { registry, owner: pkg.owner, name: pkg.name, version },
       {
         onSuccess: (res) => {
           setOpened(false)

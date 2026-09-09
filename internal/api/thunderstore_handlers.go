@@ -19,10 +19,21 @@ const (
 func registerThunderstoreRoutes(r chi.Router, d *Deps) {
 	guard := requireService(func() bool { return d.Thunderstore != nil }, "thunderstore service not configured")
 
+	r.With(RequireRole(domain.RoleViewer), guard).Get("/thunderstore/registries", listRegistriesHandler(d))
 	r.With(RequireRole(domain.RoleViewer), guard).Get("/thunderstore/packages", searchPackagesHandler(d))
 	r.With(RequireRole(domain.RoleViewer), guard).Get("/thunderstore/packages/{owner}/{name}", getPackageHandler(d))
 	r.With(RequireRole(domain.RoleViewer), guard).Get("/thunderstore/categories", listCategoriesHandler(d))
 	r.With(RequireRole(domain.RoleOperator), guard).Post("/thunderstore/refresh", refreshThunderstoreHandler(d))
+}
+
+func listRegistriesHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		registries := d.Thunderstore.Registries()
+		if registries == nil {
+			registries = []domain.Registry{}
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"registries": registries})
+	}
 }
 
 func searchPackagesHandler(d *Deps) http.HandlerFunc {
@@ -60,7 +71,7 @@ func searchPackagesHandler(d *Deps) http.HandlerFunc {
 			Page:              page,
 			PageSize:          pageSize,
 		}
-		result, err := d.Thunderstore.Search(r.Context(), search)
+		result, err := d.Thunderstore.Search(r.Context(), q.Get("registry"), search)
 		if err != nil {
 			WriteError(w, err)
 			return
@@ -73,7 +84,7 @@ func getPackageHandler(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		owner := chi.URLParam(r, "owner")
 		name := chi.URLParam(r, "name")
-		pkg, err := d.Thunderstore.Package(r.Context(), owner, name)
+		pkg, err := d.Thunderstore.Package(r.Context(), r.URL.Query().Get("registry"), owner, name)
 		if err != nil {
 			WriteError(w, err)
 			return
@@ -84,7 +95,7 @@ func getPackageHandler(d *Deps) http.HandlerFunc {
 
 func listCategoriesHandler(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		categories, err := d.Thunderstore.Categories(r.Context())
+		categories, err := d.Thunderstore.Categories(r.Context(), r.URL.Query().Get("registry"))
 		if err != nil {
 			WriteError(w, err)
 			return

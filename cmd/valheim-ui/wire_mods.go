@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/api"
+	"github.com/jonasthim/valheim-server-ui/internal/domain"
 	"github.com/jonasthim/valheim-server-ui/internal/instance"
 	"github.com/jonasthim/valheim-server-ui/internal/jobs"
 	"github.com/jonasthim/valheim-server-ui/internal/mods"
@@ -20,9 +21,10 @@ const defaultThunderstoreRefreshHours = 6
 // thunderstoreHTTPTimeout bounds one index fetch or package download.
 const thunderstoreHTTPTimeout = 2 * time.Minute
 
-// wireMods constructs the Thunderstore client (WP-08), the mods service and
-// the thunderstore service, attaches deps.Mods and deps.Thunderstore, and
-// starts the index's background refresh loop bound to ctx.
+// wireMods constructs the package registries (Thunderstore + Hexium, both
+// enabled by default, WP-08), the mods service and the thunderstore service,
+// attaches deps.Mods and deps.Thunderstore, and starts each registry's
+// background refresh loop bound to ctx.
 //
 // wire.go should call this from wireServices after deps.DB, deps.Bus,
 // deps.Cfg, deps.Log and deps.Settings are set and after the instance
@@ -42,11 +44,20 @@ func wireMods(ctx context.Context, deps *api.Deps, inst *instance.Service, runne
 
 	userAgent := fmt.Sprintf("valheim-server-ui/%s (+https://github.com/jonasthim/valheim-server-ui)", deps.Version)
 	httpClient := &http.Client{Timeout: thunderstoreHTTPTimeout}
+	cacheDir := deps.Cfg.CacheDir()
 
-	ts := mods.NewThunderstore(httpClient, deps.Cfg.CacheDir(), refreshInterval, userAgent, deps.Log)
-	go ts.Run(ctx)
+	thunderstore := mods.NewThunderstore(
+		domain.RegistryThunderstoreID, domain.RegistryThunderstoreName, domain.RegistryThunderstoreIndexURL,
+		[]string{"thunderstore.io"}, httpClient, cacheDir, refreshInterval, userAgent, deps.Log,
+	)
+	hexium := mods.NewThunderstore(
+		domain.RegistryHexiumID, domain.RegistryHexiumName, domain.RegistryHexiumIndexURL,
+		[]string{"hexium.gg"}, httpClient, cacheDir, refreshInterval, userAgent, deps.Log,
+	)
+	regs := mods.NewRegistries(thunderstore, hexium)
+	regs.RunAll(ctx)
 
-	deps.Mods = mods.NewService(deps.DB, ts, inst, runner, deps.Cfg.CacheDir(), deps.Log)
-	deps.Thunderstore = mods.NewThunderstoreService(ts, runner)
+	deps.Mods = mods.NewService(deps.DB, regs, inst, runner, cacheDir, deps.Log)
+	deps.Thunderstore = mods.NewThunderstoreService(regs, runner)
 	return nil
 }
