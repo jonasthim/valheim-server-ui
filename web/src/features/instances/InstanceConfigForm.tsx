@@ -178,8 +178,15 @@ const SETKEY_OPTIONS: { value: string; label: string; description: string }[] = 
   { value: 'nomap', label: 'No map', description: 'No map' },
 ]
 
-function selectData(options: string[]) {
-  return [{ value: '', label: 'Default' }, ...options.map((o) => ({ value: o, label: o }))]
+// The empty value means "-modifier is not passed": with a preset selected the
+// game uses that preset's value for the rule, without one it uses its own
+// default. Label it accordingly so "Default" is never mistaken for "normal".
+function selectData(options: string[], hasPreset: boolean) {
+  return [{ value: '', label: hasPreset ? 'From preset' : 'Game default' }, ...options.map((o) => ({ value: o, label: o }))]
+}
+
+function presetLabel(value: string) {
+  return PRESET_OPTIONS.find((o) => o.value === value)?.label ?? value
 }
 
 export function InstanceConfigForm({
@@ -311,9 +318,19 @@ export function InstanceConfigForm({
             <Stack gap="sm">
               <Title order={4}>World rules</Title>
               <Select label="Preset" data={PRESET_OPTIONS} {...form.getInputProps('config.preset')} />
+              <Text size="xs" c="dimmed">
+                {form.values.config.preset
+                  ? `Rules left on "From preset" use the ${presetLabel(form.values.config.preset)} preset's values; pick a value to override just that rule.`
+                  : 'No preset selected: rules left on "Game default" use the game\'s normal difficulty; pick a value to change a rule.'}
+              </Text>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 {MODIFIER_FIELDS.map((f) => (
-                  <Select key={f.key} label={f.label} data={selectData(f.options)} {...form.getInputProps(`config.modifiers.${f.key}`)} />
+                  <Select
+                    key={f.key}
+                    label={f.label}
+                    data={selectData(f.options, Boolean(form.values.config.preset))}
+                    {...form.getInputProps(`config.modifiers.${f.key}`)}
+                  />
                 ))}
               </SimpleGrid>
               <Checkbox.Group
