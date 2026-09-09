@@ -6,7 +6,9 @@ web/dist/*
 !web/dist/index.html
 web/test-results/
 web/playwright-report/
-e2e/test-results/
+web/e2e/test-results/
+web/e2e/report/
+web/e2e/.data/
 *.db
 *.db-wal
 *.db-shm

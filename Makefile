@@ -55,7 +55,7 @@ dev:
 	@echo "run 'make dev-backend' and 'make dev-web' in two terminals"
 
 e2e: build
-	cd web && npx playwright test --config ../e2e/playwright.config.ts
+	cd web && npx playwright test --config e2e/playwright.config.ts
 
 release: build
 	mkdir -p dist

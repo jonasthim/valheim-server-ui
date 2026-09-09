@@ -1,0 +1,6 @@
+# Config for the e2e suite; data_dir, listen and base_url come from env.
+supervisor: "direct"
+steamcmd_path: "/nonexistent/steamcmd.sh"
+insecure_cookies: true
+log_level: "warn"
+fake_server: true

@@ -220,7 +220,7 @@ button for running jobs, global activity indicator in the header.
 ## Wave 4 — integration, e2e, packaging
 
 ### WP-20 E2E and CI hardening
-Owns: `e2e/**`, `.github/workflows/ci.yml`.
+Owns: `web/e2e/**`, `.github/workflows/ci.yml`.
 Playwright: setup → login → create instance (install:false) → start (fake) →
 console shows lines → backup → restore → stop → users CRUD → logout.
 

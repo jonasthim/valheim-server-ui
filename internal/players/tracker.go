@@ -397,10 +397,19 @@ func (m *Manager) run(ctx context.Context, done chan struct{}, id string, tr *tr
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		tl := &logs.Tailer{Path: paths.ConsoleLog(), Backlog: tailerLogBacklog, Logger: m.log}
-		if err := tl.Run(ctx, func(line string) {
+		parse := func(line string) {
 			if ev, ok := logs.Parse(line); ok {
 				tr.HandleLogEvent(ctx, ev)
+			}
+		}
+		tl := &logs.Tailer{Path: paths.ConsoleLog(), Backlog: tailerLogBacklog, BacklogLine: parse, Logger: m.log}
+		if err := tl.Run(ctx, func(line string) {
+			parse(line)
+			// Live lines feed the console view; backlog lines are not republished
+			// because clients already fetched them via GET /logs.
+			if m.pub != nil {
+				m.pub.Publish(domain.Event{Name: domain.EventInstanceLog, InstanceID: id,
+					Data: map[string]string{"instance_id": id, "line": line}})
 			}
 		}); err != nil {
 			m.log.Debug("players: tailer stopped", "instance", id, "err", err)

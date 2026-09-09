@@ -486,7 +486,7 @@ Every key can be overridden with `VALHEIM_UI_<UPPERCASE_KEY>`.
   temp dir that echoes its args/env.
 - E2E (`make e2e`): start the manager with `supervisor: direct` and
   `VALHEIM_UI_FAKE_SERVER=1`, which makes the launcher exec `testdata/fake-server.sh`
-  (prints realistic log lines, answers nothing on UDP). Playwright drives setup →
+  (prints realistic log lines, answers nothing on UDP). Playwright (`web/e2e/`) drives setup →
   create instance → start → see logs → backup → stop.
 - CI (GitHub Actions): `go vet`, `golangci-lint`, `go test -race`, `npm run typecheck`,
   `npm run lint`, `npm run build`, e2e on push/PR; release workflow on `v*` tags builds

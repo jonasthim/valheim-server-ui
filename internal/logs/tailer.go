@@ -36,6 +36,9 @@ type Tailer struct {
 	// Backlog, when > 0, makes Run call onLine with up to this many of the
 	// file's existing lines before it starts following new writes.
 	Backlog int
+	// BacklogLine, when set, receives the replayed Backlog lines instead of
+	// onLine, so callers can tell history from live output.
+	BacklogLine func(line string)
 	// Logger receives best-effort diagnostics. Defaults to slog.Default().
 	Logger *slog.Logger
 
@@ -180,8 +183,12 @@ func (t *Tailer) check(onLine func(string), log *slog.Logger) error {
 					return fmt.Errorf("seek %s: %w", t.Path, err)
 				}
 			} else {
+				emit := onLine
+				if t.BacklogLine != nil {
+					emit = t.BacklogLine
+				}
 				for _, l := range lines {
-					onLine(l)
+					emit(l)
 				}
 				if _, err := f.Seek(size, io.SeekStart); err != nil {
 					return fmt.Errorf("seek %s: %w", t.Path, err)
