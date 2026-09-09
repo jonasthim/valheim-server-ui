@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 
 	"github.com/jonasthim/valheim-server-ui/internal/config"
+	"github.com/jonasthim/valheim-server-ui/internal/launcher"
 )
 
-// runLaunch is invoked by systemd: ExecStart=/usr/local/bin/valheim-ui launch --instance %i
-// WP-02 implements it in internal/launcher and replaces the body below.
+// runLaunch is invoked by systemd (or the direct supervisor):
+// ExecStart=/usr/local/bin/valheim-ui launch --instance %i
+//
+// On success it never returns: launcher.Run replaces this process image with
+// the game server (or the fake server in dev/test).
 func runLaunch(args []string) error {
 	fs := flag.NewFlagSet("launch", flag.ContinueOnError)
 	instance := fs.String("instance", "", "instance id")
@@ -19,6 +24,9 @@ func runLaunch(args []string) error {
 	if *instance == "" {
 		return errors.New("--instance is required")
 	}
-	_ = cfgPath
-	return errors.New("launch: not implemented (WP-02)")
+	cfg, err := config.Load(*cfgPath)
+	if err != nil {
+		return err
+	}
+	return launcher.Run(context.Background(), cfg, *instance)
 }

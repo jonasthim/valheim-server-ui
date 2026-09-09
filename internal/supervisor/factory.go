@@ -17,12 +17,12 @@ type Options struct {
 }
 
 // New returns the supervisor for kind ("systemd" | "direct").
-// WP-02 replaces the noop returns with NewSystemd / NewDirect.
 func New(kind string, o Options) (Supervisor, error) {
 	switch kind {
-	case "systemd", "direct":
-		o.Log.Warn("supervisor not implemented yet, using noop", "kind", kind)
-		return &noop{kind: kind}, nil
+	case "systemd":
+		return NewSystemd(o), nil
+	case "direct":
+		return NewDirect(o), nil
 	default:
 		return nil, fmt.Errorf("unknown supervisor kind %q", kind)
 	}
