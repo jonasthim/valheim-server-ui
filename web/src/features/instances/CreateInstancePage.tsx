@@ -13,7 +13,7 @@ const EMPTY_CONFIG: CreateInstanceRequest['config'] = {
   world: 'Dedicated',
   password: '',
   port: 2456,
-  public: true,
+  public: false,
   crossplay: false,
   preset: '',
   modifiers: {},

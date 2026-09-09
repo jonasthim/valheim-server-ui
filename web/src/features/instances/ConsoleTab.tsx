@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { IconDownload, IconSearch, IconTrash } from '@tabler/icons-react'
 import { api } from '../../api/client'
 import { onEvent } from '../../events/useEvents'
+import type { PlayersResponse } from '../../api/types'
 import type { PlayersEvent } from '../../events/useEvents'
 import { highlightColor } from './instanceHelpers'
 
@@ -19,7 +20,8 @@ export function ConsoleTab({ id }: { id: string }) {
   const [initialCleared, setInitialCleared] = useState(false)
   const [filter, setFilter] = useState('')
   const [follow, setFollow] = useState(true)
-  const [online, setOnline] = useState<PlayersEvent['online']>([])
+  // null until a live instance.players event arrives; the players query seeds the chips before that.
+  const [liveOnline, setLiveOnline] = useState<PlayersEvent['online'] | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
 
   const initialQuery = useQuery({
@@ -27,6 +29,13 @@ export function ConsoleTab({ id }: { id: string }) {
     queryFn: () => api.get<{ lines: string[] }>(`/instances/${id}/logs`, { lines: 500 }).then((r) => r.lines),
     enabled: !!id,
   })
+
+  const playersQuery = useQuery({
+    queryKey: ['instances', id, 'players'],
+    queryFn: () => api.get<PlayersResponse>(`/instances/${id}/players`),
+    enabled: !!id,
+  })
+  const online: PlayersEvent['online'] = liveOnline ?? playersQuery.data?.online ?? []
 
   const initialLines = initialCleared ? [] : (initialQuery.data ?? [])
   const combined = [...initialLines, ...liveLines]
@@ -42,7 +51,7 @@ export function ConsoleTab({ id }: { id: string }) {
   useEffect(() => {
     return onEvent('instance.players', (e) => {
       if (e.instance_id !== id) return
-      setOnline(e.online)
+      setLiveOnline(e.online)
     })
   }, [id])
 
