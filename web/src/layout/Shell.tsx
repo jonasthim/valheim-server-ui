@@ -13,6 +13,7 @@ import {
 import { useAuth } from '../auth/useAuth'
 import { useEvents } from '../events/useEvents'
 import { ActivityIndicator } from '../features/jobs/ActivityIndicator'
+import { JobDrawerHost } from '../features/jobs/JobDrawerHost'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: IconLayoutDashboard, min: 'viewer' as const },
@@ -95,7 +96,9 @@ export function Shell() {
           ))}
       </AppShell.Navbar>
       <AppShell.Main>
-        <Outlet />
+        <JobDrawerHost>
+          <Outlet />
+        </JobDrawerHost>
       </AppShell.Main>
     </AppShell>
   )
