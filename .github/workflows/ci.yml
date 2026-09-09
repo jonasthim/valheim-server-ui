@@ -63,9 +63,9 @@ jobs:
           # unrelated third-party apt source on the runner image (Google Chrome's,
           # Microsoft's) serves a stale index; drop those sources and retry once.
           npx playwright install-deps chromium || {
-            sudo rm -f /etc/apt/sources.list.d/google-chrome*.list /etc/apt/sources.list.d/microsoft*.list
-            sudo apt-get update -qq
-            npx playwright install-deps chromium
+            sudo rm -f /etc/apt/sources.list.d/google-chrome* /etc/apt/sources.list.d/microsoft*
+            sudo apt-get update -qq || true
+            npx playwright install-deps chromium || echo "::warning::Chromium OS deps could not be installed; relying on the runner image's libraries"
           }
       - run: CGO_ENABLED=0 go build -o bin/valheim-ui ./cmd/valheim-ui
       - run: cd web && npx playwright test --config e2e/playwright.config.ts
