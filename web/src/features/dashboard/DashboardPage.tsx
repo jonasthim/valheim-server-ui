@@ -1,11 +1,11 @@
 import { ActionIcon, Button, SimpleGrid, Skeleton, Stack, Tooltip } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { IconDatabase, IconPlus, IconRefresh, IconRocket, IconServer2, IconUsers } from '@tabler/icons-react'
+import { IconCpu, IconDatabase, IconDeviceSdCard, IconPlus, IconRefresh, IconRocket, IconServer2, IconUsers } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { api } from '../../api/client'
 import type { Instance } from '../../api/types'
-import { fmtBytes } from '../../lib/format'
+import { fmtBytes, fmtPercent } from '../../lib/format'
 import { EmptyState, PageHeader, StatTile } from '../../ui'
 import { useCheckAppUpdate, useSystemInfo } from '../system'
 import { SystemStrip } from './SystemStrip'
@@ -26,6 +26,7 @@ export function DashboardPage() {
   const stopped = instances.length - running
   const playersOnline = instances.reduce((sum, i) => sum + i.status.players_online, 0)
   const info = system.data
+  const host = info?.host
   const updateAvailable = info?.app_update?.update_available ?? false
 
   return (
@@ -44,13 +45,13 @@ export function DashboardPage() {
       />
 
       {system.isLoading ? (
-        <SimpleGrid cols={{ base: 2, md: 4 }}>
-          {Array.from({ length: 4 }).map((_, i) => (
+        <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }}>
+          {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} height={92} radius="lg" />
           ))}
         </SimpleGrid>
       ) : (
-        <SimpleGrid cols={{ base: 2, md: 4 }}>
+        <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }}>
           <StatTile
             label="Servers"
             value={`${running} / ${instances.length}`}
@@ -62,6 +63,20 @@ export function DashboardPage() {
             value={playersOnline}
             icon={<IconUsers size={16} />}
             accent="var(--vh-moss)"
+          />
+          <StatTile
+            label="CPU"
+            value={host ? fmtPercent(host.cpu_percent) : '—'}
+            hint={host ? `load ${host.load_avg_1.toFixed(2)} · ${host.cpu_count} cores` : undefined}
+            icon={<IconCpu size={16} />}
+            accent={host && host.cpu_percent >= 85 ? 'var(--vh-blood)' : undefined}
+          />
+          <StatTile
+            label="Memory"
+            value={host ? fmtBytes(host.mem_used_bytes) : '—'}
+            hint={host ? `of ${fmtBytes(host.mem_total_bytes)} (${fmtPercent((host.mem_used_bytes / host.mem_total_bytes) * 100)})` : undefined}
+            icon={<IconDeviceSdCard size={16} />}
+            accent={host && host.mem_used_bytes / host.mem_total_bytes >= 0.9 ? 'var(--vh-blood)' : undefined}
           />
           <StatTile
             label="Disk free"

@@ -2655,6 +2655,21 @@ export interface components {
             /** Format: date-time */
             buildid_checked_at?: string;
             app_update?: components["schemas"]["AppUpdateInfo"];
+            host?: components["schemas"]["HostMetrics"];
+        };
+        /** @description Manager host resource usage, sampled from /proc. */
+        HostMetrics: {
+            /** @description CPU utilisation across all cores */
+            cpu_percent: number;
+            cpu_count: number;
+            load_avg_1: number;
+            /** Format: int64 */
+            mem_total_bytes: number;
+            /**
+             * Format: int64
+             * @description MemTotal minus MemAvailable
+             */
+            mem_used_bytes: number;
         };
         AppUpdateInfo: {
             current_version: string;
@@ -2750,6 +2765,13 @@ export interface components {
             bepinex_installed?: boolean;
             bepinex_enabled?: boolean;
             active_job?: components["schemas"]["Job"];
+            /** @description Game process CPU */
+            cpu_percent?: number;
+            /**
+             * Format: int64
+             * @description Game process resident memory
+             */
+            memory_bytes?: number;
         };
         Instance: {
             id: string;

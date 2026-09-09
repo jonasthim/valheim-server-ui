@@ -32,6 +32,7 @@ type systemInfo struct {
 	LatestBuildID     string                `json:"latest_buildid,omitempty"`
 	BuildIDCheckedAt  *time.Time            `json:"buildid_checked_at,omitempty"`
 	AppUpdate         *domain.AppUpdateInfo `json:"app_update,omitempty"`
+	Host              *domain.HostMetrics   `json:"host,omitempty"`
 }
 
 func systemHandler(d *Deps) http.HandlerFunc {
@@ -61,6 +62,13 @@ func systemHandler(d *Deps) http.HandlerFunc {
 
 		if d.SelfUpdate != nil {
 			info.AppUpdate = d.SelfUpdate.Info(r.Context())
+		}
+		if d.Metrics != nil {
+			if h, err := d.Metrics.Host(); err == nil {
+				info.Host = &h
+			} else {
+				d.Log.Debug("system: host metrics", "err", err)
+			}
 		}
 
 		WriteJSON(w, http.StatusOK, info)

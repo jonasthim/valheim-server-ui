@@ -1230,6 +1230,18 @@ components:
         latest_buildid: { type: string, description: Last known public Valheim build id }
         buildid_checked_at: { type: string, format: date-time }
         app_update: { $ref: '#/components/schemas/AppUpdateInfo' }
+        host: { $ref: '#/components/schemas/HostMetrics' }
+
+    HostMetrics:
+      type: object
+      description: Manager host resource usage, sampled from /proc.
+      required: [cpu_percent, cpu_count, load_avg_1, mem_total_bytes, mem_used_bytes]
+      properties:
+        cpu_percent: { type: number, description: CPU utilisation across all cores, 0-100 }
+        cpu_count: { type: integer }
+        load_avg_1: { type: number }
+        mem_total_bytes: { type: integer, format: int64 }
+        mem_used_bytes: { type: integer, format: int64, description: MemTotal minus MemAvailable }
 
     AppUpdateInfo:
       type: object
@@ -1318,6 +1330,8 @@ components:
         bepinex_installed: { type: boolean }
         bepinex_enabled: { type: boolean }
         active_job: { $ref: '#/components/schemas/Job' }
+        cpu_percent: { type: number, description: Game process CPU, percent of one core (like top); absent until two samples exist }
+        memory_bytes: { type: integer, format: int64, description: Game process resident memory }
 
     Instance:
       type: object

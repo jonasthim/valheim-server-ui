@@ -3,6 +3,7 @@ import { modals } from '@mantine/modals'
 import { Link } from 'react-router-dom'
 import {
   IconCheck,
+  IconCpu,
   IconCopy,
   IconDownload,
   IconPlayerPlay,
@@ -12,6 +13,7 @@ import {
   IconUsers,
 } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
+import { fmtBytes, fmtPercent } from '../../lib/format'
 import type { Instance } from '../../api/types'
 import { StatusDot, StatusPill } from '../../ui'
 import { useJobDrawer, jobTypeLabel } from '../jobs'
@@ -112,6 +114,18 @@ export function InstanceCard({ instance }: { instance: Instance }) {
             </Text>
             <Text size="sm">{config.port}</Text>
           </Group>
+          {status.memory_bytes !== undefined && (
+            <Tooltip label="Game process CPU (percent of one core) and resident memory">
+              <Group gap={6} wrap="nowrap">
+                <Text c="dimmed" component="span" style={{ display: 'inline-flex' }}>
+                  <IconCpu size={14} />
+                </Text>
+                <Text size="sm">
+                  {fmtPercent(status.cpu_percent)} · {fmtBytes(status.memory_bytes)}
+                </Text>
+              </Group>
+            </Tooltip>
+          )}
           {status.join_code && (
             <Group gap={4} wrap="nowrap">
               <Pill size="sm" className={classes.joinCode}>

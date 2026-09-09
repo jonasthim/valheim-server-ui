@@ -18,6 +18,8 @@ import { modals } from '@mantine/modals'
 import {
   IconAlertTriangle,
   IconBox,
+  IconCpu,
+  IconDeviceSdCard,
   IconCheck,
   IconCopy,
   IconKey,
@@ -29,7 +31,7 @@ import {
   IconUsers,
 } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
-import { fmtAgo, fmtTime } from '../../lib/format'
+import { fmtAgo, fmtBytes, fmtPercent, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
 import { SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
@@ -67,7 +69,7 @@ export function OverviewTab({ id }: { id: string }) {
   if (inst.isLoading) {
     return (
       <Stack>
-        <SimpleGrid cols={{ base: 2, md: 4 }}>
+        <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }}>
           <Skeleton height={92} />
           <Skeleton height={92} />
           <Skeleton height={92} />
@@ -131,7 +133,7 @@ export function OverviewTab({ id }: { id: string }) {
 
   return (
     <Stack>
-      <SimpleGrid cols={{ base: 2, md: 4 }}>
+      <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }}>
         <StatTile
           label="State"
           value={stateLabel(status.state)}
@@ -165,6 +167,19 @@ export function OverviewTab({ id }: { id: string }) {
               <IconKey size={16} />
             )
           }
+        />
+        <StatTile
+          label="CPU"
+          value={fmtPercent(status.cpu_percent)}
+          hint={status.state === 'running' ? 'of one core' : 'not running'}
+          icon={<IconCpu size={16} />}
+          accent={status.cpu_percent !== undefined && status.cpu_percent >= 90 ? 'var(--vh-blood)' : undefined}
+        />
+        <StatTile
+          label="Memory"
+          value={status.memory_bytes !== undefined ? fmtBytes(status.memory_bytes) : '—'}
+          hint={status.state === 'running' ? 'resident' : 'not running'}
+          icon={<IconDeviceSdCard size={16} />}
         />
         <StatTile
           label="Build"

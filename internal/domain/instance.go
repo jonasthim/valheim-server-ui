@@ -304,6 +304,26 @@ type InstanceStatus struct {
 	BepInExInstalled bool          `json:"bepinex_installed"`
 	BepInExEnabled   bool          `json:"bepinex_enabled"`
 	ActiveJob        *Job          `json:"active_job,omitempty"`
+	// Live resource usage of the game process (set by the metrics enricher
+	// while running). CPUPercent is percent of one core, like top.
+	CPUPercent  *float64 `json:"cpu_percent,omitempty"`
+	MemoryBytes *int64   `json:"memory_bytes,omitempty"`
+}
+
+// HostMetrics is the manager host's resource usage for the dashboard.
+type HostMetrics struct {
+	CPUPercent    float64 `json:"cpu_percent"` // 0-100 across all cores
+	CPUCount      int     `json:"cpu_count"`
+	LoadAvg1      float64 `json:"load_avg_1"`
+	MemTotalBytes int64   `json:"mem_total_bytes"`
+	MemUsedBytes  int64   `json:"mem_used_bytes"`
+}
+
+// ProcessMetrics is one process's resource usage.
+type ProcessMetrics struct {
+	CPUPercent  float64 // percent of one core; valid only when CPUKnown
+	CPUKnown    bool
+	MemoryBytes int64 // resident set size
 }
 
 // InstancePaths are the absolute directories of one instance.

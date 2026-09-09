@@ -3,6 +3,12 @@ import relativeTime from 'dayjs/plugin/relativeTime'
 
 dayjs.extend(relativeTime)
 
+/** "12%" / "0.4%"; undefined renders as a dash. */
+export function fmtPercent(n: number | undefined | null): string {
+  if (n === undefined || n === null || Number.isNaN(n)) return '—'
+  return `${n < 10 && n > 0 ? n.toFixed(1) : Math.round(n)}%`
+}
+
 export function fmtBytes(n: number | undefined | null): string {
   if (n === undefined || n === null) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']

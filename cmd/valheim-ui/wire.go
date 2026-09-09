@@ -8,6 +8,7 @@ import (
 	"github.com/jonasthim/valheim-server-ui/internal/api"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 	"github.com/jonasthim/valheim-server-ui/internal/instance"
+	"github.com/jonasthim/valheim-server-ui/internal/metrics"
 	"github.com/jonasthim/valheim-server-ui/internal/players"
 	"github.com/jonasthim/valheim-server-ui/internal/scheduler"
 	"github.com/jonasthim/valheim-server-ui/internal/steam"
@@ -55,6 +56,13 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 		}
 		return refs, nil
 	}
+	// Host and per-process CPU/memory from /proc; enriches running instances
+	// and feeds the dashboard tiles.
+	sampler := metrics.New()
+	sampler.Prime()
+	inst.RegisterEnricher(sampler)
+	deps.Metrics = sampler
+
 	playersMgr, err := wirePlayers(ctx, deps, listRefs, inst.Paths, inst.Exists, inst.RegisterEnricher)
 	if err != nil {
 		return fmt.Errorf("players: %w", err)

@@ -558,3 +558,15 @@ Every key can be overridden with `VALHEIM_UI_<UPPERCASE_KEY>`.
 
 Docker runtime, arm64, Valheim Plus, in-game chat/RCON, multi-host, metrics
 exporter, HTTPS termination (use a reverse proxy), API tokens for automation.
+
+## Resource metrics
+
+`internal/metrics` samples `/proc` (no cgo, no dependencies): `/proc/stat`, `/proc/meminfo`
+and `/proc/loadavg` for the host, `/proc/<pid>/stat` and `statm` for each running game
+process. The sampler keeps the previous reading per subject so cumulative CPU time becomes
+a percentage (host: all cores, 0-100; process: percent of one core, like `top`), never
+computes over a window shorter than one second, and forgets processes not asked about for
+five minutes. It is registered as a `StatusEnricher`, so `InstanceStatus` carries
+`cpu_percent` and `memory_bytes` while running, and `GET /system` returns `host` metrics for
+the dashboard tiles.
+

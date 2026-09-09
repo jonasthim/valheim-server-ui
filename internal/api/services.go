@@ -57,6 +57,11 @@ type UserService interface {
 }
 
 // WP-01
+// HostMetricsSource reports the manager host's CPU/memory usage (internal/metrics).
+type HostMetricsSource interface {
+	Host() (domain.HostMetrics, error)
+}
+
 type SettingsService interface {
 	Get(ctx context.Context) (domain.Settings, error)
 	// Put validates and stores; empty OIDC client secret keeps the stored one.
