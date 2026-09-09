@@ -100,19 +100,28 @@ func extractBepInExPack(zipPath, serverDir string) error {
 			names = append(names, clean)
 		}
 	}
-	wrapper := commonTopFolder(names)
+	// The payload is whatever directory contains BepInEx/core/BepInEx.Preloader.dll.
+	// Real packs ship it under "BepInExPack_Valheim/" with Thunderstore metadata
+	// (manifest.json, README.md, icon.png, CHANGELOG.md) beside it at the archive
+	// root; those metadata files are skipped. A pack with the payload at the root
+	// (prefix "") is accepted too.
+	prefix, ok := packPayloadPrefix(names)
+	if !ok {
+		return fmt.Errorf("bepinex pack zip does not contain BepInEx/core/BepInEx.Preloader.dll")
+	}
 
 	for _, f := range r.File {
 		if f.FileInfo().IsDir() {
 			continue
 		}
 		rel := cleaned[f.Name]
-		if wrapper != "" {
-			prefix := wrapper + "/"
+		if prefix != "" {
 			if !strings.HasPrefix(rel, prefix) {
 				continue
 			}
 			rel = strings.TrimPrefix(rel, prefix)
+		} else if !strings.Contains(rel, "/") && isPackMetadata(rel) {
+			continue
 		}
 		if rel == "" {
 			continue
@@ -191,4 +200,28 @@ func withStoppedInstance(ctx context.Context, inst InstanceAccessor, instanceID 
 		}
 	}
 	return workErr
+}
+
+const packPreloader = "BepInEx/core/BepInEx.Preloader.dll"
+
+// packPayloadPrefix returns the directory prefix (with trailing slash, or "")
+// under which the BepInEx payload lives inside a pack zip.
+func packPayloadPrefix(names []string) (string, bool) {
+	for _, n := range names {
+		if n == packPreloader {
+			return "", true
+		}
+		if strings.HasSuffix(n, "/"+packPreloader) {
+			return strings.TrimSuffix(n, packPreloader), true
+		}
+	}
+	return "", false
+}
+
+func isPackMetadata(name string) bool {
+	switch name {
+	case "manifest.json", "README.md", "CHANGELOG.md", "icon.png":
+		return true
+	}
+	return false
 }

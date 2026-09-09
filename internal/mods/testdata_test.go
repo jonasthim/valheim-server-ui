@@ -59,7 +59,13 @@ func buildZip(t *testing.T, entries []zipEntry) []byte {
 // meant to be copied verbatim into the server dir root (ARCHITECTURE.md §12).
 func bepinexPackZip(t *testing.T) []byte {
 	t.Helper()
+	// Real packs carry Thunderstore metadata at the archive root next to the
+	// payload folder; those files must not land in the server dir.
 	return buildZip(t, []zipEntry{
+		{"manifest.json", []byte(`{"name":"BepInExPack_Valheim","version_number":"5.4.2202","dependencies":[]}`)},
+		{"README.md", []byte("# pack")},
+		{"icon.png", []byte("png")},
+		{"CHANGELOG.md", []byte("changes")},
 		{"BepInExPack_Valheim/BepInEx/core/BepInEx.Preloader.dll", []byte("preloader")},
 		{"BepInExPack_Valheim/BepInEx/core/BepInEx.dll", []byte("core")},
 		{"BepInExPack_Valheim/doorstop_libs/libdoorstop_x64.so", []byte("doorstop")},
