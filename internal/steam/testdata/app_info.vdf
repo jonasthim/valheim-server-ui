@@ -1,0 +1,42 @@
+"896660"
+{
+	"common"
+	{
+		"name"		"Valheim Dedicated Server"
+		"type"		"Tool"
+	}
+	"extended"
+	{
+		"listofdlc"		"0"
+	}
+	"depots"
+	{
+		"branches"
+		{
+			"beta"
+			{
+				"buildid"		"11111111"
+				"timeupdated"		"1690000000"
+				"pwdrequired"		"1"
+				"description"		"Beta branch, not for the public"
+			}
+			"unstable"
+			{
+				"buildid"		"33333333"
+				"timeupdated"		"1695000000"
+			}
+			"public"
+			{
+				"buildid"		"22222222"
+				"timeupdated"		"1700000000"
+			}
+		}
+		"branchsizes"
+		{
+			"public"
+			{
+				"size"		"1234567890"
+			}
+		}
+	}
+}

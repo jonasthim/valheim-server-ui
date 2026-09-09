@@ -1,0 +1,39 @@
+"AppState"
+{
+	"appid"		"896660"
+	"universe"		"1"
+	"LauncherPath"		"/usr/local/valheim/steamcmd/steamcmd.sh"
+	"name"		"Valheim Dedicated Server"
+	"StateFlags"		"4"
+	"installdir"		"valheim"
+	"LastUpdated"		"1700000500"
+	"SizeOnDisk"		"1234567890"
+	"StagingSize"		"0"
+	"buildid"		"22222222"
+	"LastOwner"		"0"
+	"UpdateResult"		"0"
+	"BytesToDownload"		"0"
+	"BytesDownloaded"		"0"
+	"BytesToStage"		"0"
+	"BytesStaged"		"0"
+	"TargetBuildID"		"22222222"
+	"AutoUpdateBehavior"		"0"
+	"AllowOtherDownloadsWhileRunning"		"0"
+	"ScheduledAutoUpdate"		"0"
+	"InstalledDepots"
+	{
+		"896661"
+		{
+			"manifest"		"1111111111111111111"
+			"size"		"1234567890"
+		}
+	}
+	"UserConfig"
+	{
+		"platform_type"		"linux"
+	}
+	"MountedConfig"
+	{
+		"platform_type"		"linux"
+	}
+}
