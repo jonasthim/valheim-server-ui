@@ -10,7 +10,9 @@ require (
 )
 
 require (
+	github.com/coreos/go-oidc/v3 v3.21.0 // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 )
 
