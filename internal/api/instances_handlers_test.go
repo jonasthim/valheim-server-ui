@@ -102,6 +102,7 @@ type testAPI struct {
 	handler http.Handler
 	sup     *fakeAPISupervisor
 	svc     *instance.Service
+	auditor *fakeAuditor
 }
 
 func newTestAPI(t *testing.T) *testAPI {
@@ -122,6 +123,7 @@ func newTestAPI(t *testing.T) *testAPI {
 	sup := newFakeAPISupervisor()
 	svc := instance.New(sqldb, bus, sup, cfg, log)
 
+	auditor := &fakeAuditor{}
 	deps := &Deps{
 		Cfg:        cfg,
 		Log:        log,
@@ -130,8 +132,9 @@ func newTestAPI(t *testing.T) *testAPI {
 		Supervisor: sup,
 		Auth:       fakeAuthenticator{},
 		Instances:  svc,
+		Audit:      auditor,
 	}
-	return &testAPI{handler: NewRouter(deps, nil), sup: sup, svc: svc}
+	return &testAPI{handler: NewRouter(deps, nil), sup: sup, svc: svc, auditor: auditor}
 }
 
 func (a *testAPI) do(t *testing.T, method, path, role string, body any) *httptest.ResponseRecorder {
@@ -343,6 +346,52 @@ func TestInstances_PatchModifiersObjectReplacesStoredSet(t *testing.T) {
 	got = decode()
 	if got.Config.Modifiers.Combat != "easy" {
 		t.Fatalf("combat = %q after unrelated patch, want easy", got.Config.Modifiers.Combat)
+	}
+}
+
+func TestInstances_PatchAuditRecordsFieldDiff(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+	rec := api.do(t, http.MethodPatch, "/api/v1/instances/main", "operator", map[string]any{
+		"autostart": true,
+		"config":    map[string]any{"modifiers": map[string]any{"portals": "hard"}, "password": "brand-new-pw"},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	byPath := map[string]auditChange{}
+	found := false
+	api.auditor.mu.Lock()
+	for i := len(api.auditor.calls) - 1; i >= 0; i-- {
+		call := api.auditor.calls[i]
+		if call.action != "instance.update" {
+			continue
+		}
+		found = true
+		changes, _ := call.details["changes"].([]auditChange)
+		for _, c := range changes {
+			byPath[c.Path] = c
+		}
+		break // newest first
+	}
+	api.auditor.mu.Unlock()
+	if !found {
+		t.Fatal("no instance.update audit entry recorded")
+	}
+	if c, ok := byPath["config.modifiers.portals"]; !ok || c.From != nil || c.To != "hard" {
+		t.Errorf("portals change = %#v, want unset -> hard", c)
+	}
+	if c, ok := byPath["autostart"]; !ok || c.From != false || c.To != true {
+		t.Errorf("autostart change = %#v, want false -> true", c)
+	}
+	if c, ok := byPath["config.password"]; !ok || c.From != maskedValue || c.To != maskedValue {
+		t.Errorf("password change = %#v, want masked on both sides", c)
+	}
+	for path := range byPath {
+		if path == "name" || path == "config.name" || path == "config.world" {
+			t.Errorf("unchanged field %q reported as a change", path)
+		}
 	}
 }
 

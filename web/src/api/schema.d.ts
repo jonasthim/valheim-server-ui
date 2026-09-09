@@ -3011,6 +3011,13 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** @description One changed field. A missing `from` means it was unset before, a missing `to` that it was cleared. */
+        AuditChange: {
+            /** @example config.modifiers.portals */
+            path: string;
+            from?: unknown;
+            to?: unknown;
+        };
         AuditEntry: {
             id: number;
             /** Format: date-time */
@@ -3020,7 +3027,14 @@ export interface components {
             action: string;
             instance_id?: string;
             target?: string;
+            /**
+             * @description Free-form per action. Update actions (instance.update, settings.update,
+             *     user.update, schedule.update, players.list.update) carry `changes`, a
+             *     field-level diff of what the request changed; secrets are masked as "••••••".
+             */
             details?: {
+                changes?: components["schemas"]["AuditChange"][];
+            } & {
                 [key: string]: unknown;
             };
             ip?: string;

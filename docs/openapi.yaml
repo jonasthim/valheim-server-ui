@@ -1624,6 +1624,15 @@ components:
           type: object
           additionalProperties: true
 
+    AuditChange:
+      type: object
+      required: [path]
+      description: One changed field. A missing `from` means it was unset before, a missing `to` that it was cleared.
+      properties:
+        path: { type: string, example: config.modifiers.portals }
+        from: {}
+        to: {}
+
     AuditEntry:
       type: object
       required: [id, ts, action]
@@ -1635,5 +1644,15 @@ components:
         action: { type: string }
         instance_id: { type: string }
         target: { type: string }
-        details: { type: object, additionalProperties: true }
+        details:
+          type: object
+          additionalProperties: true
+          description: |
+            Free-form per action. Update actions (instance.update, settings.update,
+            user.update, schedule.update, players.list.update) carry `changes`, a
+            field-level diff of what the request changed; secrets are masked as "••••••".
+          properties:
+            changes:
+              type: array
+              items: { $ref: '#/components/schemas/AuditChange' }
         ip: { type: string }

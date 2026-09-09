@@ -37,15 +37,20 @@ func putSettingsHandler(d *Deps) http.HandlerFunc {
 			WriteError(w, err)
 			return
 		}
+		prev, prevErr := d.Settings.Get(r.Context())
 		out, err := d.Settings.Put(r.Context(), in)
 		if err != nil {
 			WriteError(w, err)
 			return
 		}
-		d.audit(r, "settings.update", "", "", map[string]any{
+		details := map[string]any{
 			"local_login_enabled": out.Auth.LocalLoginEnabled,
 			"oidc_enabled":        out.Auth.OIDC.Enabled,
-		})
+		}
+		if prevErr == nil {
+			details["changes"] = auditDiff(prev, out) // client_secret is masked by auditDiff
+		}
+		d.audit(r, "settings.update", "", "", details)
 		WriteJSON(w, http.StatusOK, d.Settings.Redacted(out))
 	}
 }

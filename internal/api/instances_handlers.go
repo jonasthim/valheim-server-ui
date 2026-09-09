@@ -143,13 +143,13 @@ func (d *Deps) updateInstance(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, domain.Wrap(domain.CodeValidationFailed, "invalid JSON body: "+err.Error(), err))
 		return
 	}
+	cur, err := d.Instances.Get(r.Context(), id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
 	var req updateInstanceRequest
 	if len(probe.Config) > 0 && string(probe.Config) != "null" {
-		cur, err := d.Instances.Get(r.Context(), id)
-		if err != nil {
-			WriteError(w, err)
-			return
-		}
 		cfg := cur.Config
 		// "modifiers" is a set, not a list of independent fields: an unset rule
 		// is simply absent from the object (the form never sends an empty
@@ -176,17 +176,12 @@ func (d *Deps) updateInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	details := map[string]any{}
-	if req.Name != nil {
-		details["name"] = *req.Name
-	}
-	if req.Autostart != nil {
-		details["autostart"] = *req.Autostart
-	}
-	if req.Config != nil {
-		details["config"] = req.Config.Masked()
-	}
-	d.audit(r, "instance.update", id, "", details)
+	// Record what actually changed (secrets masked by auditDiff), not the
+	// whole config, so the audit log shows e.g. "config.modifiers.portals:
+	// hard -> unset" for a rules edit.
+	d.audit(r, "instance.update", id, "", map[string]any{
+		"changes": auditDiff(instanceAuditView(cur), instanceAuditView(inst)),
+	})
 
 	WriteJSON(w, http.StatusOK, map[string]any{"instance": maskInstance(UserFrom(r.Context()), inst)})
 }
@@ -312,4 +307,13 @@ func (d *Deps) instanceLogsDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-console.log"`, id))
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, rc)
+}
+
+// instanceAuditView is the subset of an instance that users edit through
+// PATCH, in the shape the audit diff reports paths for.
+func instanceAuditView(inst *domain.Instance) map[string]any {
+	if inst == nil {
+		return nil
+	}
+	return map[string]any{"name": inst.Name, "autostart": inst.Autostart, "config": inst.Config}
 }

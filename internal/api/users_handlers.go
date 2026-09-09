@@ -107,14 +107,17 @@ func updateUserHandler(d *Deps) http.HandlerFunc {
 			WriteError(w, err)
 			return
 		}
+		prev, prevErr := d.Users.Get(r.Context(), id)
 		usr, err := d.Users.Update(r.Context(), id, in.DisplayName, in.Email, in.Role, in.Disabled)
 		if err != nil {
 			WriteError(w, err)
 			return
 		}
-		d.audit(r, "user.update", "", usr.Username, map[string]any{
-			"display_name": in.DisplayName, "email": in.Email, "role": in.Role, "disabled": in.Disabled,
-		})
+		details := map[string]any{}
+		if prevErr == nil {
+			details["changes"] = auditDiff(userAuditView(prev), userAuditView(usr))
+		}
+		d.audit(r, "user.update", "", usr.Username, details)
 		WriteJSON(w, http.StatusOK, map[string]any{"user": usr})
 	}
 }
@@ -168,4 +171,12 @@ func setUserPasswordHandler(d *Deps) http.HandlerFunc {
 		d.audit(r, "user.password.set", "", usr.Username, nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// userAuditView is the editable subset of a user for audit diffs.
+func userAuditView(u *domain.User) map[string]any {
+	if u == nil {
+		return nil
+	}
+	return map[string]any{"display_name": u.DisplayName, "email": u.Email, "role": u.Role, "disabled": u.Disabled}
 }

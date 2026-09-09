@@ -97,14 +97,25 @@ func updateScheduleHandler(d *Deps) http.HandlerFunc {
 			WriteError(w, err)
 			return
 		}
+		var prev *domain.Schedule
+		if list, listErr := d.Schedules.List(r.Context(), id); listErr == nil {
+			for i := range list {
+				if list[i].ID == scheduleID {
+					prev = &list[i]
+					break
+				}
+			}
+		}
 		sc, err := d.Schedules.Update(r.Context(), id, scheduleID, in)
 		if err != nil {
 			WriteError(w, err)
 			return
 		}
-		d.audit(r, "schedule.update", id, strconv.FormatInt(scheduleID, 10), map[string]any{
-			"kind": sc.Kind, "cron": sc.Cron, "enabled": sc.Enabled,
-		})
+		details := map[string]any{"kind": sc.Kind, "cron": sc.Cron, "enabled": sc.Enabled}
+		if prev != nil {
+			details["changes"] = auditDiff(scheduleAuditView(prev), scheduleAuditView(sc))
+		}
+		d.audit(r, "schedule.update", id, strconv.FormatInt(scheduleID, 10), details)
 		WriteJSON(w, http.StatusOK, map[string]any{"schedule": sc})
 	}
 }
@@ -150,4 +161,12 @@ func runScheduleHandler(d *Deps) http.HandlerFunc {
 		d.audit(r, "schedule.run", id, strconv.FormatInt(scheduleID, 10), map[string]any{"job_id": job.ID})
 		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 	}
+}
+
+// scheduleAuditView is the editable subset of a schedule for audit diffs.
+func scheduleAuditView(s *domain.Schedule) map[string]any {
+	if s == nil {
+		return nil
+	}
+	return map[string]any{"kind": s.Kind, "cron": s.Cron, "enabled": s.Enabled, "only_when_empty": s.OnlyWhenEmpty, "note": s.Note}
 }

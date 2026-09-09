@@ -94,15 +94,52 @@ func handlePutPlayerList(d *Deps) http.HandlerFunc {
 		}
 		body.Kind = kind // the URL is authoritative
 
+		prev, prevErr := d.Players.GetList(r.Context(), id, kind)
 		updated, err := d.Players.PutList(r.Context(), id, body)
 		if err != nil {
 			WriteError(w, err)
 			return
 		}
-		d.audit(r, "players.list.update", id, string(kind), map[string]any{
+		details := map[string]any{
 			"kind":  string(kind),
 			"count": len(updated.Entries),
-		})
+		}
+		if prevErr == nil && prev != nil {
+			details["changes"] = listAuditChanges(prev.Entries, updated.Entries)
+		}
+		d.audit(r, "players.list.update", id, string(kind), details)
 		WriteJSON(w, http.StatusOK, updated)
 	}
+}
+
+// listAuditChanges reports which ids were added to or removed from a player
+// list as audit changes ("added"/"removed" paths), ignoring comment edits.
+func listAuditChanges(before, after []domain.PlayerListEntry) []auditChange {
+	prev := map[string]bool{}
+	for _, e := range before {
+		prev[e.ID] = true
+	}
+	next := map[string]bool{}
+	for _, e := range after {
+		next[e.ID] = true
+	}
+	var added, removed []string
+	for _, e := range after {
+		if !prev[e.ID] {
+			added = append(added, e.ID)
+		}
+	}
+	for _, e := range before {
+		if !next[e.ID] {
+			removed = append(removed, e.ID)
+		}
+	}
+	changes := []auditChange{}
+	if len(added) > 0 {
+		changes = append(changes, auditChange{Path: "added", To: added})
+	}
+	if len(removed) > 0 {
+		changes = append(changes, auditChange{Path: "removed", From: removed})
+	}
+	return changes
 }
