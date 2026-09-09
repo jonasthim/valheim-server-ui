@@ -468,7 +468,7 @@ func summaryFrom(e *indexEntry) domain.PackageSummary {
 		TotalDownloads: e.totalDownloads,
 		IsDeprecated:   e.raw.IsDeprecated,
 		IsPinned:       e.raw.IsPinned,
-		Categories:     append([]string(nil), e.raw.Categories...),
+		Categories:     append([]string{}, e.raw.Categories...),
 		DateUpdated:    e.raw.DateUpdated,
 	}
 }

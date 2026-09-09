@@ -185,7 +185,7 @@ export function InstalledModsTable({ id }: { id: string }) {
                       </Popover.Target>
                       <Popover.Dropdown>
                         <List size="xs" spacing={2}>
-                          {mod.dependencies.map((dep) => (
+                          {(mod.dependencies ?? []).map((dep) => (
                             <List.Item key={dep}>{dep}</List.Item>
                           ))}
                         </List>

@@ -251,7 +251,7 @@ function PackageRow({
               </Text>
             )}
             <Group gap={4} mt={4} wrap="wrap">
-              {pkg.categories.slice(0, 5).map((c) => (
+              {(pkg.categories ?? []).slice(0, 5).map((c) => (
                 <Badge key={c} size="xs" variant="outline">
                   {c}
                 </Badge>
@@ -336,7 +336,7 @@ function InstallButton({ id, pkg }: { id: string; pkg: PackageSummary }) {
                     Dependencies
                   </Text>
                   <List size="xs" spacing={2}>
-                    {selectedVersion.dependencies.map((dep) => (
+                    {(selectedVersion.dependencies ?? []).map((dep) => (
                       <List.Item key={dep}>{dep}</List.Item>
                     ))}
                   </List>
