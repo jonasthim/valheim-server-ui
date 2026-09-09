@@ -1,4 +1,4 @@
-import { Skeleton, Stack, Text } from '@mantine/core'
+import { Anchor, Skeleton, Stack, Text } from '@mantine/core'
 import { useAuth } from '../../auth/useAuth'
 import { useInstance } from './useInstance'
 import { useDeleteWorld, useRegenerateWorld, useSetActiveWorld, useWorlds } from './worlds/useWorlds'
@@ -40,8 +40,13 @@ export function WorldsTab({ id }: { id: string }) {
         onDelete={(name) => deleteWorld.mutate(name)}
       />
       <Text size="xs" c="dimmed">
-        Changing the active world requires a restart to take effect. Regenerate replaces the active world with a fresh
-        one (new seed, same name) after taking a backup; delete removes an inactive world's files.
+        Worlds are save files inside this instance; nothing here changes the instance itself. Changing the active world
+        requires a restart. Regenerate replaces the active world with a fresh one (new seed, same name) after taking a
+        backup; delete removes an inactive world's files. To start a new world and keep the old one, set a new World
+        name in Config and restart.{' '}
+        <Anchor href="https://github.com/jonasthim/valheim-server-ui/blob/main/docs/WORLDS.md" target="_blank" rel="noreferrer">
+          Worlds guide
+        </Anchor>
       </Text>
 
       {canManage && <WorldUploadCard id={id} />}

@@ -128,6 +128,12 @@ player lists. Restore stops the server if you ask it to, takes a safety backup
 first, restores, and starts it again. Manual and uploaded backups are never
 auto-deleted; scheduled ones follow the retention policy in Config.
 
+**Manage worlds.** Instance → Worlds. Switch the active world, start a new one
+(Config → World name → restart; the old one stays on disk), regenerate the
+active world with a new seed (backup first, typed confirmation), delete inactive
+ones, upload or download saves. Worlds are files inside an instance; none of
+this touches the instance itself. Details: [docs/WORLDS.md](docs/WORLDS.md).
+
 **Install mods.** Instance → Mods → Install BepInEx (the server must be stopped;
 the UI can stop and restart it for you). Then Browse Thunderstore, pick a mod and
 its version; dependencies are resolved and installed automatically and the plan

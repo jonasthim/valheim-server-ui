@@ -103,7 +103,7 @@ web UI port never needs to be exposed directly.
 | Watch the console | Instance → Console (live, filterable, downloadable). |
 | Admins / bans / allow-list | Instance → Players. Valheim reloads the list files live. |
 | Backups | Instance → Backups: manual, scheduled, restore, upload/download. Retention is per instance in Config. |
-| Worlds | Instance → Worlds: upload `.db`+`.fwl`, download, switch the active world (restart required). |
+| Worlds | Instance → Worlds: switch the active world, regenerate it with a new seed, delete inactive ones, upload/download saves. World files only, the instance is untouched. See [WORLDS.md](WORLDS.md). |
 | Mods | Instance → Mods: install BepInEx, browse Thunderstore, upload zips, edit `.cfg` files. |
 | Game updates | Overview → Check for updates / Update now, or a schedule of kind `update`. |
 | Users and roles | Users (admin only). Roles: viewer < operator < admin. |
