@@ -25,8 +25,6 @@ import (
 // connected across every instance (e.g. summed from deps.Players / the
 // players.Manager via players.PlayersOnline for each instance id), since
 // auto-upgrade only ever proceeds when nobody is playing anywhere.
-//
-//nolint:unused // wired in from wire.go by whoever integrates WP-30 (see docs/WORKPLAN.md); not called from this package's own code yet
 func wireSelfUpdate(ctx context.Context, deps *api.Deps, runner *jobs.Runner, playersOnline func(ctx context.Context) (int, error)) error {
 	exe, err := os.Executable()
 	if err != nil {

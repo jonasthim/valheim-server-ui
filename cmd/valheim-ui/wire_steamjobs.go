@@ -15,8 +15,6 @@ import (
 // Call this from wireServices after wireInstances (needs svc), wireJobs
 // (needs runner/client) and the steam.UpdateChecker construction (needs
 // checker) — see cmd/valheim-ui/wire.go and wire_jobs.go.
-//
-//nolint:unused // wired in from wire.go by whoever integrates WP-05 (see docs/WORKPLAN.md); not called from this package's own code yet
 func wireSteamJobs(deps *api.Deps, svc *instance.Service, runner *jobs.Runner, client *steam.Client, checker *steam.UpdateChecker, pre instance.PreUpdateBackupFunc) {
 	deps.Steam = instance.NewSteamJobs(svc, runner, client, checker, pre, deps.Log)
 }

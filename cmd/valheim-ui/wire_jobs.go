@@ -35,8 +35,6 @@ import (
 //	)
 //	go checker.Run(ctx)
 //	deps.Steam = steam.NewService(steamClient, checker) // replaces the checker-less adapter wireJobs installed
-//
-//nolint:unused // wired in from wire.go by whoever integrates WP-04 (see docs/WORKPLAN.md); not called from this package's own code yet
 func wireJobs(ctx context.Context, deps *api.Deps) (*jobs.Runner, *steam.Client, error) {
 	runner := jobs.New(deps.DB, deps.Bus, deps.Cfg.JobsDir(), deps.Log)
 	go func() {

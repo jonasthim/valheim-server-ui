@@ -27,8 +27,6 @@ import (
 // This lets players.Manager stay independent of the concrete instance
 // package: it only ever sees the small InstanceRef/callback shapes defined
 // in internal/players.
-//
-//nolint:unused // wired in from wire.go by whoever integrates WP-03 (see docs/WORKPLAN.md); not called from this package's own code yet
 func wirePlayers(
 	ctx context.Context,
 	deps *api.Deps,
