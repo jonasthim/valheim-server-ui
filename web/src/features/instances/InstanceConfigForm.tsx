@@ -235,9 +235,15 @@ const SETKEY_OPTIONS: { value: string; label: string; description: string }[] = 
   { value: 'fire', label: 'Fire hazards', description: 'Wood can catch fire and spread outside the Ashlands' },
 ]
 
-// The empty value means "-modifier is not passed": without a preset the game
-// runs the rule at Normal; with a preset it runs the preset's value for that
-// rule, so the middle step is labelled "From preset" instead of "Normal".
+// The empty value means "-modifier is not passed": without a preset (or with
+// the Normal preset, which is the game's defaults) the rule runs at Normal;
+// with any other preset it runs that preset's value for the rule, so the
+// middle step is labelled "From preset" instead of "Normal". Valheim's command
+// line has no explicit "normal" modifier value to override a preset with.
+function presetOverridesRules(preset: string) {
+  return preset !== '' && preset !== 'normal'
+}
+
 function selectData(options: ModifierOption[], hasPreset: boolean) {
   return options.map((o) => (o.value === '' && hasPreset ? { value: '', label: 'From preset' } : o))
 }
@@ -379,16 +385,16 @@ export function InstanceConfigForm({
             <Stack gap="sm">
               <Select label="Preset" data={PRESET_OPTIONS} {...form.getInputProps('config.preset')} />
               <Text size="xs" c="dimmed">
-                {form.values.config.preset
+                {presetOverridesRules(form.values.config.preset)
                   ? `Rules left on "From preset" use the ${presetLabel(form.values.config.preset)} preset's values; pick a value to override just that rule.`
-                  : 'No preset selected: every rule runs at Normal unless you pick another value.'}
+                  : 'Every rule runs at Normal unless you pick another value.'}
               </Text>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 {MODIFIER_FIELDS.map((f) => (
                   <Select
                     key={f.key}
                     label={f.label}
-                    data={selectData(f.options, Boolean(form.values.config.preset))}
+                    data={selectData(f.options, presetOverridesRules(form.values.config.preset))}
                     {...form.getInputProps(`config.modifiers.${f.key}`)}
                   />
                 ))}
