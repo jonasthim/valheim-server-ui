@@ -31,6 +31,7 @@ an audit trail, without turning your server box into a Docker puzzle.
 | **Mods** | Install BepInEx, browse and install from Thunderstore with dependency resolution, upload zips or DLLs, enable/disable/update/uninstall, and edit plugin `.cfg` files with typed inputs. |
 | **Schedules** | Cron-based restarts, backups and Steam update checks with a "only when nobody is online" switch. |
 | **Updates** | Detects new Valheim builds on Steam and updates with an optional pre-update backup. |
+| **Self-upgrade** | The manager polls GitHub releases, shows what's new, and upgrades itself from the UI with a verified download, atomic swap and rollback. Game servers keep running while it restarts. |
 | **Users & SSO** | First-run wizard creates the admin. Local accounts plus one OIDC provider (Authelia, Keycloak, Authentik, Google…) with group-to-role mapping. Roles: viewer, operator, admin. |
 | **Operations** | Job queue with live logs for every long operation, audit log of every change, disk usage and SteamCMD health on the dashboard. |
 | **Security** | The manager runs unprivileged; its only path to root is a 15-line sudo wrapper that validates its arguments. Argon2id passwords, hardened session cookies, CSRF guard, no default credentials. |
@@ -135,6 +136,14 @@ is printed in the job log. Plugin `.cfg` files show up below as typed forms.
 **Keep the server up to date.** The overview shows when Steam has a newer build.
 "Update now" stops, backs up, updates and restarts. For hands-off operation add a
 schedule of kind *update* with "only when empty" on.
+
+**Upgrade Valheim Server UI itself.** The dashboard and Settings → Application
+show when a new release is out, with its release notes. Press Upgrade: the
+manager downloads the release, verifies its checksum, sanity-runs the new
+binary, swaps it in atomically and restarts within seconds; the page reconnects
+on the new version. Your game servers are separate systemd units and keep
+running throughout. Turn on *auto-upgrade* to have this happen automatically
+when nobody is online. Rollback on the host: `valheim-ui self-upgrade --rollback`.
 
 **Schedule restarts.** Instance → Schedules → New schedule, kind *restart*, pick a
 preset such as "Daily at 04:00". Valheim has no way to warn players, so keep
