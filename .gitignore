@@ -3,7 +3,6 @@
 /devdata/
 web/node_modules/
 web/dist/*
-!web/dist/index.html
 web/test-results/
 web/playwright-report/
 web/e2e/test-results/

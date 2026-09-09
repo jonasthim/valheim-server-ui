@@ -77,4 +77,4 @@ deploy-sync-check: deploy-sync
 
 clean:
 	rm -rf bin dist web/dist devdata
-	mkdir -p web/dist && printf '<!doctype html><title>valheim-server-ui</title><p>Run make web.' > web/dist/index.html
+	mkdir -p web/dist && touch web/dist/.gitkeep

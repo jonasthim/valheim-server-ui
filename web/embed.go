@@ -1,5 +1,6 @@
 // Package web embeds the built frontend (web/dist). Run `make web` first; the
-// placeholder index.html keeps the embed valid in a fresh checkout.
+// tracked dist/.gitkeep keeps the embed pattern valid in a fresh checkout
+// (the SPA then 404s until a real build exists).
 package web
 
 import (
