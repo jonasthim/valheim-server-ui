@@ -204,6 +204,13 @@ func (c *Checker) freshInfo(rel *Release) *domain.AppUpdateInfo {
 	}
 	now := time.Now().UTC()
 	info.CheckedAt = &now
+	tagged := parseVersion(c.currentVersion).ok
+	switch {
+	case rel == nil:
+		info.Message = "no releases have been published yet"
+	case !tagged && c.currentVersion != "dev":
+		info.Message = "running an untagged build (" + c.currentVersion + "); the published release " + rel.Tag + " can be installed"
+	}
 	if rel != nil {
 		info.LatestVersion = rel.Tag
 		info.UpdateAvailable = c.currentVersion != "dev" && Compare(rel.Tag, c.currentVersion) > 0

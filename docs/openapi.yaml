@@ -1222,6 +1222,7 @@ components:
         published_at: { type: string, format: date-time }
         can_self_upgrade: { type: boolean, description: The running binary's location is writable by the manager }
         reason: { type: string, description: Why self-upgrade is unavailable, when it is }
+        message: { type: string, description: 'Human summary of the last check, e.g. "no releases published yet" or "running an untagged build"' }
         previous_version: { type: string, description: Version kept for rollback, if any }
 
     InstanceState:

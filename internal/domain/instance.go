@@ -398,6 +398,7 @@ type AppUpdateInfo struct {
 	PublishedAt     *time.Time `json:"published_at,omitempty"`
 	CanSelfUpgrade  bool       `json:"can_self_upgrade"`
 	Reason          string     `json:"reason,omitempty"`
+	Message         string     `json:"message,omitempty"` // human summary of the check result
 	PreviousVersion string     `json:"previous_version,omitempty"`
 }
 

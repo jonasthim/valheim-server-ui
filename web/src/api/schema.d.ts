@@ -2626,6 +2626,8 @@ export interface components {
             can_self_upgrade: boolean;
             /** @description Why self-upgrade is unavailable */
             reason?: string;
+            /** @description Human summary of the last check, e.g. "no releases published yet" or "running an untagged build" */
+            message?: string;
             /** @description Version kept for rollback */
             previous_version?: string;
         };

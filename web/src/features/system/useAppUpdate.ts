@@ -31,7 +31,11 @@ export function useCheckAppUpdate() {
       qc.setQueryData<SystemInfo | undefined>(['system'], (prev) => (prev ? { ...prev, app_update: info } : prev))
       qc.invalidateQueries({ queryKey: ['system'] })
       notifySuccess(
-        info.update_available ? `Version ${info.latest_version} available` : `Up to date (v${info.current_version})`,
+        info.update_available
+          ? `Version ${info.latest_version} available`
+          : info.message
+            ? `${info.message.charAt(0).toUpperCase()}${info.message.slice(1)} (running ${info.current_version})`
+            : `Up to date (${info.current_version})`,
       )
     },
     onError: (err) => notifyError(err, 'Could not check for updates'),
@@ -77,7 +81,7 @@ export function useManagerRestartWatch(jobId: string | undefined): { restarting:
       if (cancelled) return
       cancelled = true
       setRestarting(false)
-      notifySuccess(version ? `Upgraded to v${version}` : 'Manager restarted', 'Upgrade complete')
+      notifySuccess(version ? `Upgraded to ${version}` : 'Manager restarted', 'Upgrade complete')
       window.location.reload()
     }
 
