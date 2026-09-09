@@ -43,7 +43,7 @@ func wireJobs(ctx context.Context, deps *api.Deps) (*jobs.Runner, *steam.Client,
 		}
 	}()
 
-	client := steam.New(deps.Cfg.SteamCMDPath, deps.Log)
+	client := steam.New(deps.Cfg.SteamCMDPath, deps.Log, steam.WithHome(deps.Cfg.DataDir))
 
 	deps.Jobs = runner
 	deps.Steam = steam.NewService(client, nil)

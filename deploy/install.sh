@@ -153,6 +153,10 @@ Type=simple
 User=valheim
 Group=valheim
 Environment=VALHEIM_UI_CONFIG=/etc/valheim-ui/config.yaml
+# HOME must live inside ReadWritePaths: SteamCMD writes ~/Steam and Unity writes
+# ~/.config/unity3d, and ProtectHome=true denies /home even if the valheim
+# account's passwd home points there (e.g. a pre-existing login user).
+Environment=HOME=/var/lib/valheim
 ExecStart=/usr/local/bin/valheim-ui serve
 # Restart=always + a short RestartSec so a clean exit(0) after a self-upgrade
 # (download + checksum + atomic binary swap, see RUNBOOK.md #11) restarts the
@@ -196,6 +200,10 @@ User=valheim
 Group=valheim
 WorkingDirectory=/var/lib/valheim/instances/%i/server
 Environment=VALHEIM_UI_CONFIG=/etc/valheim-ui/config.yaml
+# HOME must live inside ReadWritePaths: SteamCMD writes ~/Steam and Unity writes
+# ~/.config/unity3d, and ProtectHome=true denies /home even if the valheim
+# account's passwd home points there (e.g. a pre-existing login user).
+Environment=HOME=/var/lib/valheim
 ExecStart=/usr/local/bin/valheim-ui launch --instance %i
 StandardOutput=append:/var/lib/valheim/instances/%i/logs/console.log
 StandardError=inherit
@@ -349,7 +357,12 @@ if [[ $CHECK -eq 1 ]]; then
     echo "  - runtime deps: apt install (idempotent)"
   fi
   if id valheim >/dev/null 2>&1; then
-    echo "  - system user 'valheim': present"
+    cur_home="$(getent passwd valheim | cut -d: -f6)"
+    if [[ "$cur_home" == "$DATA_DIR" ]]; then
+      echo "  - system user 'valheim': present (home $cur_home)"
+    else
+      echo "  - system user 'valheim': present with home $cur_home; would be changed to $DATA_DIR (units set HOME=$DATA_DIR and deny /home)"
+    fi
   else
     echo "  - system user 'valheim': would be created"
   fi
@@ -414,6 +427,12 @@ fi
 log "Creating user and directories"
 if ! id valheim >/dev/null 2>&1; then
   useradd --system --home-dir "$DATA_DIR" --shell /usr/sbin/nologin --user-group valheim
+else
+  cur_home="$(getent passwd valheim | cut -d: -f6)"
+  if [[ "$cur_home" != "$DATA_DIR" ]]; then
+    echo "warning: user 'valheim' already exists with home $cur_home; setting it to $DATA_DIR (the units run with ProtectHome=true and HOME=$DATA_DIR). Files under $cur_home are left in place." >&2
+    usermod -d "$DATA_DIR" valheim
+  fi
 fi
 install -d -o valheim -g valheim -m 0750 "$DATA_DIR" "$DATA_DIR/instances" "$DATA_DIR/jobs" \
   "$DATA_DIR/cache" "$DATA_DIR/steamcmd"

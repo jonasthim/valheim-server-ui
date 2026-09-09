@@ -9,6 +9,10 @@ Type=simple
 User=valheim
 Group=valheim
 Environment=VALHEIM_UI_CONFIG=/etc/valheim-ui/config.yaml
+# HOME must live inside ReadWritePaths: SteamCMD writes ~/Steam and Unity writes
+# ~/.config/unity3d, and ProtectHome=true denies /home even if the valheim
+# account's passwd home points there (e.g. a pre-existing login user).
+Environment=HOME=/var/lib/valheim
 ExecStart=/usr/local/bin/valheim-ui serve
 # Restart=always + a short RestartSec so a clean exit(0) after a self-upgrade
 # (download + checksum + atomic binary swap, see RUNBOOK.md #11) restarts the

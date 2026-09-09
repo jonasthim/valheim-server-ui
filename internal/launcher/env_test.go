@@ -78,7 +78,7 @@ func TestResolveBepInExEnv_NoMarkers(t *testing.T) {
 }
 
 func TestBaseEnv(t *testing.T) {
-	got := baseEnv([]string{"FOO=bar", "LD_LIBRARY_PATH=/opt/lib"})
+	got := baseEnv([]string{"FOO=bar", "LD_LIBRARY_PATH=/opt/lib"}, "")
 	want := map[string]string{
 		"FOO":             "bar",
 		"LD_LIBRARY_PATH": "./linux64:/opt/lib",
@@ -86,7 +86,7 @@ func TestBaseEnv(t *testing.T) {
 	}
 	assertEnvEquals(t, got, want)
 
-	got2 := baseEnv(nil)
+	got2 := baseEnv(nil, "")
 	want2 := map[string]string{
 		"LD_LIBRARY_PATH": "./linux64:",
 		"SteamAppId":      "892970",

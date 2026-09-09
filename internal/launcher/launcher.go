@@ -60,7 +60,7 @@ func run(ctx context.Context, cfg config.Config, instanceID string, execFn execF
 		return fmt.Errorf("launcher: chdir %s: %w", launch.ServerDir, err)
 	}
 
-	env := baseEnv(os.Environ())
+	env := baseEnv(os.Environ(), cfg.DataDir)
 	if launch.BepInEx {
 		env, err = applyBepInExEnv(launch.ServerDir, env)
 		if err != nil {
@@ -108,9 +108,19 @@ func resolveFakePath(p string) (string, error) {
 }
 
 // baseEnv is process env + SteamAppId + LD_LIBRARY_PATH=./linux64:$LD_LIBRARY_PATH
-// (ARCHITECTURE.md §7 step 1).
-func baseEnv(environ []string) []string {
+// (ARCHITECTURE.md §7 step 1). When home is non-empty, HOME is pinned to it:
+// Unity writes ~/.config/unity3d/IronGate/Valheim (Player.log, prefs) and the
+// Steam client writes ~/.steam, and the systemd unit denies /home
+// (ProtectHome=true), so both must land inside the data directory whatever the
+// valheim account's passwd home says.
+func baseEnv(environ []string, home string) []string {
 	order, m := envToOrdered(environ)
+	if home != "" {
+		if _, exists := m["HOME"]; !exists {
+			order = append(order, "HOME")
+		}
+		m["HOME"] = home
+	}
 	if _, exists := m["LD_LIBRARY_PATH"]; !exists {
 		order = append(order, "LD_LIBRARY_PATH")
 	}

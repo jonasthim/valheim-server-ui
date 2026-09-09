@@ -18,6 +18,10 @@ User=valheim
 Group=valheim
 WorkingDirectory=/var/lib/valheim/instances/%i/server
 Environment=VALHEIM_UI_CONFIG=/etc/valheim-ui/config.yaml
+# HOME must live inside ReadWritePaths: SteamCMD writes ~/Steam and Unity writes
+# ~/.config/unity3d, and ProtectHome=true denies /home even if the valheim
+# account's passwd home points there (e.g. a pre-existing login user).
+Environment=HOME=/var/lib/valheim
 ExecStart=/usr/local/bin/valheim-ui launch --instance %i
 StandardOutput=append:/var/lib/valheim/instances/%i/logs/console.log
 StandardError=inherit

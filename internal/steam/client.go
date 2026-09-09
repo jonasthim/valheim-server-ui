@@ -42,6 +42,11 @@ var flakeMarkers = []string{
 // keep the default runner).
 type CommandRunner func(ctx context.Context, steamcmdPath string, args []string, out io.Writer) error
 
+// runOptions carries per-invocation environment settings to the runner.
+type runOptions struct {
+	home string
+}
+
 // Option configures a Client at construction time.
 type Option func(*Client)
 
@@ -50,9 +55,18 @@ func WithCommandRunner(run CommandRunner) Option {
 	return func(c *Client) { c.run = run }
 }
 
+// WithHome pins HOME for every steamcmd invocation. SteamCMD writes ~/Steam
+// (logs, appcache, its own updates) and the manager's systemd unit denies
+// access to /home (ProtectHome=true), so HOME must point inside the data
+// directory regardless of the valheim account's passwd entry.
+func WithHome(dir string) Option {
+	return func(c *Client) { c.home = dir }
+}
+
 // Client talks to one steamcmd installation.
 type Client struct {
 	path string
+	home string
 	log  *slog.Logger
 	run  CommandRunner
 
@@ -67,9 +81,15 @@ func New(steamcmdPath string, log *slog.Logger, opts ...Option) *Client {
 	if log == nil {
 		log = slog.Default()
 	}
-	c := &Client{path: steamcmdPath, log: log, run: runCommand}
+	c := &Client{path: steamcmdPath, log: log}
 	for _, o := range opts {
 		o(c)
+	}
+	if c.run == nil {
+		home := c.home
+		c.run = func(ctx context.Context, path string, args []string, out io.Writer) error {
+			return runCommandEnv(ctx, path, args, out, runOptions{home: home})
+		}
 	}
 	return c
 }
@@ -127,6 +147,13 @@ func (c *Client) InstallOrUpdate(ctx context.Context, installDir string, out io.
 		if attempt < maxAttempts && isFlake(output) {
 			c.log.Warn("steamcmd flaked, retrying once", "install_dir", installDir, "attempt", attempt)
 			continue
+		}
+		if strings.Contains(output, "Disk write failure") {
+			home := c.home
+			if home == "" {
+				home = os.Getenv("HOME")
+			}
+			return fmt.Errorf("steamcmd install/update failed: %s: %s", diskWriteHint(home, installDir), lastLines(output, 20))
 		}
 		if runErr != nil {
 			return fmt.Errorf("steamcmd install/update failed: %w: %s", runErr, lastLines(output, 20))
@@ -208,7 +235,22 @@ func lastLines(s string, n int) string {
 // process group so ctx cancellation (via cmd.Cancel) can kill the whole
 // group, not just the direct child (steamcmd itself forks helper processes).
 func runCommand(ctx context.Context, steamcmdPath string, args []string, out io.Writer) error {
+	return runCommandEnv(ctx, steamcmdPath, args, out, runOptions{})
+}
+
+// runCommandEnv is runCommand with an explicit environment. When opts.home is
+// set, HOME (and Steam's own HOME-derived caches) point there so every write
+// lands inside a directory the manager is allowed to touch.
+func runCommandEnv(ctx context.Context, steamcmdPath string, args []string, out io.Writer, opts runOptions) error {
 	cmd := exec.CommandContext(ctx, steamcmdPath, args...) //nolint:gosec // steamcmd path/args are server-configured, not user input
+	if opts.home != "" {
+		cmd.Env = append(envWithout(os.Environ(), "HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"),
+			"HOME="+opts.home,
+			"XDG_CONFIG_HOME="+opts.home+"/.config",
+			"XDG_DATA_HOME="+opts.home+"/.local/share",
+			"XDG_CACHE_HOME="+opts.home+"/.cache",
+		)
+	}
 	cmd.Stdout = out
 	cmd.Stderr = out
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -220,4 +262,29 @@ func runCommand(ctx context.Context, steamcmdPath string, args []string, out io.
 	}
 	cmd.WaitDelay = 5 * time.Second
 	return cmd.Run()
+}
+
+// envWithout returns environ minus the named variables.
+func envWithout(environ []string, names ...string) []string {
+	out := make([]string, 0, len(environ))
+	for _, kv := range environ {
+		skip := false
+		for _, n := range names {
+			if strings.HasPrefix(kv, n+"=") {
+				skip = true
+				break
+			}
+		}
+		if !skip {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
+// diskWriteHint explains Valve's misleading "Disk write failure", which is
+// what steamcmd reports when it cannot write to $HOME or the install dir
+// (permissions or systemd sandboxing), far more often than a full disk.
+func diskWriteHint(home, installDir string) string {
+	return fmt.Sprintf("steamcmd reported a disk write failure. This usually means it could not write to HOME (%s) or the install directory (%s) rather than a full disk: check ownership by the valheim user, free space, and that the systemd unit allows writes there (ReadWritePaths / ProtectHome)", home, installDir)
 }
