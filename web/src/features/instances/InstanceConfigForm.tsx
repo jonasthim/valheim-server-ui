@@ -9,7 +9,6 @@ import {
   Checkbox,
   Group,
   NumberInput,
-  Paper,
   PasswordInput,
   Select,
   SimpleGrid,
@@ -18,11 +17,12 @@ import {
   Text,
   TagsInput,
   TextInput,
-  Title,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import type { InstanceConfig, Modifiers } from '../../api/types'
+import { SectionCard } from '../../ui'
 import { INSTANCE_ID_PATTERN, WORLD_NAME_PATTERN, slugify } from './instanceHelpers'
+import classes from './InstanceConfigForm.module.css'
 
 type ModifierKey = keyof Modifiers
 
@@ -303,9 +303,8 @@ export function InstanceConfigForm({
     <form onSubmit={form.onSubmit(handleSubmit)}>
       <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0 }}>
         <Stack gap="lg">
-          <Paper withBorder p="md">
+          <SectionCard title="Server" description="Identity, in-game name and network port.">
             <Stack gap="sm">
-              <Title order={4}>Basics</Title>
               <SimpleGrid cols={{ base: 1, sm: 2 }}>
                 <TextInput
                   label="Display name"
@@ -343,6 +342,11 @@ export function InstanceConfigForm({
                   {...form.getInputProps('config.port')}
                 />
               </SimpleGrid>
+            </Stack>
+          </SectionCard>
+
+          <SectionCard title="Access & visibility" description="Who can find and join this server.">
+            <Stack gap="sm">
               {passwordMasked && !passwordUnlocked ? (
                 <Group align="flex-end" gap="sm">
                   <PasswordInput
@@ -369,11 +373,10 @@ export function InstanceConfigForm({
                 <Switch label="Crossplay" description="Allow non-Steam platforms" {...form.getInputProps('config.crossplay', { type: 'checkbox' })} />
               </Group>
             </Stack>
-          </Paper>
+          </SectionCard>
 
-          <Paper withBorder p="md">
+          <SectionCard title="World rules" description="Difficulty preset and per-rule overrides.">
             <Stack gap="sm">
-              <Title order={4}>World rules</Title>
               <Select label="Preset" data={PRESET_OPTIONS} {...form.getInputProps('config.preset')} />
               <Text size="xs" c="dimmed">
                 {form.values.config.preset
@@ -402,57 +405,62 @@ export function InstanceConfigForm({
                 </SimpleGrid>
               </Checkbox.Group>
             </Stack>
-          </Paper>
+          </SectionCard>
 
-          <Accordion variant="separated">
-            <Accordion.Item value="advanced">
-              <Accordion.Control>
-                <Title order={4}>Advanced</Title>
-              </Accordion.Control>
-              <Accordion.Panel>
-                <Stack gap="sm">
-                  <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                    <NumberInput label="Save interval (sec)" min={60} {...form.getInputProps('config.save_interval_sec')} />
-                    <NumberInput label="Game backups to keep (Valheim's own)" min={0} {...form.getInputProps('config.game_backups')} />
-                    <NumberInput label="Short backup interval (sec)" min={60} {...form.getInputProps('config.game_backup_short_sec')} />
-                    <NumberInput label="Long backup interval (sec)" min={60} {...form.getInputProps('config.game_backup_long_sec')} />
-                    <NumberInput label="Manager backups: keep last" min={0} {...form.getInputProps('config.backup_keep_last')} />
-                    <NumberInput label="Manager backups: keep days" min={0} {...form.getInputProps('config.backup_keep_days')} />
-                  </SimpleGrid>
-                  <TagsInput
-                    label="Extra launch arguments"
-                    description="Passed verbatim after the generated arguments"
-                    placeholder="Type and press Enter"
-                    {...form.getInputProps('config.extra_args')}
-                  />
-                  <Switch
-                    label="Back up before updating"
-                    {...form.getInputProps('config.backup_before_update', { type: 'checkbox' })}
-                  />
-                  <Switch
-                    label="BepInEx enabled"
-                    description="Only takes effect once BepInEx is installed from the Mods tab"
-                    {...form.getInputProps('config.bepinex_enabled', { type: 'checkbox' })}
-                  />
-                  <Switch
-                    label="Autostart"
-                    description="Start this instance automatically when the manager starts"
-                    {...form.getInputProps('autostart', { type: 'checkbox' })}
-                  />
-                  {mode === 'create' && (
-                    <Checkbox
-                      label="Download game files now"
-                      description="Uncheck to create the instance without installing it yet"
-                      {...form.getInputProps('install', { type: 'checkbox' })}
+          <SectionCard title="Saves & backups" description="Save cadence and how many copies are kept.">
+            <Stack gap="sm">
+              <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                <NumberInput label="Save interval (sec)" min={60} {...form.getInputProps('config.save_interval_sec')} />
+                <NumberInput label="Game backups to keep (Valheim's own)" min={0} {...form.getInputProps('config.game_backups')} />
+                <NumberInput label="Short backup interval (sec)" min={60} {...form.getInputProps('config.game_backup_short_sec')} />
+                <NumberInput label="Long backup interval (sec)" min={60} {...form.getInputProps('config.game_backup_long_sec')} />
+                <NumberInput label="Manager backups: keep last" min={0} {...form.getInputProps('config.backup_keep_last')} />
+                <NumberInput label="Manager backups: keep days" min={0} {...form.getInputProps('config.backup_keep_days')} />
+              </SimpleGrid>
+              <Switch
+                label="Back up before updating"
+                {...form.getInputProps('config.backup_before_update', { type: 'checkbox' })}
+              />
+            </Stack>
+          </SectionCard>
+
+          <SectionCard flush>
+            <Accordion variant="filled">
+              <Accordion.Item value="advanced">
+                <Accordion.Control>Advanced</Accordion.Control>
+                <Accordion.Panel>
+                  <Stack gap="sm">
+                    <TagsInput
+                      label="Extra launch arguments"
+                      description="Passed verbatim after the generated arguments"
+                      placeholder="Type and press Enter"
+                      {...form.getInputProps('config.extra_args')}
                     />
-                  )}
-                </Stack>
-              </Accordion.Panel>
-            </Accordion.Item>
-          </Accordion>
+                    <Switch
+                      label="BepInEx enabled"
+                      description="Only takes effect once BepInEx is installed from the Mods tab"
+                      {...form.getInputProps('config.bepinex_enabled', { type: 'checkbox' })}
+                    />
+                    <Switch
+                      label="Autostart"
+                      description="Start this instance automatically when the manager starts"
+                      {...form.getInputProps('autostart', { type: 'checkbox' })}
+                    />
+                    {mode === 'create' && (
+                      <Checkbox
+                        label="Download game files now"
+                        description="Uncheck to create the instance without installing it yet"
+                        {...form.getInputProps('install', { type: 'checkbox' })}
+                      />
+                    )}
+                  </Stack>
+                </Accordion.Panel>
+              </Accordion.Item>
+            </Accordion>
+          </SectionCard>
 
           {!readOnly && (
-            <Group justify="flex-end">
+            <Group justify="flex-end" className={classes.submitBar}>
               <Button type="submit" loading={submitting}>
                 {submitLabel}
               </Button>

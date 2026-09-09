@@ -1,0 +1,10 @@
+/* Keep the Name column visible while a wide players table scrolls horizontally on mobile. */
+.stickyNameTable {
+  min-width: 640px;
+}
+.stickyNameCol {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background-color: var(--vh-surface);
+}

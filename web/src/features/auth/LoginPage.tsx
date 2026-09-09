@@ -6,6 +6,7 @@ import { IconAlertCircle, IconFingerprint } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import type { User } from '../../api/types'
+import { AuthLayout } from './AuthLayout'
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid_credentials: 'Invalid username or password.',
@@ -66,8 +67,8 @@ export function LoginPage() {
   const oidcHref = `/api/v1/auth/oidc/login?next=${encodeURIComponent(next)}`
 
   return (
-    <Center h="100vh">
-      <Card withBorder shadow="sm" padding="xl" radius="md" w={380}>
+    <AuthLayout>
+      <Card withBorder shadow="sm" padding="xl" w={380}>
         <Stack gap="md">
           <Stack gap={4} align="center">
             <Title order={2}>Valheim Server UI</Title>
@@ -133,6 +134,6 @@ export function LoginPage() {
           )}
         </Stack>
       </Card>
-    </Center>
+    </AuthLayout>
   )
 }

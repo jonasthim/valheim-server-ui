@@ -58,11 +58,17 @@ export function WorldsTable({
     })
   }
 
-  if (isLoading) return <Skeleton height={120} />
+  if (isLoading) {
+    return (
+      <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
+        <Skeleton height={120} />
+      </div>
+    )
+  }
 
   if (worlds.length === 0) {
     return (
-      <Text c="dimmed" size="sm">
+      <Text c="dimmed" size="sm" p="lg">
         No worlds found in the save directory yet.
       </Text>
     )

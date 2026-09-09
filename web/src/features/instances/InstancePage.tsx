@@ -1,7 +1,17 @@
-import { Tabs, Title, Stack, Group, Badge } from '@mantine/core'
+import { Stack, Tabs } from '@mantine/core'
 import { useNavigate, useParams } from 'react-router-dom'
+import {
+  IconAdjustments,
+  IconArchive,
+  IconCalendar,
+  IconLayoutDashboard,
+  IconPuzzle,
+  IconTerminal2,
+  IconUsers,
+  IconWorld,
+} from '@tabler/icons-react'
 import { useInstance } from './useInstance'
-import { INSTANCE_TABS } from './tabs'
+import { INSTANCE_TABS, type InstanceTab } from './tabs'
 import { OverviewTab } from './OverviewTab'
 import { ConsoleTab } from './ConsoleTab'
 import { ConfigTab } from './ConfigTab'
@@ -10,6 +20,19 @@ import { WorldsTab } from './WorldsTab'
 import { BackupsTab } from './BackupsTab'
 import { ModsTab } from './ModsTab'
 import { SchedulesTab } from './SchedulesTab'
+import { PageHeader, StatusPill } from '../../ui'
+import { stateColor, stateLabel } from './instanceHelpers'
+
+const TAB_ICONS: Record<InstanceTab, typeof IconLayoutDashboard> = {
+  overview: IconLayoutDashboard,
+  console: IconTerminal2,
+  config: IconAdjustments,
+  players: IconUsers,
+  worlds: IconWorld,
+  backups: IconArchive,
+  mods: IconPuzzle,
+  schedules: IconCalendar,
+}
 
 // Instance page with tab routing (/instances/:id/:tab). Owned by WP-11; the tab
 // components are owned by WP-11 (Overview/Console/Config), WP-12
@@ -19,20 +42,35 @@ export function InstancePage() {
   const navigate = useNavigate()
   const inst = useInstance(id)
   const state = inst.data?.status.state
+  const config = inst.data?.config
+
   return (
     <Stack>
-      <Group>
-        <Title order={2}>{inst.data?.name ?? id}</Title>
-        {state && <Badge variant="light">{state}</Badge>}
-      </Group>
+      <PageHeader
+        eyebrow={`Instance · ${id}`}
+        title={inst.data?.name ?? id}
+        titleAddon={
+          state && (
+            <StatusPill color={stateColor(state)} pulse={state === 'running' || state === 'starting'}>
+              {stateLabel(state)}
+            </StatusPill>
+          )
+        }
+        description={config ? `${config.name} · world ${config.world} · port ${config.port}` : undefined}
+      />
       <Tabs value={tab} onChange={(t) => navigate(`/instances/${id}/${t ?? 'overview'}`)} keepMounted={false}>
-        <Tabs.List>
-          {INSTANCE_TABS.map((t) => (
-            <Tabs.Tab key={t} value={t} tt="capitalize">
-              {t}
-            </Tabs.Tab>
-          ))}
-        </Tabs.List>
+        <div style={{ overflowX: 'auto' }}>
+          <Tabs.List style={{ flexWrap: 'nowrap' }}>
+            {INSTANCE_TABS.map((t) => {
+              const Icon = TAB_ICONS[t]
+              return (
+                <Tabs.Tab key={t} value={t} tt="capitalize" leftSection={<Icon size={16} stroke={1.8} />}>
+                  {t}
+                </Tabs.Tab>
+              )
+            })}
+          </Tabs.List>
+        </div>
         <Tabs.Panel value="overview" pt="md"><OverviewTab id={id} /></Tabs.Panel>
         <Tabs.Panel value="console" pt="md"><ConsoleTab key={id} id={id} /></Tabs.Panel>
         <Tabs.Panel value="config" pt="md"><ConfigTab id={id} /></Tabs.Panel>

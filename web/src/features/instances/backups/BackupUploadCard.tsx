@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Button, Card, Group, Text, Title } from '@mantine/core'
+import { Button, Group, Text } from '@mantine/core'
 import { Dropzone } from '@mantine/dropzone'
 import { IconUpload, IconX } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
+import { SectionCard } from '../../../ui'
 import { useUploadBackup } from './useBackups'
 
 export function BackupUploadCard({ id }: { id: string }) {
@@ -19,21 +20,27 @@ export function BackupUploadCard({ id }: { id: string }) {
   }
 
   return (
-    <Card withBorder>
-      <Title order={4} mb="sm">
-        Upload a backup
-      </Title>
+    <SectionCard title="Upload a backup" description="Restore from a backup .zip previously downloaded from this UI.">
       <Group align="center" wrap="wrap">
-        <Dropzone onDrop={handleDrop} multiple={false} style={{ flex: 1, minWidth: 260 }}>
+        <Dropzone
+          onDrop={handleDrop}
+          multiple={false}
+          style={{
+            flex: 1,
+            minWidth: 260,
+            background: 'var(--vh-surface-2)',
+            borderColor: 'var(--vh-border-strong)',
+          }}
+        >
           <Group justify="center" gap="md" mih={70} style={{ pointerEvents: 'none' }}>
             <Dropzone.Accept>
-              <IconUpload size={28} />
+              <IconUpload size={28} color="var(--vh-moss)" />
             </Dropzone.Accept>
             <Dropzone.Reject>
-              <IconX size={28} />
+              <IconX size={28} color="var(--vh-blood)" />
             </Dropzone.Reject>
             <Dropzone.Idle>
-              <IconUpload size={28} />
+              <IconUpload size={28} color="var(--vh-text-soft)" />
             </Dropzone.Idle>
             <Text size="sm">{file ? file.name : 'Drag a backup .zip previously downloaded from this UI'}</Text>
           </Group>
@@ -46,6 +53,6 @@ export function BackupUploadCard({ id }: { id: string }) {
           Upload
         </Button>
       </Group>
-    </Card>
+    </SectionCard>
   )
 }

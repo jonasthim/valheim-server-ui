@@ -9,7 +9,6 @@ import {
   Badge,
   Box,
   Button,
-  Card,
   Grid,
   Group,
   NavLink,
@@ -25,10 +24,11 @@ import {
   TextInput,
   Tooltip,
 } from '@mantine/core'
-import { IconAlertTriangle, IconDeviceFloppy, IconRestore } from '@tabler/icons-react'
+import { IconAlertTriangle, IconDeviceFloppy, IconFileText, IconRestore } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtBytes } from '../../lib/format'
 import type { ConfigEntry } from '../../api/types'
+import { EmptyState, SectionCard } from '../../ui'
 import { entryKey, isBooleanEntry, isNumericEntry } from './helpers'
 import { useConfigFiles, useModConfig, useSaveModConfig } from './useModConfig'
 import { useModsOverview } from './useMods'
@@ -50,17 +50,14 @@ export function ConfigEditor({ id }: { id: string }) {
   if (!overview.data?.bepinex.installed) return null
 
   return (
-    <Card withBorder>
-      <Text fw={600} mb="sm">
-        Mod config files
-      </Text>
+    <SectionCard title="Mod config files">
       {filesQuery.isLoading ? (
         <Skeleton height={160} />
       ) : !filesQuery.data || filesQuery.data.length === 0 ? (
-        <Text c="dimmed" size="sm">
-          No config files yet. They appear here once a mod with a BepInEx config is installed and has run at least
-          once.
-        </Text>
+        <EmptyState
+          icon={<IconFileText size={22} />}
+          title="No config files yet. They appear here once a mod with a BepInEx config is installed and has run at least once."
+        />
       ) : (
         <Grid>
           <Grid.Col span={{ base: 12, sm: 3 }}>
@@ -85,7 +82,7 @@ export function ConfigEditor({ id }: { id: string }) {
           </Grid.Col>
         </Grid>
       )}
-    </Card>
+    </SectionCard>
   )
 }
 
@@ -163,7 +160,7 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
         />
         <Group gap="xs">
           {dirty && (
-            <Badge color="yellow" variant="light">
+            <Badge color="straw" variant="light">
               Unsaved changes
             </Badge>
           )}
@@ -182,7 +179,7 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
       </Group>
 
       {overview.data?.pending_restart && (
-        <Alert color="yellow" icon={<IconAlertTriangle size={16} />} title="Restart required">
+        <Alert color="straw" icon={<IconAlertTriangle size={16} />} title="Restart required">
           Restart the instance from the Overview tab to apply the latest config changes.
         </Alert>
       )}

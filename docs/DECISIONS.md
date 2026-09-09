@@ -81,3 +81,17 @@ permissions that some tooling and hosted environments lack. Tag pushes and manua
 dispatch remain as escape hatches; the tag CI creates uses `GITHUB_TOKEN`, so it does not
 trigger a second run.
 
+## ADR-016 One design system, Mantine only, dark first
+The UI follows docs/DESIGN.md: a Mantine theme (`web/src/theme/theme.ts`) with Valheim accent
+colours on cool neutrals, scheme tokens exposed as CSS variables, and a small set of shared
+primitives in `web/src/ui/` (PageHeader, StatTile, StatusPill, SectionCard, EmptyState). Pages
+compose those primitives instead of styling ad hoc, so the product stays coherent as features
+are added by different people or agents. Dark is the default because the audience runs game
+servers at night; light is a full peer, not an afterthought. No fonts or assets are fetched at
+runtime: the single binary keeps working offline.
+
+## ADR-017 Audit entries carry a field-level diff
+Update endpoints record `details.changes` (path, from, to) computed from the JSON form of the
+object before and after the change, with secrets masked. Rationale: an audit log that stores
+whole objects cannot answer "what did this edit change?", which is the question operators ask.
+

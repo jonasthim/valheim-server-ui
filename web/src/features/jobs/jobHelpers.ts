@@ -1,11 +1,6 @@
 // Pure helpers shared by the jobs feature and reused by other WPs (backups,
 // mods, schedules tabs) to render job status/type consistently.
-import type { Job, JobStatus } from '../../api/types'
-// api/types.ts does not (yet) re-export JobType; pull it straight from the
-// generated schema rather than editing that shared file from this WP.
-import type { components } from '../../api/schema'
-
-type JobType = components['schemas']['JobType']
+import type { Job, JobStatus, JobType } from '../../api/types'
 
 const JOB_STATUS_COLORS: Record<JobStatus, string> = {
   queued: 'gray',

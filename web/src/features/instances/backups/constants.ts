@@ -1,10 +1,10 @@
 import type { BackupKind } from '../../../api/types'
 
 export const BACKUP_KIND_COLORS: Record<BackupKind, string> = {
-  manual: 'blue',
-  scheduled: 'teal',
-  pre_update: 'orange',
-  pre_restore: 'grape',
+  manual: 'frost',
+  scheduled: 'moss',
+  pre_update: 'straw',
+  pre_restore: 'spirit',
   uploaded: 'gray',
 }
 

@@ -6,6 +6,7 @@ import { IconAlertCircle } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import type { User } from '../../api/types'
+import { AuthLayout } from './AuthLayout'
 
 interface SetupValues {
   username: string
@@ -62,8 +63,8 @@ export function SetupPage() {
   }
 
   return (
-    <Center h="100vh">
-      <Card withBorder shadow="sm" padding="xl" radius="md" w={420}>
+    <AuthLayout>
+      <Card withBorder shadow="sm" padding="xl" w={420}>
         <Stack gap="md">
           <Stack gap={4} align="center">
             <Title order={2}>Create the administrator account</Title>
@@ -97,6 +98,6 @@ export function SetupPage() {
           )}
         </Stack>
       </Card>
-    </Center>
+    </AuthLayout>
   )
 }

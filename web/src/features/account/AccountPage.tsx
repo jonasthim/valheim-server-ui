@@ -1,4 +1,4 @@
-import { Badge, Button, Card, Group, Loader, PasswordInput, Stack, Text, Title, Code } from '@mantine/core'
+import { Badge, Button, Code, Group, Loader, PasswordInput, Stack, Text } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useMutation } from '@tanstack/react-query'
 import { IconKey } from '@tabler/icons-react'
@@ -6,6 +6,7 @@ import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { fmtTime } from '../../lib/format'
+import { PageHeader, SectionCard } from '../../ui'
 
 interface PasswordValues {
   current_password: string
@@ -85,55 +86,54 @@ export function AccountPage() {
   }
 
   return (
-    <Stack gap="lg" maw={640}>
-      <Title order={2}>Account</Title>
+    <Stack gap="xl">
+      <PageHeader eyebrow="Account" title="Account" description="Your profile and sign-in details" />
 
-      <Card withBorder padding="lg">
-        <Stack gap="sm">
-          <Group justify="space-between">
-            <Text fw={600}>{user.display_name || user.username}</Text>
-            <Badge variant="light">{user.role}</Badge>
-          </Group>
-          <Group gap="xl">
-            <Stack gap={2}>
-              <Text size="xs" c="dimmed">
-                Username
-              </Text>
-              <Text size="sm">{user.username}</Text>
-            </Stack>
-            <Stack gap={2}>
-              <Text size="xs" c="dimmed">
-                Email
-              </Text>
-              <Text size="sm">{user.email || '-'}</Text>
-            </Stack>
-            <Stack gap={2}>
-              <Text size="xs" c="dimmed">
-                Member since
-              </Text>
-              <Text size="sm">{fmtTime(user.created_at)}</Text>
-            </Stack>
-          </Group>
-          {user.identities.length > 0 && (
-            <Stack gap={4}>
-              <Text size="xs" c="dimmed">
-                Linked identities
-              </Text>
-              <Group gap="xs">
-                {user.identities.map((idn) => (
-                  <Code key={`${idn.provider}:${idn.subject}`}>
-                    {idn.provider}:{idn.subject}
-                  </Code>
-                ))}
-              </Group>
-            </Stack>
-          )}
-        </Stack>
-      </Card>
+      <Stack gap="md" maw={640}>
+        <SectionCard title="Profile">
+          <Stack gap="sm">
+            <Group justify="space-between">
+              <Text fw={600}>{user.display_name || user.username}</Text>
+              <Badge variant="light">{user.role}</Badge>
+            </Group>
+            <Group gap="xl">
+              <Stack gap={2}>
+                <Text size="xs" c="dimmed">
+                  Username
+                </Text>
+                <Text size="sm">{user.username}</Text>
+              </Stack>
+              <Stack gap={2}>
+                <Text size="xs" c="dimmed">
+                  Email
+                </Text>
+                <Text size="sm">{user.email || '-'}</Text>
+              </Stack>
+              <Stack gap={2}>
+                <Text size="xs" c="dimmed">
+                  Member since
+                </Text>
+                <Text size="sm">{fmtTime(user.created_at)}</Text>
+              </Stack>
+            </Group>
+            {user.identities.length > 0 && (
+              <Stack gap={4}>
+                <Text size="xs" c="dimmed">
+                  Linked identities
+                </Text>
+                <Group gap="xs">
+                  {user.identities.map((idn) => (
+                    <Code key={`${idn.provider}:${idn.subject}`}>
+                      {idn.provider}:{idn.subject}
+                    </Code>
+                  ))}
+                </Group>
+              </Stack>
+            )}
+          </Stack>
+        </SectionCard>
 
-      <Card withBorder padding="lg">
-        <Stack gap="md">
-          <Title order={4}>Password</Title>
+        <SectionCard title="Password">
           {user.identities.length > 0 ? (
             <Text c="dimmed" size="sm">
               This account is linked to single sign-on; its password is managed by the identity provider and cannot
@@ -146,8 +146,8 @@ export function AccountPage() {
               This account has no local password.
             </Text>
           )}
-        </Stack>
-      </Card>
+        </SectionCard>
+      </Stack>
     </Stack>
   )
 }

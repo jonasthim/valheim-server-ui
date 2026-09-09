@@ -1,5 +1,6 @@
-import { Card, Stack, Tabs, Title } from '@mantine/core'
+import { Stack, Tabs } from '@mantine/core'
 import { useAuth } from '../../auth/useAuth'
+import { SectionCard } from '../../ui'
 import { ListEditor } from './players/ListEditor'
 import { KnownPlayersTable } from './players/KnownPlayersTable'
 import { PlayersOnlinePanel } from './players/PlayersOnlinePanel'
@@ -24,10 +25,7 @@ export function PlayersTab({ id }: { id: string }) {
         onAddToList={(kind, playerId) => addToList.mutate({ kind, playerId })}
       />
 
-      <Card withBorder>
-        <Title order={4} mb="sm">
-          Lists
-        </Title>
+      <SectionCard title="Lists" description="Admins, banned and permitted players for this instance.">
         <Tabs defaultValue="admin" keepMounted={false}>
           <Tabs.List>
             {LIST_KINDS.map((kind) => (
@@ -42,7 +40,7 @@ export function PlayersTab({ id }: { id: string }) {
             </Tabs.Panel>
           ))}
         </Tabs>
-      </Card>
+      </SectionCard>
     </Stack>
   )
 }

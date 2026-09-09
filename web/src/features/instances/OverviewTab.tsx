@@ -5,23 +5,34 @@ import {
   Button,
   CopyButton,
   Group,
-  Loader,
-  Paper,
+  Pill,
   Skeleton,
   SimpleGrid,
   Stack,
   Switch,
   Table,
   Text,
-  Title,
   Tooltip,
 } from '@mantine/core'
 import { modals } from '@mantine/modals'
-import { IconAlertTriangle, IconCheck, IconCopy, IconPlayerPlay, IconPlayerStop, IconRefresh } from '@tabler/icons-react'
+import {
+  IconAlertTriangle,
+  IconBox,
+  IconCheck,
+  IconCopy,
+  IconKey,
+  IconPlayerPlay,
+  IconPlayerStop,
+  IconPlugConnected,
+  IconRefresh,
+  IconServer2,
+  IconUsers,
+} from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
+import { SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
 import { useInstance } from './useInstance'
 import {
   useCheckForUpdate,
@@ -33,7 +44,7 @@ import {
   useStopInstance,
   useUpdateInstance,
 } from './instanceActions'
-import { canInstall, canRestart, canStart, canStop, isTransitioning, stateColor, stateLabel } from './instanceHelpers'
+import { canInstall, canRestart, canStart, canStop, stateColor, stateLabel } from './instanceHelpers'
 
 // Owned by WP-11. Props: the instance id.
 export function OverviewTab({ id }: { id: string }) {
@@ -56,8 +67,14 @@ export function OverviewTab({ id }: { id: string }) {
   if (inst.isLoading) {
     return (
       <Stack>
-        <Skeleton height={160} />
-        <Skeleton height={160} />
+        <SimpleGrid cols={{ base: 2, md: 4 }}>
+          <Skeleton height={92} />
+          <Skeleton height={92} />
+          <Skeleton height={92} />
+          <Skeleton height={92} />
+        </SimpleGrid>
+        <Skeleton height={220} />
+        <Skeleton height={220} />
       </Stack>
     )
   }
@@ -114,22 +131,61 @@ export function OverviewTab({ id }: { id: string }) {
 
   return (
     <Stack>
-      <SimpleGrid cols={{ base: 1, md: 2 }}>
-        <Paper withBorder p="md">
+      <SimpleGrid cols={{ base: 2, md: 4 }}>
+        <StatTile
+          label="State"
+          value={stateLabel(status.state)}
+          hint={status.state === 'running' && status.since ? `since ${fmtAgo(status.since)}` : undefined}
+          icon={<IconServer2 size={16} />}
+          accent={`var(--mantine-color-${stateColor(status.state)}-5)`}
+        />
+        <StatTile
+          label="Players"
+          value={`${status.players_online} / ${status.max_players ?? '?'}`}
+          hint="online now"
+          icon={<IconUsers size={16} />}
+          accent={status.players_online > 0 ? 'var(--vh-moss)' : undefined}
+        />
+        <StatTile
+          label="Join code"
+          value={status.join_code ? <Text ff="monospace" fw={650} size="lg">{status.join_code}</Text> : '—'}
+          hint="share with friends"
+          icon={
+            status.join_code ? (
+              <CopyButton value={status.join_code}>
+                {({ copied, copy }) => (
+                  <Tooltip label={copied ? 'Copied' : 'Copy'}>
+                    <ActionIcon size="sm" variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label="Copy join code">
+                      {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+              </CopyButton>
+            ) : (
+              <IconKey size={16} />
+            )
+          }
+        />
+        <StatTile
+          label="Build"
+          value={status.installed_buildid ?? 'unknown'}
+          hint={status.update_available ? 'update available' : 'up to date'}
+          icon={<IconBox size={16} />}
+          accent={status.update_available ? 'var(--vh-ember)' : undefined}
+        />
+      </SimpleGrid>
+
+      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+        <SectionCard title="Controls" description="Manage the running process and installed game files.">
           <Stack gap="sm">
-            <Group justify="space-between">
-              <Title order={4}>Status</Title>
-              <Badge color={stateColor(status.state)} variant="light" leftSection={isTransitioning(status.state) ? <Loader size={10} /> : null}>
-                {stateLabel(status.state)}
-              </Badge>
-            </Group>
             <Group gap="xs">
+              <StatusDot color={status.ready ? 'moss' : 'gray'} />
               <Text size="sm" c="dimmed">
                 Ready
               </Text>
-              <Badge color={status.ready ? 'green' : 'gray'} variant="dot">
+              <Text size="sm" fw={600}>
                 {status.ready ? 'Yes' : 'No'}
-              </Badge>
+              </Text>
             </Group>
             {status.pid !== undefined && (
               <Text size="sm" c="dimmed">
@@ -171,7 +227,7 @@ export function OverviewTab({ id }: { id: string }) {
                 </Button>
                 <Button
                   size="xs"
-                  color="orange"
+                  color="red"
                   variant="outline"
                   leftSection={<IconPlayerStop size={14} />}
                   disabled={!canStop(status.state) || stop.isPending}
@@ -197,136 +253,118 @@ export function OverviewTab({ id }: { id: string }) {
                 )}
               </Group>
             )}
-          </Stack>
-        </Paper>
 
-        <Paper withBorder p="md">
-          <Stack gap="sm">
-            <Title order={4}>Players</Title>
-            <Text size="sm">
-              {status.players_online} / {status.max_players ?? '?'} online
-            </Text>
-            {status.join_code && (
-              <Group gap="xs">
-                <Text size="sm" c="dimmed">
-                  Join code
-                </Text>
-                <Text ff="monospace">{status.join_code}</Text>
-                <CopyButton value={status.join_code}>
-                  {({ copied, copy }) => (
-                    <Tooltip label={copied ? 'Copied' : 'Copy'}>
-                      <ActionIcon variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label="Copy join code">
-                        {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-                      </ActionIcon>
-                    </Tooltip>
-                  )}
-                </CopyButton>
-              </Group>
-            )}
-          </Stack>
-        </Paper>
-
-        <Paper withBorder p="md">
-          <Stack gap="sm">
-            <Group justify="space-between">
-              <Title order={4}>Build</Title>
-              {status.update_available && (
-                <Badge color="orange" variant="light">
-                  Update available
-                </Badge>
-              )}
-            </Group>
-            <Text size="sm" c="dimmed">
-              Installed build {status.installed_buildid ?? 'unknown'}
-            </Text>
-            <Text size="sm" c="dimmed">
-              Latest known build {latestBuildId ?? 'unknown'}
-              {latestBuildCheckedAt ? ` (checked ${fmtAgo(latestBuildCheckedAt)})` : ''}
-            </Text>
-            <Group>
-              <Badge color={status.bepinex_installed ? 'green' : 'gray'} variant="light">
-                BepInEx {status.bepinex_installed ? 'installed' : 'not installed'}
-              </Badge>
-              <Badge color={status.bepinex_enabled ? 'green' : 'gray'} variant="light">
-                BepInEx {status.bepinex_enabled ? 'enabled' : 'disabled'}
-              </Badge>
-            </Group>
-            {canOperate && (
+            <Stack gap="xs" pt="xs" style={{ borderTop: '1px solid var(--vh-border)' }} mt="xs">
+              <Text size="sm" c="dimmed">
+                Installed build {status.installed_buildid ?? 'unknown'}
+              </Text>
+              <Text size="sm" c="dimmed">
+                Latest known build {latestBuildId ?? 'unknown'}
+                {latestBuildCheckedAt ? ` (checked ${fmtAgo(latestBuildCheckedAt)})` : ''}
+              </Text>
               <Group>
-                <Button size="xs" variant="outline" loading={checkUpdate.isPending} onClick={() => checkUpdate.mutate()}>
-                  Check for updates
-                </Button>
+                <Badge color={status.bepinex_installed ? 'green' : 'gray'} variant="light">
+                  BepInEx {status.bepinex_installed ? 'installed' : 'not installed'}
+                </Badge>
+                <Badge color={status.bepinex_enabled ? 'green' : 'gray'} variant="light">
+                  BepInEx {status.bepinex_enabled ? 'enabled' : 'disabled'}
+                </Badge>
               </Group>
-            )}
-            {status.update_available && (
-              <Alert color="orange" icon={<IconAlertTriangle size={16} />} title="Game update available">
-                <Stack gap="xs">
-                  <Text size="sm">
-                    Build {latestBuildId ?? 'a newer build'} is available.{' '}
-                    {instance.config.backup_before_update
-                      ? 'A backup will be taken automatically before updating.'
-                      : 'Enable "Backup before update" in Config to snapshot the world first.'}
-                  </Text>
-                  {canOperate && (
-                    <Group>
-                      <Button size="xs" color="orange" loading={updateNow.isPending} onClick={confirmUpdate}>
-                        Update now
-                      </Button>
-                    </Group>
-                  )}
-                </Stack>
-              </Alert>
-            )}
+              {canOperate && (
+                <Group>
+                  <Button size="xs" variant="outline" loading={checkUpdate.isPending} onClick={() => checkUpdate.mutate()}>
+                    Check for updates
+                  </Button>
+                </Group>
+              )}
+              {status.update_available && (
+                <Alert color="orange" icon={<IconAlertTriangle size={16} />} title="Game update available">
+                  <Stack gap="xs">
+                    <Text size="sm">
+                      Build {latestBuildId ?? 'a newer build'} is available.{' '}
+                      {instance.config.backup_before_update
+                        ? 'A backup will be taken automatically before updating.'
+                        : 'Enable "Backup before update" in Config to snapshot the world first.'}
+                    </Text>
+                    {canOperate && (
+                      <Group>
+                        <Button size="xs" color="orange" loading={updateNow.isPending} onClick={confirmUpdate}>
+                          Update now
+                        </Button>
+                      </Group>
+                    )}
+                  </Stack>
+                </Alert>
+              )}
+            </Stack>
           </Stack>
-        </Paper>
+        </SectionCard>
 
-        <Paper withBorder p="md">
+        <SectionCard title="Connect" description="Share these details with players.">
           <Stack gap="sm">
-            <Title order={4}>Connect</Title>
-            <Text size="sm" ff="monospace">
-              {host}:{instance.config.port}
-            </Text>
+            <Group gap="xs">
+              <Pill size="lg" ff="monospace">
+                {host}:{instance.config.port}
+              </Pill>
+              <CopyButton value={`${host}:${instance.config.port}`}>
+                {({ copied, copy }) => (
+                  <Tooltip label={copied ? 'Copied' : 'Copy'}>
+                    <ActionIcon variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label="Copy address">
+                      {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+              </CopyButton>
+            </Group>
             <Text size="xs" c="dimmed">
               The query port (server browser / A2S) is port+1 ({instance.config.port + 1}).
             </Text>
+            <Group gap="xs" align="center">
+              <IconPlugConnected size={16} style={{ opacity: 0.7 }} />
+              <Text size="sm" c="dimmed">
+                Join code
+              </Text>
+              <Text size="sm" ff="monospace" fw={600}>
+                {status.join_code ?? '—'}
+              </Text>
+            </Group>
           </Stack>
-        </Paper>
+        </SectionCard>
       </SimpleGrid>
 
-      <Paper withBorder p="md">
-        <Stack gap="sm">
-          <Title order={4}>Recent jobs</Title>
-          {jobsQuery.isLoading && <Skeleton height={80} />}
-          {!jobsQuery.isLoading && jobs.length === 0 && (
-            <Text c="dimmed" size="sm">
-              No jobs yet for this instance.
-            </Text>
-          )}
-          {jobs.length > 0 && (
-            <Table.ScrollContainer minWidth={480}>
-              <Table verticalSpacing="xs" highlightOnHover>
-                <Table.Tbody>
-                  {jobs.map((job) => (
-                    <Table.Tr key={job.id} style={{ cursor: 'pointer' }} onClick={() => openJob(job.id)}>
-                      <Table.Td>
-                        <Badge size="sm" color={jobStatusColor(job.status)} variant="light">
-                          {job.status}
-                        </Badge>
-                      </Table.Td>
-                      <Table.Td>{job.title || jobTypeLabel(job.type)}</Table.Td>
-                      <Table.Td>
-                        <Text size="xs" c="dimmed">
-                          {fmtAgo(job.created_at)}
-                        </Text>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
-          )}
-        </Stack>
-      </Paper>
+      <SectionCard title="Recent jobs" flush>
+        {jobsQuery.isLoading && (
+          <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
+            <Skeleton height={80} />
+          </div>
+        )}
+        {!jobsQuery.isLoading && jobs.length === 0 && (
+          <Text c="dimmed" size="sm" p="lg">
+            No jobs yet for this instance.
+          </Text>
+        )}
+        {jobs.length > 0 && (
+          <Table.ScrollContainer minWidth={480}>
+            <Table verticalSpacing="xs" highlightOnHover>
+              <Table.Tbody>
+                {jobs.map((job) => (
+                  <Table.Tr key={job.id} style={{ cursor: 'pointer' }} onClick={() => openJob(job.id)}>
+                    <Table.Td>
+                      <StatusPill color={jobStatusColor(job.status)}>{job.status}</StatusPill>
+                    </Table.Td>
+                    <Table.Td>{job.title || jobTypeLabel(job.type)}</Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {fmtAgo(job.created_at)}
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </SectionCard>
     </Stack>
   )
 }

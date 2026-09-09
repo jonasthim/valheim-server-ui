@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Button, Card, Group, TextInput, Title } from '@mantine/core'
+import { Button, Group, TextInput } from '@mantine/core'
 import { IconDeviceFloppy } from '@tabler/icons-react'
+import { SectionCard } from '../../../ui'
 import { useCreateBackup } from './useBackups'
 
 export function BackupNowCard({ id }: { id: string }) {
@@ -8,10 +9,7 @@ export function BackupNowCard({ id }: { id: string }) {
   const create = useCreateBackup(id)
 
   return (
-    <Card withBorder>
-      <Title order={4} mb="sm">
-        Back up now
-      </Title>
+    <SectionCard title="Back up now" description="Create a manual backup of the current world and config.">
       <Group align="flex-end" wrap="wrap">
         <TextInput
           label="Note (optional)"
@@ -29,6 +27,6 @@ export function BackupNowCard({ id }: { id: string }) {
           Back up now
         </Button>
       </Group>
-    </Card>
+    </SectionCard>
   )
 }

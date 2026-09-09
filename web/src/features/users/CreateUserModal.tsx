@@ -1,4 +1,4 @@
-import { Button, Group, Modal, PasswordInput, Select, Stack, TextInput } from '@mantine/core'
+import { Button, Divider, Group, Modal, PasswordInput, Select, Stack, TextInput } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '../../api/client'
@@ -59,21 +59,29 @@ export function CreateUserModal({ opened, onClose }: { opened: boolean; onClose:
   })
 
   return (
-    <Modal opened={opened} onClose={onClose} title="New user" centered>
+    <Modal opened={opened} onClose={onClose} title="New user" radius="lg" centered>
       <form onSubmit={form.onSubmit((values) => mutation.mutate(values))}>
-        <Stack gap="sm">
-          <TextInput label="Username" autoFocus required {...form.getInputProps('username')} />
-          <PasswordInput label="Password" description="Leave empty for SSO-only" {...form.getInputProps('password')} />
-          <TextInput label="Display name" {...form.getInputProps('display_name')} />
-          <TextInput label="Email" type="email" {...form.getInputProps('email')} />
-          <Select
-            label="Role"
-            data={ROLE_OPTIONS}
-            allowDeselect={false}
-            required
-            {...form.getInputProps('role')}
-          />
-          <Group justify="flex-end" mt="sm">
+        <Stack gap="lg">
+          <Stack gap="sm">
+            <TextInput label="Username" autoFocus required {...form.getInputProps('username')} />
+            <PasswordInput label="Password" description="Leave empty for SSO-only" {...form.getInputProps('password')} />
+          </Stack>
+
+          <Divider />
+
+          <Stack gap="sm">
+            <TextInput label="Display name" {...form.getInputProps('display_name')} />
+            <TextInput label="Email" type="email" {...form.getInputProps('email')} />
+            <Select
+              label="Role"
+              data={ROLE_OPTIONS}
+              allowDeselect={false}
+              required
+              {...form.getInputProps('role')}
+            />
+          </Stack>
+
+          <Group justify="flex-end">
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>

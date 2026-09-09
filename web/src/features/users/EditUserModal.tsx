@@ -1,4 +1,4 @@
-import { Button, Group, Modal, Select, Stack, Switch, TextInput } from '@mantine/core'
+import { Button, Divider, Group, Modal, Select, Stack, Switch, TextInput } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api, ApiError } from '../../api/client'
@@ -61,18 +61,24 @@ export function EditUserModal({ opened, onClose, user }: { opened: boolean; onCl
   })
 
   return (
-    <Modal opened={opened} onClose={onClose} title={`Edit ${user.username}`} centered>
+    <Modal opened={opened} onClose={onClose} title={`Edit ${user.username}`} radius="lg" centered>
       <form onSubmit={form.onSubmit((values) => mutation.mutate(values))}>
-        <Stack gap="sm">
-          <TextInput label="Display name" autoFocus {...form.getInputProps('display_name')} />
-          <TextInput label="Email" type="email" {...form.getInputProps('email')} />
-          <Select label="Role" data={ROLE_OPTIONS} allowDeselect={false} required {...form.getInputProps('role')} />
+        <Stack gap="lg">
+          <Stack gap="sm">
+            <TextInput label="Display name" autoFocus {...form.getInputProps('display_name')} />
+            <TextInput label="Email" type="email" {...form.getInputProps('email')} />
+            <Select label="Role" data={ROLE_OPTIONS} allowDeselect={false} required {...form.getInputProps('role')} />
+          </Stack>
+
+          <Divider />
+
           <Switch
             label="Disabled"
             description="Disabled users cannot log in"
             {...form.getInputProps('disabled', { type: 'checkbox' })}
           />
-          <Group justify="flex-end" mt="sm">
+
+          <Group justify="flex-end">
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>

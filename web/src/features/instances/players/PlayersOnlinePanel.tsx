@@ -1,6 +1,7 @@
-import { Badge, Card, Group, Skeleton, Stack, Table, Text, Title } from '@mantine/core'
+import { Badge, Group, Skeleton, Stack, Table, Text } from '@mantine/core'
 import type { PlayersResponse } from '../../../api/types'
 import { fmtAgo } from '../../../lib/format'
+import { SectionCard, StatusPill } from '../../../ui'
 import { COUNT_SOURCE_LABELS } from './constants'
 
 export function PlayersOnlinePanel({
@@ -15,23 +16,26 @@ export function PlayersOnlinePanel({
   const source = data?.count_source ?? 'none'
 
   return (
-    <Card withBorder>
-      <Group justify="space-between" mb="sm">
-        <Title order={4}>Online</Title>
+    <SectionCard
+      title="Online"
+      flush
+      actions={
         <Group gap="xs">
-          <Badge size="lg" variant="light">
-            {count} online
-          </Badge>
+          <StatusPill color={count > 0 ? 'moss' : 'gray'}>{count} online</StatusPill>
           <Badge size="sm" color="gray" variant="outline">
             {COUNT_SOURCE_LABELS[source]}
           </Badge>
         </Group>
-      </Group>
-
-      {isLoading && <Skeleton height={60} />}
+      }
+    >
+      {isLoading && (
+        <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
+          <Skeleton height={60} />
+        </div>
+      )}
 
       {!isLoading && online.length === 0 && (
-        <Text c="dimmed" size="sm">
+        <Text c="dimmed" size="sm" p="lg">
           No players are connected right now.
         </Text>
       )}
@@ -63,11 +67,11 @@ export function PlayersOnlinePanel({
         </Table.ScrollContainer>
       )}
 
-      <Stack gap={2} mt="sm">
+      <Stack gap={2} p="lg" pt={online.length > 0 ? 0 : undefined}>
         <Text size="xs" c="dimmed">
           Player names come from the console log (best effort); the count above comes {COUNT_SOURCE_LABELS[source]}.
         </Text>
       </Stack>
-    </Card>
+    </SectionCard>
   )
 }

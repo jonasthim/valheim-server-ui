@@ -34,7 +34,9 @@ export function StatTile({
         )}
       </Group>
       <div>
-        <div className={classes.statValue}>{value}</div>
+        <div className={classes.statValue} data-long={typeof value === 'string' && value.length > 12 ? '' : undefined}>
+          {value}
+        </div>
         {hint && (
           <Text size="xs" c="dimmed" mt={2}>
             {hint}

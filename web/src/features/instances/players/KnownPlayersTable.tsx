@@ -1,8 +1,10 @@
-import { ActionIcon, Card, CopyButton, Group, Menu, Skeleton, Table, Text, Title, Tooltip } from '@mantine/core'
+import { ActionIcon, CopyButton, Group, Menu, Skeleton, Table, Text, Tooltip } from '@mantine/core'
 import { IconBan, IconCheck, IconCopy, IconDots, IconShieldCheck, IconUserCheck } from '@tabler/icons-react'
 import type { KnownPlayer, ListKind } from '../../../api/types'
 import { fmtAgo } from '../../../lib/format'
+import { SectionCard } from '../../../ui'
 import { LIST_KIND_ACTION_LABELS } from './constants'
+import classes from './players.module.css'
 
 const LIST_ICONS: Record<ListKind, typeof IconShieldCheck> = {
   admin: IconShieldCheck,
@@ -24,25 +26,25 @@ export function KnownPlayersTable({
   const sorted = [...players].sort((a, b) => (a.last_seen_at < b.last_seen_at ? 1 : -1))
 
   return (
-    <Card withBorder>
-      <Title order={4} mb="sm">
-        Known players
-      </Title>
-
-      {isLoading && <Skeleton height={80} />}
+    <SectionCard title="Known players" flush>
+      {isLoading && (
+        <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
+          <Skeleton height={80} />
+        </div>
+      )}
 
       {!isLoading && sorted.length === 0 && (
-        <Text c="dimmed" size="sm">
+        <Text c="dimmed" size="sm" p="lg">
           No players have connected to this instance yet.
         </Text>
       )}
 
       {!isLoading && sorted.length > 0 && (
         <Table.ScrollContainer minWidth={640}>
-          <Table verticalSpacing="xs" highlightOnHover>
+          <Table verticalSpacing="xs" highlightOnHover className={classes.stickyNameTable}>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Name</Table.Th>
+                <Table.Th className={classes.stickyNameCol}>Name</Table.Th>
                 <Table.Th>Platform id</Table.Th>
                 <Table.Th>First seen</Table.Th>
                 <Table.Th>Last seen</Table.Th>
@@ -53,7 +55,7 @@ export function KnownPlayersTable({
             <Table.Tbody>
               {sorted.map((p: KnownPlayer) => (
                 <Table.Tr key={p.platform_id}>
-                  <Table.Td>{p.name || <Text c="dimmed">unknown</Text>}</Table.Td>
+                  <Table.Td className={classes.stickyNameCol}>{p.name || <Text c="dimmed">unknown</Text>}</Table.Td>
                   <Table.Td>
                     <Group gap={4} wrap="nowrap">
                       <Text ff="monospace" size="sm">
@@ -110,6 +112,6 @@ export function KnownPlayersTable({
           </Table>
         </Table.ScrollContainer>
       )}
-    </Card>
+    </SectionCard>
   )
 }

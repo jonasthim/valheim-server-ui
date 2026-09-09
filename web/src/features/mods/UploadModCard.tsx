@@ -1,11 +1,12 @@
 // Manual mod upload: a .zip (Thunderstore layout with manifest.json) or a
 // single .dll, dropped or picked, uploaded as multipart/form-data.
-import { Card, Group, Text, ThemeIcon } from '@mantine/core'
+import { Group, Text, ThemeIcon } from '@mantine/core'
 import { Dropzone } from '@mantine/dropzone'
 import { IconFileZip, IconUpload, IconX } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { useJobDrawer } from '../jobs'
 import { notifyError } from '../../lib/notify'
+import { SectionCard } from '../../ui'
 import { useUploadMod } from './useMods'
 
 const ACCEPTED_EXT = ['.zip', '.dll']
@@ -29,30 +30,28 @@ export function UploadModCard({ id }: { id: string }) {
   }
 
   return (
-    <Card withBorder>
-      <Text fw={600} mb="xs">
-        Upload a mod
-      </Text>
+    <SectionCard title="Upload a mod">
       <Dropzone
         onDrop={handleDrop}
         onReject={() => notifyError(new Error('File was rejected.'), 'Upload failed')}
         loading={upload.isPending}
         multiple={false}
         maxSize={200 * 1024 * 1024}
+        style={{ background: 'var(--vh-surface-2)', borderColor: 'var(--vh-border-strong)' }}
       >
         <Group justify="center" gap="md" mih={100} style={{ pointerEvents: 'none' }}>
           <Dropzone.Accept>
-            <ThemeIcon size={40} color="teal" variant="light">
+            <ThemeIcon size={40} color="moss" variant="light">
               <IconUpload size={22} />
             </ThemeIcon>
           </Dropzone.Accept>
           <Dropzone.Reject>
-            <ThemeIcon size={40} color="red" variant="light">
+            <ThemeIcon size={40} color="blood" variant="light">
               <IconX size={22} />
             </ThemeIcon>
           </Dropzone.Reject>
           <Dropzone.Idle>
-            <ThemeIcon size={40} variant="light">
+            <ThemeIcon size={40} color="spirit" variant="light">
               <IconFileZip size={22} />
             </ThemeIcon>
           </Dropzone.Idle>
@@ -64,6 +63,6 @@ export function UploadModCard({ id }: { id: string }) {
           </div>
         </Group>
       </Dropzone>
-    </Card>
+    </SectionCard>
   )
 }

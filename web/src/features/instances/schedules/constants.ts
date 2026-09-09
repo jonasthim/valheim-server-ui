@@ -19,7 +19,7 @@ export const SCHEDULE_KIND_OPTIONS: { value: ScheduleKind; label: string }[] = [
 ]
 
 export const LAST_RESULT_COLORS: Record<'ok' | 'skipped' | 'failed', string> = {
-  ok: 'green',
+  ok: 'moss',
   skipped: 'gray',
-  failed: 'red',
+  failed: 'blood',
 }

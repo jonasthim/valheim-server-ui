@@ -1,0 +1,38 @@
+.terminal {
+  display: flex;
+  flex-direction: column;
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-sm);
+  flex-wrap: wrap;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  border-bottom: 1px solid var(--vh-border);
+}
+.screen {
+  background-color: var(--vh-surface-2);
+}
+[data-mantine-color-scheme='dark'] .screen {
+  background-color: var(--vh-sidebar);
+}
+.promptRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px var(--mantine-spacing-md);
+  border-top: 1px solid var(--vh-border);
+  background-color: var(--vh-surface);
+}
+.promptGlyph {
+  color: var(--vh-moss);
+  flex: none;
+}
+.promptInput {
+  flex: 1;
+}
+.promptInput :global(.mantine-Input-input) {
+  font-family: var(--mantine-font-family-monospace);
+  padding-left: 0;
+}

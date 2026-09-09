@@ -33,10 +33,14 @@ an audit trail, without turning your server box into a Docker puzzle.
 | **Updates** | Detects new Valheim builds on Steam and updates with an optional pre-update backup. |
 | **Self-upgrade** | The manager polls GitHub releases, shows what's new, and upgrades itself from the UI with a verified download, atomic swap and rollback. Game servers keep running while it restarts. |
 | **Users & SSO** | First-run wizard creates the admin. Local accounts plus one OIDC provider (Authelia, Keycloak, Authentik, Google…) with group-to-role mapping. Roles: viewer, operator, admin. |
-| **Operations** | Job queue with live logs for every long operation, audit log of every change, disk usage and SteamCMD health on the dashboard. |
+| **Operations** | Job queue with live logs for every long operation, an audit log that records exactly which fields each edit changed, disk usage and SteamCMD health on the dashboard. |
 | **Security** | The manager runs unprivileged; its only path to root is a 15-line sudo wrapper that validates its arguments. Argon2id passwords, hardened session cookies, CSRF guard, no default credentials. |
 
 ## Screenshots
+
+A dark-first, modern interface with Valheim accents; light mode is one click away in the header.
+
+<p align="center"><img src="docs/screenshots/dashboard.png" width="900" alt="Dashboard"/></p>
 
 <table>
   <tr>
@@ -49,7 +53,7 @@ an audit trail, without turning your server box into a Docker puzzle.
   </tr>
   <tr>
     <td align="center"><b>Mods and config editor</b><br/><img src="docs/screenshots/mods.png" width="440"/></td>
-    <td align="center"><b>Thunderstore browser</b><br/><img src="docs/screenshots/thunderstore.png" width="440"/></td>
+    <td align="center"><b>Audit log with field-level diffs</b><br/><img src="docs/screenshots/audit.png" width="440"/></td>
   </tr>
   <tr>
     <td align="center"><b>Backups</b><br/><img src="docs/screenshots/backups.png" width="440"/></td>

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Button, Card, Checkbox, Group, List, Stack, Text, Title } from '@mantine/core'
+import { Button, Checkbox, Group, List, Stack, Text } from '@mantine/core'
 import { Dropzone } from '@mantine/dropzone'
 import { IconUpload, IconX } from '@tabler/icons-react'
 import { notifications } from '@mantine/notifications'
+import { SectionCard } from '../../../ui'
 import { useUploadWorlds } from './useWorlds'
 
 const ALLOWED_EXT = ['.db', '.fwl', '.zip']
@@ -43,10 +44,7 @@ export function WorldUploadCard({ id }: { id: string }) {
   }
 
   return (
-    <Card withBorder>
-      <Title order={4} mb="sm">
-        Upload a world
-      </Title>
+    <SectionCard title="Upload a world">
       <Stack gap="sm">
         <Dropzone onDrop={handleDrop} multiple>
           <Group justify="center" gap="md" mih={100} style={{ pointerEvents: 'none' }}>
@@ -95,6 +93,6 @@ export function WorldUploadCard({ id }: { id: string }) {
           </Button>
         </Group>
       </Stack>
-    </Card>
+    </SectionCard>
   )
 }

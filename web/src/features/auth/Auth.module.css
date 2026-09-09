@@ -1,0 +1,59 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 62em) {
+  .page {
+    grid-template-columns: minmax(0, 460px) 1fr;
+  }
+}
+
+.hero {
+  display: none;
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(560px 420px at 100% 100%, color-mix(in srgb, var(--mantine-color-frost-5) 32%, transparent), transparent 60%),
+    linear-gradient(155deg, var(--mantine-color-ember-7) 0%, var(--mantine-color-dark-8) 55%, var(--mantine-color-dark-9) 100%);
+}
+@media (min-width: 62em) {
+  .hero {
+    display: block;
+  }
+}
+
+.heroInner {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: calc(var(--mantine-spacing-xl) * 2) var(--mantine-spacing-xl);
+}
+
+.tagline {
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+.featureIcon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: var(--mantine-radius-md);
+  display: grid;
+  place-items: center;
+  color: white;
+  background: color-mix(in srgb, white 14%, transparent);
+}
+
+.formSide {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: var(--mantine-spacing-xl);
+  background-color: var(--mantine-color-body);
+}

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Badge, Button, Group, Paper, ScrollArea, Stack, Switch, Text, TextInput } from '@mantine/core'
+import { Badge, Button, Group, ScrollArea, Stack, Switch, Text, TextInput } from '@mantine/core'
 import { useQuery } from '@tanstack/react-query'
-import { IconDownload, IconSearch, IconTrash } from '@tabler/icons-react'
+import { IconChevronRight, IconDownload, IconTrash } from '@tabler/icons-react'
 import { api } from '../../api/client'
 import { onEvent } from '../../events/useEvents'
 import type { PlayersResponse } from '../../api/types'
 import type { PlayersEvent } from '../../events/useEvents'
+import { SectionCard } from '../../ui'
 import { highlightColor } from './instanceHelpers'
+import classes from './ConsoleTab.module.css'
 
 const MAX_LINES = 2000
 const FOLLOW_THRESHOLD_PX = 40
@@ -90,71 +92,76 @@ export function ConsoleTab({ id }: { id: string }) {
         </Group>
       </Group>
 
-      <Paper withBorder p="sm">
-        <Group justify="space-between" wrap="wrap" gap="sm">
-          <TextInput
-            placeholder="Filter lines"
-            leftSection={<IconSearch size={14} />}
-            value={filter}
-            onChange={(e) => setFilter(e.currentTarget.value)}
-            w={260}
-          />
-          <Group gap="sm">
-            <Switch label="Auto-follow" checked={follow} onChange={(e) => setFollow(e.currentTarget.checked)} />
-            <Button
-              size="xs"
-              variant="outline"
-              leftSection={<IconTrash size={14} />}
-              onClick={() => {
-                setInitialCleared(true)
-                setLiveLines([])
-              }}
-            >
-              Clear view
-            </Button>
-            <Button
-              size="xs"
-              variant="outline"
-              component="a"
-              href={api.url(`/instances/${id}/logs/download`)}
-              target="_blank"
-              rel="noreferrer"
-              leftSection={<IconDownload size={14} />}
-            >
-              Download
-            </Button>
-          </Group>
-        </Group>
-      </Paper>
+      <SectionCard flush>
+        <div className={classes.terminal}>
+          <div className={classes.toolbar}>
+            <Text size="xs" c="dimmed">
+              {filtered.length} of {lines.length} lines shown (buffer holds the last {MAX_LINES})
+            </Text>
+            <Group gap="sm" wrap="wrap">
+              <Switch size="xs" label="Auto-follow" checked={follow} onChange={(e) => setFollow(e.currentTarget.checked)} />
+              <Button
+                size="xs"
+                variant="subtle"
+                color="gray"
+                leftSection={<IconTrash size={14} />}
+                onClick={() => {
+                  setInitialCleared(true)
+                  setLiveLines([])
+                }}
+              >
+                Clear view
+              </Button>
+              <Button
+                size="xs"
+                variant="subtle"
+                color="gray"
+                component="a"
+                href={api.url(`/instances/${id}/logs/download`)}
+                target="_blank"
+                rel="noreferrer"
+                leftSection={<IconDownload size={14} />}
+              >
+                Download
+              </Button>
+            </Group>
+          </div>
 
-      <Paper withBorder p={0}>
-        <ScrollArea h={480} viewportRef={viewportRef} onScrollPositionChange={handleScroll}>
-          <Stack gap={2} p="sm">
-            {filtered.map((line, i) => {
-              const color = highlightColor(line)
-              return (
-                <Text
-                  key={i}
-                  size="xs"
-                  ff="monospace"
-                  style={color ? { backgroundColor: `var(--mantine-color-${color}-light)`, borderRadius: 4, padding: '0 4px' } : undefined}
-                >
-                  {line}
+          <ScrollArea h={440} viewportRef={viewportRef} onScrollPositionChange={handleScroll} className={classes.screen}>
+            <Stack gap={2} p="sm">
+              {filtered.map((line, i) => {
+                const color = highlightColor(line)
+                return (
+                  <Text
+                    key={i}
+                    size="xs"
+                    ff="monospace"
+                    style={color ? { backgroundColor: `var(--mantine-color-${color}-light)`, borderRadius: 4, padding: '0 4px' } : undefined}
+                  >
+                    {line}
+                  </Text>
+                )
+              })}
+              {filtered.length === 0 && (
+                <Text size="sm" c="dimmed">
+                  No log lines yet.
                 </Text>
-              )
-            })}
-            {filtered.length === 0 && (
-              <Text size="sm" c="dimmed">
-                No log lines yet.
-              </Text>
-            )}
-          </Stack>
-        </ScrollArea>
-      </Paper>
+              )}
+            </Stack>
+          </ScrollArea>
 
-      <Text size="xs" c="dimmed">
-        {filtered.length} of {lines.length} lines shown (buffer holds the last {MAX_LINES})
-      </Text>
+          <div className={classes.promptRow}>
+            <IconChevronRight size={16} className={classes.promptGlyph} aria-hidden />
+            <TextInput
+              className={classes.promptInput}
+              variant="unstyled"
+              placeholder="Filter lines"
+              value={filter}
+              onChange={(e) => setFilter(e.currentTarget.value)}
+            />
+          </div>
+        </div>
+      </SectionCard>
     </Stack>
   )
 }

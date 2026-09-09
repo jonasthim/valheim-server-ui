@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { Stack, Title } from '@mantine/core'
+import { Stack } from '@mantine/core'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../../api/client'
 import type { CreateInstanceRequest, Instance, Job } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
+import { PageHeader } from '../../ui'
 import { useJobDrawer } from '../jobs'
 import { InstanceConfigForm, type InstanceConfigFormSubmit } from './InstanceConfigForm'
 import { mapConfigFieldErrors } from './instanceHelpers'
@@ -69,8 +70,12 @@ export function CreateInstancePage() {
   }
 
   return (
-    <Stack>
-      <Title order={2}>New instance</Title>
+    <Stack gap="xl">
+      <PageHeader
+        eyebrow="Instances"
+        title="New instance"
+        description="Configure and install a new Valheim dedicated server."
+      />
       <InstanceConfigForm
         mode="create"
         initial={{ name: '', config: EMPTY_CONFIG, autostart: false }}

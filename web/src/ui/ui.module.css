@@ -35,6 +35,13 @@
   letter-spacing: -0.02em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+/* Long values (dev version strings, ids) step down instead of breaking the tile. */
+.statValue[data-long] {
+  font-size: 1.05rem;
+  font-family: var(--mantine-font-family-monospace);
+  letter-spacing: 0;
 }
 .sectionCard {
   padding: 0;

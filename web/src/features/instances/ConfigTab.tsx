@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Alert, Button, Group, Paper, Skeleton, Stack, Text, Title } from '@mantine/core'
+import { Alert, Button, Group, Skeleton, Stack, Text } from '@mantine/core'
 import { useNavigate } from 'react-router-dom'
 import { IconAlertTriangle } from '@tabler/icons-react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -7,6 +7,8 @@ import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import type { Instance, UpdateInstanceRequest } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
+import { SectionCard } from '../../ui'
+import classes from './ConfigTab.module.css'
 import { useInstance } from './useInstance'
 import { useRestartInstance } from './instanceActions'
 import { InstanceConfigForm, type InstanceConfigFormSubmit } from './InstanceConfigForm'
@@ -96,21 +98,13 @@ export function ConfigTab({ id }: { id: string }) {
       />
 
       {canDelete && (
-        <Paper withBorder p="md" style={{ borderColor: 'var(--mantine-color-red-6)' }}>
-          <Stack gap="sm">
-            <Title order={4} c="red">
-              Danger zone
-            </Title>
-            <Group justify="space-between">
-              <Text size="sm" c="dimmed">
-                Permanently delete this instance. Optionally remove its files too.
-              </Text>
-              <Button color="red" variant="outline" onClick={() => setDeleteOpen(true)}>
-                Delete instance
-              </Button>
-            </Group>
-          </Stack>
-        </Paper>
+        <SectionCard title="Danger zone" description="Permanently delete this instance. Optionally remove its files too." className={classes.dangerCard}>
+          <Group justify="flex-end">
+            <Button color="red" variant="outline" onClick={() => setDeleteOpen(true)}>
+              Delete instance
+            </Button>
+          </Group>
+        </SectionCard>
       )}
 
       <DeleteInstanceModal

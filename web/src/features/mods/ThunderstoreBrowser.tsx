@@ -3,7 +3,6 @@
 // printed into the resulting job's log). See docs/ARCHITECTURE.md §12.
 import { useState } from 'react'
 import {
-  Alert,
   Anchor,
   Avatar,
   Badge,
@@ -19,6 +18,7 @@ import {
   ScrollArea,
   SegmentedControl,
   Select,
+  SimpleGrid,
   Skeleton,
   Stack,
   Text,
@@ -31,6 +31,7 @@ import { useAuth } from '../../auth/useAuth'
 import { useJobDrawer } from '../jobs'
 import { fmtAgo } from '../../lib/format'
 import type { Mod, PackageSummary } from '../../api/types'
+import { EmptyState } from '../../ui'
 import { findInstalledMod, SORT_OPTIONS } from './helpers'
 import { useCategories, usePackage, useRefreshThunderstoreIndex, useThunderstoreSearch } from './useThunderstore'
 import { useInstallPackage } from './useMods'
@@ -155,33 +156,33 @@ export function ThunderstoreBrowser({
         </Group>
 
         {searchQuery.isLoading ? (
-          <Stack gap="xs">
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} height={72} />
+              <Skeleton key={i} height={140} />
             ))}
-          </Stack>
+          </SimpleGrid>
         ) : emptyIndex ? (
-          <Alert color="gray" icon={<IconDatabase size={16} />} title="Thunderstore index is empty">
-            <Stack gap="xs">
-              <Text size="sm">
-                No cached packages yet. {canOperate ? 'Refresh the index to fetch the Thunderstore catalog.' : 'Ask an operator to refresh the index.'}
-              </Text>
-              {canOperate && (
+          <EmptyState
+            icon={<IconDatabase size={22} />}
+            title="Thunderstore index is empty"
+            description={
+              canOperate ? 'Refresh the index to fetch the Thunderstore catalog.' : 'Ask an operator to refresh the index.'
+            }
+            action={
+              canOperate && (
                 <Button size="xs" loading={refreshIndex.isPending} onClick={requestRefresh}>
                   Refresh index
                 </Button>
-              )}
-            </Stack>
-          </Alert>
+              )
+            }
+          />
         ) : !result || result.packages.length === 0 ? (
-          <Text c="dimmed" ta="center" py="xl">
-            No packages match these filters.
-          </Text>
+          <EmptyState icon={<IconSearch size={22} />} title="No packages match these filters." />
         ) : (
-          <ScrollArea.Autosize mah={460}>
-            <Stack gap="xs">
+          <ScrollArea.Autosize mah={480}>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
               {result.packages.map((pkg) => (
-                <PackageRow
+                <PackageCard
                   key={pkg.full_name}
                   id={id}
                   pkg={pkg}
@@ -189,7 +190,7 @@ export function ThunderstoreBrowser({
                   canOperate={canOperate}
                 />
               ))}
-            </Stack>
+            </SimpleGrid>
           </ScrollArea.Autosize>
         )}
 
@@ -203,7 +204,7 @@ export function ThunderstoreBrowser({
   )
 }
 
-function PackageRow({
+function PackageCard({
   id,
   pkg,
   installed,
@@ -215,60 +216,62 @@ function PackageRow({
   canOperate: boolean
 }) {
   return (
-    <Card withBorder padding="sm">
-      <Group justify="space-between" align="flex-start" wrap="nowrap">
-        <Group align="flex-start" wrap="nowrap" gap="sm" style={{ flex: 1, minWidth: 0 }}>
-          <Avatar src={pkg.icon_url || undefined} size={44} radius="sm" />
-          <Box style={{ flex: 1, minWidth: 0 }}>
-            <Group gap={6} wrap="wrap">
-              <Text fw={600} size="sm">
-                {pkg.name}
-              </Text>
-              <Text size="xs" c="dimmed">
-                by {pkg.owner}
-              </Text>
-              {pkg.is_deprecated && (
-                <Badge color="red" size="xs" variant="light">
-                  deprecated
-                </Badge>
-              )}
-              {installed && (
-                <Badge color="green" size="xs" variant="light">
-                  Installed v{installed.version}
-                </Badge>
-              )}
-              {pkg.package_url && (
-                <Anchor href={pkg.package_url} target="_blank" rel="noreferrer" size="xs">
-                  <Group gap={2} wrap="nowrap">
-                    Thunderstore <IconExternalLink size={10} />
-                  </Group>
-                </Anchor>
-              )}
-            </Group>
-            {pkg.description && (
-              <Text size="xs" c="dimmed" lineClamp={2}>
-                {pkg.description}
-              </Text>
+    <Card padding="sm" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <Group align="flex-start" wrap="nowrap" gap="sm" style={{ flex: 1, minWidth: 0 }}>
+        <Avatar src={pkg.icon_url || undefined} size={44} radius="sm" />
+        <Box style={{ flex: 1, minWidth: 0 }}>
+          <Group gap={6} wrap="wrap">
+            <Text fw={600} size="sm">
+              {pkg.name}
+            </Text>
+            {pkg.is_deprecated && (
+              <Badge color="blood" size="xs" variant="light">
+                deprecated
+              </Badge>
             )}
-            <Group gap={4} mt={4} wrap="wrap">
-              {(pkg.categories ?? []).slice(0, 5).map((c) => (
-                <Badge key={c} size="xs" variant="outline">
-                  {c}
-                </Badge>
-              ))}
-            </Group>
-            <Group gap="md" mt={4}>
-              <Text size="xs" c="dimmed">
-                ★ {pkg.rating_score}
-              </Text>
-              <Text size="xs" c="dimmed">
-                {pkg.total_downloads.toLocaleString()} downloads
-              </Text>
-              <Text size="xs" c="dimmed">
-                updated {fmtAgo(pkg.date_updated)}
-              </Text>
-            </Group>
-          </Box>
+            {installed && (
+              <Badge color="moss" size="xs" variant="light">
+                Installed v{installed.version}
+              </Badge>
+            )}
+          </Group>
+          <Group gap={6} wrap="wrap">
+            <Text size="xs" c="dimmed">
+              by {pkg.owner}
+            </Text>
+            {pkg.package_url && (
+              <Anchor href={pkg.package_url} target="_blank" rel="noreferrer" size="xs">
+                <Group gap={2} wrap="nowrap">
+                  Thunderstore <IconExternalLink size={10} />
+                </Group>
+              </Anchor>
+            )}
+          </Group>
+          {pkg.description && (
+            <Text size="xs" c="dimmed" lineClamp={2} mt={4}>
+              {pkg.description}
+            </Text>
+          )}
+          <Group gap={4} mt={6} wrap="wrap">
+            {(pkg.categories ?? []).slice(0, 5).map((c) => (
+              <Badge key={c} size="xs" variant="outline">
+                {c}
+              </Badge>
+            ))}
+          </Group>
+        </Box>
+      </Group>
+      <Group justify="space-between" mt="sm" wrap="nowrap">
+        <Group gap="sm" wrap="nowrap">
+          <Text size="xs" c="dimmed">
+            ★ {pkg.rating_score}
+          </Text>
+          <Text size="xs" c="dimmed">
+            {pkg.total_downloads.toLocaleString()} downloads
+          </Text>
+          <Text size="xs" c="dimmed" visibleFrom="sm">
+            updated {fmtAgo(pkg.date_updated)}
+          </Text>
         </Group>
         {canOperate && <InstallButton id={id} pkg={pkg} />}
       </Group>

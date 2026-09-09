@@ -1,20 +1,19 @@
-import {
-  ActionIcon,
-  Badge,
-  Button,
-  Card,
-  CopyButton,
-  Group,
-  Loader,
-  Stack,
-  Text,
-  Tooltip,
-} from '@mantine/core'
+import { ActionIcon, Badge, Button, Card, CopyButton, Group, Pill, Stack, Text, Tooltip } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { Link } from 'react-router-dom'
-import { IconCheck, IconCopy, IconDownload, IconPlayerPlay, IconPlayerStop, IconRefresh } from '@tabler/icons-react'
+import {
+  IconCheck,
+  IconCopy,
+  IconDownload,
+  IconPlayerPlay,
+  IconPlayerStop,
+  IconPlug,
+  IconRefresh,
+  IconUsers,
+} from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import type { Instance } from '../../api/types'
+import { StatusDot, StatusPill } from '../../ui'
 import { useJobDrawer, jobTypeLabel } from '../jobs'
 import {
   useInstallInstance,
@@ -26,10 +25,10 @@ import {
   canRestart,
   canStart,
   canStop,
-  isTransitioning,
   stateColor,
   stateLabel,
 } from '../instances'
+import classes from './InstanceCard.module.css'
 
 export function InstanceCard({ instance }: { instance: Instance }) {
   const { hasRole } = useAuth()
@@ -83,20 +82,61 @@ export function InstanceCard({ instance }: { instance: Instance }) {
   }
 
   return (
-    <Card withBorder padding="md" radius="md">
-      <Stack gap="xs">
-        <Group justify="space-between" wrap="nowrap">
-          <Text component={Link} to={`/instances/${instance.id}/overview`} fw={600} truncate>
+    <Card withBorder padding="lg" radius="lg" className={classes.card}>
+      <Stack gap="sm">
+        <Group justify="space-between" wrap="nowrap" align="flex-start">
+          <Text component={Link} to={`/instances/${instance.id}/overview`} fw={650} truncate>
             {instance.name}
           </Text>
-          <Badge color={stateColor(status.state)} variant="light" leftSection={isTransitioning(status.state) ? <Loader size={10} /> : null}>
+          <StatusPill color={stateColor(status.state)} pulse={status.state === 'running' || status.state === 'starting'}>
             {stateLabel(status.state)}
-          </Badge>
+          </StatusPill>
         </Group>
-        <Group gap={6}>
-          <Badge size="xs" color={status.ready ? 'green' : 'gray'} variant="dot">
-            {status.ready ? 'Ready' : 'Not ready'}
-          </Badge>
+
+        <Text size="sm" c="dimmed" truncate>
+          {config.name} · {config.world}
+        </Text>
+
+        <Group gap="md" wrap="wrap">
+          <Group gap={6} wrap="nowrap">
+            <Text c="dimmed" component="span" style={{ display: 'inline-flex' }}>
+              <IconUsers size={14} />
+            </Text>
+            <Text size="sm">
+              {status.players_online} / {status.max_players ?? '?'}
+            </Text>
+          </Group>
+          <Group gap={6} wrap="nowrap">
+            <Text c="dimmed" component="span" style={{ display: 'inline-flex' }}>
+              <IconPlug size={14} />
+            </Text>
+            <Text size="sm">{config.port}</Text>
+          </Group>
+          {status.join_code && (
+            <Group gap={4} wrap="nowrap">
+              <Pill size="sm" className={classes.joinCode}>
+                {status.join_code}
+              </Pill>
+              <CopyButton value={status.join_code}>
+                {({ copied, copy }) => (
+                  <Tooltip label={copied ? 'Copied' : 'Copy'}>
+                    <ActionIcon size="sm" variant="subtle" color={copied ? 'moss' : 'gray'} onClick={copy} aria-label="Copy join code">
+                      {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
+                    </ActionIcon>
+                  </Tooltip>
+                )}
+              </CopyButton>
+            </Group>
+          )}
+        </Group>
+
+        <Group gap="xs" wrap="wrap">
+          <Group gap={4}>
+            <StatusDot color={status.ready ? 'moss' : 'gray'} />
+            <Text size="xs" c="dimmed">
+              {status.ready ? 'Ready' : 'Not ready'}
+            </Text>
+          </Group>
           {status.update_available && (
             <Badge size="xs" color="orange" variant="light">
               Game update available
@@ -109,48 +149,14 @@ export function InstanceCard({ instance }: { instance: Instance }) {
           )}
         </Group>
 
-        <Text size="sm" c="dimmed" truncate>
-          {config.name} · {config.world}
-        </Text>
-        <Group gap="md">
-          <Text size="sm">
-            {status.players_online} / {status.max_players ?? '?'} players
-          </Text>
-          <Text size="sm">Port {config.port}</Text>
-        </Group>
-        {status.join_code && (
-          <Group gap={4}>
-            <Text size="sm" c="dimmed">
-              Join code
-            </Text>
-            <Text size="sm" ff="monospace">
-              {status.join_code}
-            </Text>
-            <CopyButton value={status.join_code}>
-              {({ copied, copy }) => (
-                <Tooltip label={copied ? 'Copied' : 'Copy'}>
-                  <ActionIcon size="sm" variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label="Copy join code">
-                    {copied ? <IconCheck size={12} /> : <IconCopy size={12} />}
-                  </ActionIcon>
-                </Tooltip>
-              )}
-            </CopyButton>
-          </Group>
-        )}
-
         {status.active_job && (
-          <Text
-            size="sm"
-            c="blue"
-            style={{ cursor: 'pointer' }}
-            onClick={() => status.active_job && openJob(status.active_job.id)}
-          >
+          <Text size="sm" c="blue" style={{ cursor: 'pointer' }} onClick={() => status.active_job && openJob(status.active_job.id)}>
             {jobTypeLabel(status.active_job.type)} - {status.active_job.status}
           </Text>
         )}
 
         {canOperate && (
-          <Group gap="xs" mt="xs">
+          <Group gap="xs" mt={4}>
             <Button
               size="xs"
               leftSection={<IconPlayerPlay size={14} />}
@@ -162,8 +168,8 @@ export function InstanceCard({ instance }: { instance: Instance }) {
             </Button>
             <Button
               size="xs"
-              color="orange"
-              variant="outline"
+              color="red"
+              variant="light"
               leftSection={<IconPlayerStop size={14} />}
               disabled={!canStop(status.state)}
               loading={stop.isPending}

@@ -1,7 +1,7 @@
 // Mods tab: BepInEx loader status, installed mods, manual upload, the
 // Thunderstore browser modal, and the BepInEx config editor. Owned by WP-13
 // (docs/WORKPLAN.md); kept thin, composing web/src/features/mods/*.
-import { Button, Group, Stack, Title } from '@mantine/core'
+import { Button, Stack, Text } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { IconWorldSearch } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
@@ -13,6 +13,7 @@ import {
   UploadModCard,
   useModsOverview,
 } from '../mods'
+import { SectionCard } from '../../ui'
 
 export function ModsTab({ id }: { id: string }) {
   const { hasRole } = useAuth()
@@ -23,14 +24,21 @@ export function ModsTab({ id }: { id: string }) {
     <Stack gap="lg">
       <BepInExCard id={id} />
 
-      <Group justify="space-between">
-        <Title order={4}>Mods</Title>
-        {hasRole('operator') && (
-          <Button leftSection={<IconWorldSearch size={16} />} onClick={browserHandlers.open}>
-            Browse Thunderstore
-          </Button>
-        )}
-      </Group>
+      {hasRole('operator') && (
+        <SectionCard
+          title="Thunderstore"
+          description="Search the Valheim mod catalogue and install mods with their dependencies."
+          actions={
+            <Button leftSection={<IconWorldSearch size={16} />} onClick={browserHandlers.open}>
+              Browse Thunderstore
+            </Button>
+          }
+        >
+          <Text size="sm" c="dimmed">
+            Installed mods appear below; updates are checked against the cached index.
+          </Text>
+        </SectionCard>
+      )}
 
       <InstalledModsTable id={id} />
 

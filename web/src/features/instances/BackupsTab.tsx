@@ -26,11 +26,10 @@ export function BackupsTab({ id }: { id: string }) {
         isLoading={backupsQ.isLoading}
         canManage={canManage}
         instanceState={instanceQ.data?.status.state}
+        retention={<RetentionInfo id={id} config={instanceQ.data?.config} />}
         onRestore={(backupId, stopIfRunning) => restore.mutate({ backupId, stopIfRunning })}
         onDelete={(backupId) => del.mutate(backupId)}
       />
-
-      <RetentionInfo id={id} config={instanceQ.data?.config} />
 
       {canManage && <BackupUploadCard id={id} />}
     </Stack>

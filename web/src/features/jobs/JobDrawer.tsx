@@ -10,7 +10,7 @@ import {
   Button,
   ActionIcon,
   ScrollArea,
-  Table,
+  SimpleGrid,
   Divider,
   Tooltip,
   Loader,
@@ -25,6 +25,7 @@ import { api } from '../../api/client'
 import { useAuth } from '../../auth/useAuth'
 import { onEvent } from '../../events/useEvents'
 import { fmtTime } from '../../lib/format'
+import { StatusPill } from '../../ui'
 import { useJob, useCancelJob } from './useJobs'
 import { jobStatusColor, jobTypeLabel, isJobTerminal, isJobCancellable } from './jobHelpers'
 
@@ -35,6 +36,15 @@ export function JobDrawer({ jobId, onClose }: { jobId: string | null; onClose: (
           reaching for an effect to reset state when the drawer switches jobs. */}
       {jobId && <JobDrawerBody key={jobId} jobId={jobId} />}
     </Drawer>
+  )
+}
+
+function MetaItem({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <Stack gap={2}>
+      <span className="vh-eyebrow">{label}</span>
+      <Text size="sm">{value}</Text>
+    </Stack>
   )
 }
 
@@ -137,46 +147,30 @@ function JobDrawerBody({ jobId }: { jobId: string }) {
 
   return (
     <Stack gap="md">
-      <Text fw={600} size="lg">
-        {job.title || jobTypeLabel(job.type)}
-      </Text>
-      <Group gap="xs" wrap="wrap">
-        <Badge
-          color={jobStatusColor(job.status)}
-          variant="light"
-          rightSection={job.status === 'running' ? <Loader size={10} color={jobStatusColor(job.status)} /> : undefined}
-        >
-          {job.status}
-        </Badge>
-        <Badge variant="outline">{jobTypeLabel(job.type)}</Badge>
-        {job.instance_id && (
-          <Anchor component={Link} to={`/instances/${job.instance_id}/overview`} size="sm">
-            {job.instance_id}
-          </Anchor>
-        )}
-        {job.requested_by && (
-          <Text size="sm" c="dimmed">
-            by {job.requested_by}
-          </Text>
-        )}
-      </Group>
+      <Stack gap={6}>
+        <Text fw={600} size="lg">
+          {job.title || jobTypeLabel(job.type)}
+        </Text>
+        <Group gap="xs" wrap="wrap">
+          <StatusPill color={jobStatusColor(job.status)} pulse={job.status === 'running'}>
+            {job.status}
+          </StatusPill>
+          <Badge variant="outline">{jobTypeLabel(job.type)}</Badge>
+          {job.instance_id && (
+            <Anchor component={Link} to={`/instances/${job.instance_id}/overview`} size="sm">
+              {job.instance_id}
+            </Anchor>
+          )}
+        </Group>
+      </Stack>
 
-      <Table withRowBorders={false} verticalSpacing={4}>
-        <Table.Tbody>
-          <Table.Tr>
-            <Table.Td c="dimmed">Created</Table.Td>
-            <Table.Td>{fmtTime(job.created_at)}</Table.Td>
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td c="dimmed">Started</Table.Td>
-            <Table.Td>{fmtTime(job.started_at)}</Table.Td>
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td c="dimmed">Finished</Table.Td>
-            <Table.Td>{fmtTime(job.finished_at)}</Table.Td>
-          </Table.Tr>
-        </Table.Tbody>
-      </Table>
+      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
+        <MetaItem label="Instance" value={job.instance_id ?? '-'} />
+        <MetaItem label="Requested by" value={job.requested_by ?? '-'} />
+        <MetaItem label="Created" value={fmtTime(job.created_at)} />
+        <MetaItem label="Started" value={fmtTime(job.started_at)} />
+        <MetaItem label="Finished" value={fmtTime(job.finished_at)} />
+      </SimpleGrid>
 
       {job.status === 'failed' && job.error && (
         <Alert color="red" icon={<IconAlertTriangle size={16} />} title="Job failed">
@@ -187,16 +181,18 @@ function JobDrawerBody({ jobId }: { jobId: string }) {
       {summaryEntries.length > 0 && (
         <>
           <Divider label="Summary" labelPosition="left" />
-          <Table withRowBorders={false} verticalSpacing={4}>
-            <Table.Tbody>
-              {summaryEntries.map(([k, v]) => (
-                <Table.Tr key={k}>
-                  <Table.Td c="dimmed">{k}</Table.Td>
-                  <Table.Td style={{ wordBreak: 'break-word' }}>{typeof v === 'string' ? v : JSON.stringify(v)}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+          <Stack gap={4}>
+            {summaryEntries.map(([k, v]) => (
+              <Group key={k} gap="xs" wrap="nowrap" align="flex-start">
+                <Text size="sm" c="dimmed" style={{ flex: 'none', minWidth: 120 }}>
+                  {k}
+                </Text>
+                <Text size="sm" style={{ wordBreak: 'break-word' }}>
+                  {typeof v === 'string' ? v : JSON.stringify(v)}
+                </Text>
+              </Group>
+            ))}
+          </Stack>
         </>
       )}
 
@@ -245,16 +241,20 @@ function JobDrawerBody({ jobId }: { jobId: string }) {
         viewportRef={viewportRef}
         onScrollPositionChange={handleScrollPositionChange}
         className="mono"
-        style={{ background: 'var(--mantine-color-default-hover)', borderRadius: 4 }}
+        style={{
+          background: 'var(--mantine-color-dark-8)',
+          borderRadius: 'var(--mantine-radius-md)',
+          border: '1px solid var(--vh-border-strong)',
+        }}
       >
         <Stack gap={0} p="xs">
           {lines.length === 0 && (
-            <Text size="sm" c="dimmed">
+            <Text size="sm" c="dark.2">
               {logQuery.isLoading ? 'Loading log…' : 'No output yet.'}
             </Text>
           )}
           {lines.map((line, i) => (
-            <Text key={i} size="xs" style={{ whiteSpace: 'pre-wrap' }}>
+            <Text key={i} size="xs" c="dark.0" style={{ whiteSpace: 'pre-wrap' }}>
               {line}
             </Text>
           ))}

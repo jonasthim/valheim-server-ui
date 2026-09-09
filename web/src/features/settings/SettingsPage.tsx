@@ -6,7 +6,6 @@ import {
   Alert,
   Anchor,
   Button,
-  Card,
   CopyButton,
   Divider,
   Group,
@@ -19,7 +18,6 @@ import {
   TagsInput,
   Text,
   TextInput,
-  Title,
   Tooltip,
 } from '@mantine/core'
 import { modals } from '@mantine/modals'
@@ -29,6 +27,7 @@ import { useAuth } from '../../auth/useAuth'
 import type { Settings } from '../../api/types'
 import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
+import { PageHeader, SectionCard } from '../../ui'
 import { useJobDrawer } from '../jobs'
 import {
   ManagerRestartOverlay,
@@ -139,8 +138,8 @@ export function SettingsPage() {
 
   if (settingsQ.isLoading) {
     return (
-      <Stack maw={720}>
-        <Skeleton height={28} width={160} />
+      <Stack gap="lg" maw={760}>
+        <Skeleton height={40} width={220} />
         <Skeleton height={260} />
         <Skeleton height={100} />
       </Stack>
@@ -152,21 +151,20 @@ export function SettingsPage() {
   const redirectUri = oidc.redirect_uri || ''
 
   return (
-    <Stack maw={720} gap="lg">
-      <Title order={2}>Settings</Title>
+    <Stack gap="lg" maw={760}>
+      <PageHeader eyebrow="Administration" title="Settings" description="Application, update and sign-in configuration." />
 
       <form onSubmit={form.onSubmit((values) => saveMutation.mutate(values))}>
         <Stack gap="lg">
-          <Card withBorder padding="lg">
+          <SectionCard title="Authentication">
             <Stack gap="md">
-              <Title order={4}>Authentication</Title>
               <Switch
                 label="Local login enabled"
                 description="Allow signing in with a username and password"
                 {...form.getInputProps('auth.local_login_enabled', { type: 'checkbox' })}
               />
               {showLockoutWarning && (
-                <Alert color="yellow" icon={<IconAlertTriangle size={16} />} title="This will lock everyone out">
+                <Alert color="straw" icon={<IconAlertTriangle size={16} />} title="This will lock everyone out">
                   Local login is off and single sign-on is not enabled. At least one login method must stay on.
                 </Alert>
               )}
@@ -204,10 +202,8 @@ export function SettingsPage() {
                   <TagsInput label="Scopes" {...form.getInputProps('auth.oidc.scopes')} />
                   <TextInput label="Groups claim" {...form.getInputProps('auth.oidc.groups_claim')} />
 
+                  <Divider label="Role mapping" labelPosition="left" />
                   <Stack gap={4}>
-                    <Text size="sm" fw={500}>
-                      Role mapping
-                    </Text>
                     <Text size="xs" c="dimmed">
                       Group name → role. The highest matching role wins.
                     </Text>
@@ -268,7 +264,7 @@ export function SettingsPage() {
 
                   {testResult && (
                     <Alert
-                      color={testResult.ok ? 'green' : 'red'}
+                      color={testResult.ok ? 'moss' : 'blood'}
                       title={testResult.ok ? 'Connection OK' : 'Connection failed'}
                     >
                       {testResult.ok ? (
@@ -284,49 +280,43 @@ export function SettingsPage() {
                 </Stack>
               )}
             </Stack>
-          </Card>
+          </SectionCard>
 
-          <Card withBorder padding="lg">
+          <SectionCard title="Updates">
+            <NumberInput
+              label="Check interval (minutes)"
+              description="0 disables periodic update checks"
+              min={0}
+              {...form.getInputProps('updates.check_interval_minutes')}
+            />
+          </SectionCard>
+
+          <SectionCard title="Thunderstore">
+            <NumberInput
+              label="Index refresh interval (hours)"
+              min={1}
+              {...form.getInputProps('thunderstore.index_refresh_hours')}
+            />
+          </SectionCard>
+
+          <SectionCard
+            title="Application"
+            actions={
+              canAdmin && (
+                <Tooltip label="Check for a new Valheim Server UI release now">
+                  <ActionIcon
+                    variant="subtle"
+                    loading={checkAppUpdate.isPending}
+                    onClick={() => checkAppUpdate.mutate()}
+                    aria-label="Check for application update"
+                  >
+                    <IconRefresh size={16} />
+                  </ActionIcon>
+                </Tooltip>
+              )
+            }
+          >
             <Stack gap="md">
-              <Title order={4}>Updates</Title>
-              <NumberInput
-                label="Check interval (minutes)"
-                description="0 disables periodic update checks"
-                min={0}
-                {...form.getInputProps('updates.check_interval_minutes')}
-              />
-            </Stack>
-          </Card>
-
-          <Card withBorder padding="lg">
-            <Stack gap="md">
-              <Title order={4}>Thunderstore</Title>
-              <NumberInput
-                label="Index refresh interval (hours)"
-                min={1}
-                {...form.getInputProps('thunderstore.index_refresh_hours')}
-              />
-            </Stack>
-          </Card>
-
-          <Card withBorder padding="lg">
-            <Stack gap="md">
-              <Group justify="space-between">
-                <Title order={4}>Application</Title>
-                {canAdmin && (
-                  <Tooltip label="Check for a new Valheim Server UI release now">
-                    <ActionIcon
-                      variant="subtle"
-                      loading={checkAppUpdate.isPending}
-                      onClick={() => checkAppUpdate.mutate()}
-                      aria-label="Check for application update"
-                    >
-                      <IconRefresh size={16} />
-                    </ActionIcon>
-                  </Tooltip>
-                )}
-              </Group>
-
               {systemQ.isLoading && <Skeleton height={80} />}
 
               {systemQ.data && (
@@ -401,7 +391,7 @@ export function SettingsPage() {
                 </Group>
               )}
             </Stack>
-          </Card>
+          </SectionCard>
 
           <Group justify="flex-end">
             <Button type="submit" loading={saveMutation.isPending}>

@@ -140,6 +140,10 @@ async function main() {
   await api('POST', '/instances/berra/schedules', { kind: 'restart', cron: '0 5 * * 1', enabled: true, only_when_empty: true, note: 'Weekly restart' }).catch((e) =>
     console.error('schedule:', e.message),
   )
+  // A couple of edits so the audit log shows real field diffs.
+  await api('PATCH', '/instances/berra', { config: { modifiers: { resources: 'more', portals: 'hard' } } })
+  await api('PATCH', '/instances/berra', { config: { modifiers: { resources: 'more' }, setkeys: ['fire', 'nomap'] } })
+  await api('PATCH', '/instances/berra', { config: { setkeys: ['fire'] }, autostart: true })
   await api('POST', '/instances/berra/start')
   // wait for running + player from the fake server
   for (let i = 0; i < 60; i++) {

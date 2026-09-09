@@ -38,7 +38,7 @@ export function SetPasswordModal({ opened, onClose, user }: { opened: boolean; o
   })
 
   return (
-    <Modal opened={opened} onClose={onClose} title={`Set password for ${user.username}`} centered>
+    <Modal opened={opened} onClose={onClose} title={`Set password for ${user.username}`} radius="lg" centered>
       <form onSubmit={form.onSubmit((values) => mutation.mutate(values))}>
         <Stack gap="sm">
           <PasswordInput label="New password" autoFocus required {...form.getInputProps('new_password')} />

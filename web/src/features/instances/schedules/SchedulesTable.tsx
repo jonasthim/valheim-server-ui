@@ -1,8 +1,9 @@
 import { ActionIcon, Anchor, Badge, Group, Skeleton, Switch, Table, Text, Tooltip } from '@mantine/core'
 import { modals } from '@mantine/modals'
-import { IconPencil, IconPlayerPlay, IconTrash } from '@tabler/icons-react'
+import { IconCalendarTime, IconPencil, IconPlayerPlay, IconTrash } from '@tabler/icons-react'
 import type { Schedule } from '../../../api/types'
 import { fmtAgo, fmtTime } from '../../../lib/format'
+import { EmptyState, StatusPill } from '../../../ui'
 import { useJobDrawer } from '../../jobs'
 import { cronDescribe } from './cron'
 import { LAST_RESULT_COLORS, SCHEDULE_KIND_LABELS } from './constants'
@@ -42,19 +43,25 @@ export function SchedulesTable({
     })
   }
 
-  if (isLoading) return <Skeleton height={140} />
+  if (isLoading) {
+    return (
+      <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
+        <Skeleton height={140} />
+      </div>
+    )
+  }
 
   if (schedules.length === 0) {
     return (
-      <Text c="dimmed" size="sm">
-        No schedules configured.
-      </Text>
+      <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
+        <EmptyState icon={<IconCalendarTime size={22} />} title="No schedules configured." />
+      </div>
     )
   }
 
   return (
     <Table.ScrollContainer minWidth={960}>
-      <Table verticalSpacing="xs" highlightOnHover>
+      <Table verticalSpacing="xs">
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Kind</Table.Th>
@@ -70,8 +77,10 @@ export function SchedulesTable({
         <Table.Tbody>
           {schedules.map((s) => (
             <Table.Tr key={s.id}>
-              <Table.Td>
-                <Badge variant="light">{SCHEDULE_KIND_LABELS[s.kind]}</Badge>
+              <Table.Td style={{ whiteSpace: 'nowrap' }}>
+                <Badge variant="light" style={{ overflow: 'visible' }}>
+                  {SCHEDULE_KIND_LABELS[s.kind]}
+                </Badge>
               </Table.Td>
               <Table.Td>
                 <Text size="sm">{cronDescribe(s.cron)}</Text>
@@ -92,14 +101,10 @@ export function SchedulesTable({
               <Table.Td>{s.next_run_at ? fmtTime(s.next_run_at) : '-'}</Table.Td>
               <Table.Td>
                 {s.last_run_at ? (
-                  <Group gap={4} wrap="nowrap">
-                    <div>
-                      <Text size="sm">{fmtAgo(s.last_run_at)}</Text>
-                    </div>
+                  <Group gap={6} wrap="nowrap">
+                    <Text size="sm">{fmtAgo(s.last_run_at)}</Text>
                     {s.last_result && (
-                      <Badge size="sm" color={LAST_RESULT_COLORS[s.last_result]} variant="light">
-                        {s.last_result}
-                      </Badge>
+                      <StatusPill color={LAST_RESULT_COLORS[s.last_result]}>{s.last_result}</StatusPill>
                     )}
                     {s.last_job_id && (
                       <Anchor size="xs" component="button" type="button" onClick={() => openJob(s.last_job_id!)}>

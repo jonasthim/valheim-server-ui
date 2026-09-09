@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Group, Modal, Select, Stack, Switch, Text, TextInput } from '@mantine/core'
+import { Button, Divider, Group, Modal, Select, Stack, Switch, Text, TextInput } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { ApiError } from '../../../api/client'
 import type { Schedule, ScheduleInput, ScheduleKind } from '../../../api/types'
@@ -84,65 +84,71 @@ export function ScheduleModal({
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title={isEdit ? 'Edit schedule' : 'New schedule'} centered>
+    <Modal opened={opened} onClose={onClose} title={isEdit ? 'Edit schedule' : 'New schedule'} radius="lg" centered>
       <form onSubmit={form.onSubmit(submit)}>
-        <Stack gap="sm">
-          <Select
-            label="Kind"
-            data={SCHEDULE_KIND_OPTIONS}
-            allowDeselect={false}
-            description={SCHEDULE_KIND_HELP[form.values.kind]}
-            {...form.getInputProps('kind')}
-          />
+        <Stack gap="lg">
+          <Stack gap="sm">
+            <Select
+              label="Kind"
+              data={SCHEDULE_KIND_OPTIONS}
+              allowDeselect={false}
+              description={SCHEDULE_KIND_HELP[form.values.kind]}
+              {...form.getInputProps('kind')}
+            />
 
-          <Select
-            label="Schedule"
-            data={CRON_PRESETS}
-            allowDeselect={false}
-            value={form.values.preset}
-            onChange={(value) => {
-              if (!value) return
-              form.setFieldValue('preset', value)
-              if (value !== CUSTOM_CRON_PRESET) {
-                form.setFieldValue('cron', value)
+            <Select
+              label="Schedule"
+              data={CRON_PRESETS}
+              allowDeselect={false}
+              value={form.values.preset}
+              onChange={(value) => {
+                if (!value) return
+                form.setFieldValue('preset', value)
+                if (value !== CUSTOM_CRON_PRESET) {
+                  form.setFieldValue('cron', value)
+                  setCronError(null)
+                }
+              }}
+            />
+
+            <TextInput
+              label="Cron expression"
+              description={cronDescribe(form.values.cron)}
+              error={cronError}
+              value={form.values.cron}
+              onChange={(e) => {
+                const next = e.currentTarget.value
+                form.setFieldValue('cron', next)
+                form.setFieldValue('preset', presetForExpr(next))
                 setCronError(null)
-              }
-            }}
-          />
+              }}
+            />
+          </Stack>
 
-          <TextInput
-            label="Cron expression"
-            description={cronDescribe(form.values.cron)}
-            error={cronError}
-            value={form.values.cron}
-            onChange={(e) => {
-              const next = e.currentTarget.value
-              form.setFieldValue('cron', next)
-              form.setFieldValue('preset', presetForExpr(next))
-              setCronError(null)
-            }}
-          />
+          <Divider label="Behavior" labelPosition="left" />
 
-          <Switch
-            label="Only run when the server is empty"
-            checked={form.values.only_when_empty}
-            onChange={(e) => form.setFieldValue('only_when_empty', e.currentTarget.checked)}
-          />
-          {form.values.kind === 'restart' && !form.values.only_when_empty && (
-            <Text size="xs" c="orange">
-              Valheim has no way to warn connected players before a restart.
-            </Text>
-          )}
+          <Stack gap="sm">
+            <Switch
+              label="Only run when the server is empty"
+              checked={form.values.only_when_empty}
+              onChange={(e) => form.setFieldValue('only_when_empty', e.currentTarget.checked)}
+            />
+            {form.values.kind === 'restart' && !form.values.only_when_empty && (
+              <Text size="xs" c="straw">
+                Valheim has no way to warn connected players before a restart.
+              </Text>
+            )}
 
-          <Switch
-            label="Enabled"
-            checked={form.values.enabled}
-            onChange={(e) => form.setFieldValue('enabled', e.currentTarget.checked)}
-          />
+            <Switch
+              label="Enabled"
+              checked={form.values.enabled}
+              onChange={(e) => form.setFieldValue('enabled', e.currentTarget.checked)}
+            />
 
-          <TextInput label="Note (optional)" maxLength={100} {...form.getInputProps('note')} />
+            <TextInput label="Note (optional)" maxLength={100} {...form.getInputProps('note')} />
+          </Stack>
 
-          <Group justify="flex-end" mt="sm">
+          <Group justify="flex-end">
             <Button variant="default" onClick={onClose}>
               Cancel
             </Button>
