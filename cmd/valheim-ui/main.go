@@ -4,6 +4,7 @@
 //	valheim-ui launch  --instance ID           exec the game server (used by systemd)
 //	valheim-ui admin   <create-user|reset-password|list-users> ...
 //	valheim-ui migrate [--config PATH]         apply database migrations and exit
+//	valheim-ui self-upgrade <--check|--apply|--rollback>  break-glass manager upgrade
 //	valheim-ui version
 package main
 
@@ -34,6 +35,8 @@ func main() {
 		err = runAdmin(args)
 	case "migrate":
 		err = runMigrate(args)
+	case "self-upgrade":
+		err = runSelfUpgrade(args)
 	case "version":
 		fmt.Printf("valheim-ui %s (%s)\n", version, commit)
 	case "help", "-h", "--help":
@@ -48,10 +51,11 @@ func main() {
 	}
 }
 
-const usage = `usage: valheim-ui <serve|launch|admin|migrate|version> [flags]
-  serve   [--config PATH]           run the web application (default)
-  launch  --instance ID             exec the game server (used by systemd)
-  admin   <subcommand> [flags]      user administration (see admin --help)
-  migrate [--config PATH]           apply database migrations and exit
-  version                           print version
+const usage = `usage: valheim-ui <serve|launch|admin|migrate|self-upgrade|version> [flags]
+  serve        [--config PATH]           run the web application (default)
+  launch       --instance ID             exec the game server (used by systemd)
+  admin        <subcommand> [flags]      user administration (see admin --help)
+  migrate      [--config PATH]           apply database migrations and exit
+  self-upgrade <--check|--apply|--rollback>  break-glass manager upgrade (see self-upgrade --help)
+  version                                print version
 `

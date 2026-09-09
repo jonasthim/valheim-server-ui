@@ -118,5 +118,24 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 	if err := wireMods(ctx, deps, inst, runner); err != nil {
 		return fmt.Errorf("mods: %w", err)
 	}
+
+	// WP-30: manager self-upgrade. Auto-upgrade only fires when no player is
+	// online on any instance.
+	playersEverywhere := func(ctx context.Context) (int, error) {
+		list, err := inst.List(ctx)
+		if err != nil {
+			return 0, err
+		}
+		total := 0
+		for _, in := range list {
+			if n, ok := playersMgr.PlayersOnline(ctx, in.ID); ok {
+				total += n
+			}
+		}
+		return total, nil
+	}
+	if err := wireSelfUpdate(ctx, deps, runner, playersEverywhere); err != nil {
+		return fmt.Errorf("self-update: %w", err)
+	}
 	return nil
 }

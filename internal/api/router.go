@@ -78,6 +78,7 @@ type Deps struct {
 	Mods         ModService          // WP-08
 	Thunderstore ThunderstoreService // WP-08
 	Steam        SteamService        // WP-04/05
+	SelfUpdate   SelfUpdateService   // WP-30
 }
 
 // NewRouter builds the full HTTP handler: /api/v1 plus the embedded SPA.

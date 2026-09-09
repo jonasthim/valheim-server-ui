@@ -123,6 +123,17 @@ type ThunderstoreService interface {
 	EnqueueRefresh(ctx context.Context, requestedBy string) (*domain.Job, error)
 }
 
+// WP-30
+type SelfUpdateService interface {
+	// Info returns the last known manager release status (never nil).
+	Info(ctx context.Context) *domain.AppUpdateInfo
+	// CheckNow queries GitHub for a newer release immediately.
+	CheckNow(ctx context.Context) (*domain.AppUpdateInfo, error)
+	// EnqueueUpgrade enqueues a self_upgrade job installing version (or the
+	// latest release when version == "") and restarting the manager.
+	EnqueueUpgrade(ctx context.Context, version, requestedBy string) (*domain.Job, error)
+}
+
 // MultipartFile is a helper shape for upload handlers.
 type MultipartFile struct {
 	Name string
