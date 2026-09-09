@@ -311,7 +311,7 @@ export function InstanceConfigForm({
         <Stack gap="lg">
           <SectionCard title="Server" description="Identity, in-game name and network port.">
             <Stack gap="sm">
-              <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} className={classes.inputRow}>
                 <TextInput
                   label="Display name"
                   description="Shown in this UI"
@@ -337,7 +337,7 @@ export function InstanceConfigForm({
                 required
                 {...form.getInputProps('config.name')}
               />
-              <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} className={classes.inputRow}>
                 <TextInput label="World name" required {...form.getInputProps('config.world')} />
                 <NumberInput
                   label="Port"
@@ -389,7 +389,7 @@ export function InstanceConfigForm({
                   ? `Rules left on "From preset" use the ${presetLabel(form.values.config.preset)} preset's values; pick a value to override just that rule.`
                   : 'Every rule runs at Normal unless you pick another value.'}
               </Text>
-              <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              <SimpleGrid cols={{ base: 1, sm: 3 }} className={classes.inputRow}>
                 {MODIFIER_FIELDS.map((f) => (
                   <Select
                     key={f.key}
@@ -415,7 +415,7 @@ export function InstanceConfigForm({
 
           <SectionCard title="Saves & backups" description="Save cadence and how many copies are kept.">
             <Stack gap="sm">
-              <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <SimpleGrid cols={{ base: 1, sm: 2 }} className={classes.inputRow}>
                 <NumberInput label="Save interval (sec)" min={60} {...form.getInputProps('config.save_interval_sec')} />
                 <NumberInput label="Game backups to keep (Valheim's own)" min={0} {...form.getInputProps('config.game_backups')} />
                 <NumberInput label="Short backup interval (sec)" min={60} {...form.getInputProps('config.game_backup_short_sec')} />
