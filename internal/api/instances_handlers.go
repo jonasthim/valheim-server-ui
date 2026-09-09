@@ -151,6 +151,17 @@ func (d *Deps) updateInstance(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cfg := cur.Config
+		// "modifiers" is a set, not a list of independent fields: an unset rule
+		// is simply absent from the object (the form never sends an empty
+		// value), so a sent object replaces the stored one wholesale. Without
+		// this, a rule could never be switched back to "not set".
+		var cfgProbe struct {
+			Modifiers json.RawMessage `json:"modifiers"`
+		}
+		if err := json.Unmarshal(probe.Config, &cfgProbe); err == nil &&
+			len(cfgProbe.Modifiers) > 0 && string(cfgProbe.Modifiers) != "null" {
+			cfg.Modifiers = domain.Modifiers{}
+		}
 		req.Config = &cfg
 	}
 	dec := json.NewDecoder(bytes.NewReader(body))

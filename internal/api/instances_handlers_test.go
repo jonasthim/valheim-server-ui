@@ -293,6 +293,59 @@ func TestInstances_PatchRequiresOperator(t *testing.T) {
 	}
 }
 
+func TestInstances_PatchModifiersObjectReplacesStoredSet(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+
+	// Set two rules.
+	rec := api.do(t, http.MethodPatch, "/api/v1/instances/main", "operator", map[string]any{
+		"config": map[string]any{"modifiers": map[string]any{"portals": "hard", "combat": "easy"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set modifiers: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	decode := func() domain.Instance {
+		var got struct {
+			Instance domain.Instance `json:"instance"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+			t.Fatal(err)
+		}
+		return got.Instance
+	}
+	got := decode()
+	if got.Config.Modifiers.Portals != "hard" || got.Config.Modifiers.Combat != "easy" {
+		t.Fatalf("modifiers after set = %+v", got.Config.Modifiers)
+	}
+
+	// Unset portals by sending the object without it (what the form does).
+	rec = api.do(t, http.MethodPatch, "/api/v1/instances/main", "operator", map[string]any{
+		"config": map[string]any{"modifiers": map[string]any{"combat": "easy"}},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unset portals: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got = decode()
+	if got.Config.Modifiers.Portals != "" {
+		t.Fatalf("portals still %q after being omitted from the modifiers object", got.Config.Modifiers.Portals)
+	}
+	if got.Config.Modifiers.Combat != "easy" {
+		t.Fatalf("combat = %q, want easy (was sent)", got.Config.Modifiers.Combat)
+	}
+
+	// A config patch that does not mention modifiers leaves them alone.
+	rec = api.do(t, http.MethodPatch, "/api/v1/instances/main", "operator", map[string]any{
+		"config": map[string]any{"public": false},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("patch without modifiers: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got = decode()
+	if got.Config.Modifiers.Combat != "easy" {
+		t.Fatalf("combat = %q after unrelated patch, want easy", got.Config.Modifiers.Combat)
+	}
+}
+
 func TestInstances_DeleteRefusesWhileRunning(t *testing.T) {
 	api := newTestAPI(t)
 	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
