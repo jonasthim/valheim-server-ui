@@ -19,14 +19,37 @@ troubleshooting. Configuration happens in the UI under
    provider's **UserInfo** endpoint and merges any claims the ID token lacks
    (groups, email, name are often only there). ID-token claims win on conflict;
    a UserInfo failure is not fatal.
-5. The identity `(issuer URL, sub)` is looked up. First login creates a local
-   user (if auto-create is on); later logins reuse it, even if the username or
-   email changes at the provider.
+5. The identity `(issuer URL, sub)` is looked up. If it is unknown but a local
+   account has the **same email** and the provider marks it verified, the SSO
+   identity is linked to that account (see "Merging with local accounts").
+   Otherwise the first login creates a local user (if auto-create is on).
+   Later logins reuse the linked account, even if the username or email changes
+   at the provider.
 6. Groups from the configured claim are mapped to a role (see below). A normal
    session cookie is issued and the browser lands on the page it started from.
 
 Local login and OIDC coexist. A user created by OIDC has no password
 (`has_password: false`) and cannot use the local form unless an admin sets one.
+
+## Merging with local accounts
+
+An existing local account and an SSO login for the same person become one
+account automatically:
+
+- On the first SSO login of an identity, the manager looks for a local user whose
+  email equals the token's `email` claim (case-insensitive).
+- The match is used only when the provider vouches for the address:
+  `email_verified` is `true`, or the provider does not send that claim at all
+  (Entra ID, for instance). An explicit `email_verified: false` never links; a
+  separate account is created instead, so an unverified address registered at
+  the IdP cannot take over a local account.
+- The link keeps everything on the local account: username, password (local
+  login keeps working), role and history. With **Sync roles** on, the role is
+  re-evaluated from the groups on that login like any other SSO login.
+- The audit log records the merge as `auth.oidc.link`.
+
+If you use several accounts with the same email on purpose, give the local one a
+different address before enabling SSO.
 
 ## Prerequisites
 

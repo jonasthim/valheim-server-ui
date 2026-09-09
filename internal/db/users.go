@@ -268,6 +268,25 @@ func (u *Users) FindByIdentity(ctx context.Context, provider, subject string) (*
 	return u.Get(ctx, userID)
 }
 
+// FindByEmail resolves a user by email, case-insensitively. When several
+// users share the address (possible: email is not unique in the schema), the
+// oldest wins. Returns not_found for an empty email.
+func (u *Users) FindByEmail(ctx context.Context, email string) (*domain.User, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if email == "" {
+		return nil, domain.NotFound("user")
+	}
+	var userID int64
+	err := u.DB.QueryRowContext(ctx, `SELECT id FROM users WHERE lower(email) = ? ORDER BY id LIMIT 1`, email).Scan(&userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, domain.NotFound("user")
+		}
+		return nil, fmt.Errorf("find user by email: %w", err)
+	}
+	return u.Get(ctx, userID)
+}
+
 // AddIdentity links an (issuer, subject) pair to a user.
 func (u *Users) AddIdentity(ctx context.Context, userID int64, provider, subject string) error {
 	_, err := u.DB.ExecContext(ctx,

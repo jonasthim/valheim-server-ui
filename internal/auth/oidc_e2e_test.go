@@ -453,3 +453,71 @@ func TestOIDCLoginIDTokenClaimsTakePrecedence(t *testing.T) {
 		t.Fatalf("expected id_token groups to win, got role %v", usr.Role)
 	}
 }
+
+// A local account with the same verified email is merged: the SSO identity is
+// linked, no second user is created, and the password stays usable.
+func TestOIDCLoginMergesWithLocalUserByVerifiedEmail(t *testing.T) {
+	provider := newFakeOIDCProvider(t, map[string]any{
+		"email":              "Jonas@Example.com",
+		"email_verified":     true,
+		"preferred_username": "jonas.sso",
+		"groups":             []string{"admins"},
+	})
+	svc, appServer := newOIDCTestSetup(t, provider, map[string]domain.Role{"admins": domain.RoleAdmin}, "viewer", true, false)
+	ctx := context.Background()
+	local, err := svc.Create(ctx, "jonas", "a-strong-local-password", "Jonas", "jonas@example.com", domain.RoleOperator)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result := doOIDCLogin(t, appServer, "/"); result.cookie == nil {
+		t.Fatalf("expected a session; final status %d", result.statusCode)
+	}
+	users, err := svc.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(users) != 1 {
+		t.Fatalf("expected the local user to be reused, got %d users", len(users))
+	}
+	merged, err := svc.Get(ctx, local.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(merged.Identities) != 1 || merged.Identities[0].Subject != "user-123" {
+		t.Fatalf("identity not linked: %+v", merged.Identities)
+	}
+	if !merged.HasPassword || merged.Role != domain.RoleOperator {
+		t.Fatalf("merge must keep password and role when sync_roles is off: %+v", merged)
+	}
+	if _, err := svc.users.GetByUsername(ctx, "jonas.sso"); err == nil {
+		t.Fatalf("no separate SSO user must be created")
+	}
+}
+
+// email_verified=false must never link to a local account.
+func TestOIDCLoginDoesNotMergeOnUnverifiedEmail(t *testing.T) {
+	provider := newFakeOIDCProvider(t, map[string]any{
+		"email":              "victim@example.com",
+		"email_verified":     false,
+		"preferred_username": "attacker",
+	})
+	svc, appServer := newOIDCTestSetup(t, provider, map[string]domain.Role{}, "viewer", true, true)
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "victim", "a-strong-local-password", "Victim", "victim@example.com", domain.RoleAdmin); err != nil {
+		t.Fatal(err)
+	}
+	if result := doOIDCLogin(t, appServer, "/"); result.cookie == nil {
+		t.Fatalf("expected a session for the new separate user; final status %d", result.statusCode)
+	}
+	victim, err := svc.users.GetByUsername(ctx, "victim")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(victim.Identities) != 0 {
+		t.Fatalf("unverified email must not link: %+v", victim.Identities)
+	}
+	if _, err := svc.users.GetByUsername(ctx, "attacker"); err != nil {
+		t.Fatalf("expected a separate auto-created user: %v", err)
+	}
+}

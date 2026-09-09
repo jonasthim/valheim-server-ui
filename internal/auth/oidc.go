@@ -229,11 +229,14 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 	// failure is not fatal since the ID token alone was verified.
 	s.mergeUserInfo(ctx, rt, tok, claims)
 
-	usr, err := s.resolveOIDCUser(ctx, rt.settings, idToken.Subject, claims)
+	usr, linked, err := s.resolveOIDCUser(ctx, rt.settings, idToken.Subject, claims)
 	if err != nil {
 		s.log.Warn("oidc login rejected", "err", err)
 		fail(domain.AsError(err).Code)
 		return
+	}
+	if linked && s.auditor != nil {
+		s.auditor.Record(r, "auth.oidc.link", "", usr.Username, map[string]any{"issuer": rt.settings.IssuerURL, "method": "email"})
 	}
 	if err := s.createSession(ctx, w, r, usr); err != nil {
 		fail(domain.CodeInternal)
@@ -262,51 +265,71 @@ func TestOIDCDiscovery(ctx context.Context, issuerURL string) (ok bool, issuer, 
 
 // resolveOIDCUser maps a verified token to a local user: link an existing
 // identity, auto-create on first login, apply/sync role mapping.
-func (s *Service) resolveOIDCUser(ctx context.Context, settings domain.OIDCSettings, subject string, claims map[string]any) (*domain.User, error) {
+func (s *Service) resolveOIDCUser(ctx context.Context, settings domain.OIDCSettings, subject string, claims map[string]any) (usr *domain.User, linked bool, err error) {
 	role, allowed := mapRole(settings.RoleMapping, extractGroups(claims[groupsClaimOrDefault(settings)]), settings.DefaultRole)
 	if !allowed {
-		return nil, domain.E(domain.CodeForbidden, "no role mapped for this account")
+		return nil, false, domain.E(domain.CodeForbidden, "no role mapped for this account")
 	}
 
-	usr, err := s.users.FindByIdentity(ctx, settings.IssuerURL, subject)
+	usr, err = s.users.FindByIdentity(ctx, settings.IssuerURL, subject)
 	if err != nil {
 		if domain.AsError(err).Code != domain.CodeNotFound {
-			return nil, err
+			return nil, false, err
 		}
 		usr = nil
 	}
 
 	if usr == nil {
+		// Merge with an existing local account that has the same (verified)
+		// email: the SSO identity is linked to it, the password and role stay.
+		if existing := s.matchByVerifiedEmail(ctx, claims); existing != nil {
+			if existing.Disabled {
+				return nil, false, domain.E(domain.CodeAccountDisabled, "account disabled")
+			}
+			if err := s.users.AddIdentity(ctx, existing.ID, settings.IssuerURL, subject); err != nil {
+				return nil, false, err
+			}
+			s.log.Info("oidc: linked identity to existing account by email", "user", existing.Username)
+			linked = true
+			usr = existing
+			if usr.Identities == nil {
+				usr.Identities = []domain.Identity{}
+			}
+			usr.Identities = append(usr.Identities, domain.Identity{Provider: settings.IssuerURL, Subject: subject})
+		}
+	}
+
+	if usr == nil {
 		if !settings.AutoCreateUsers {
-			return nil, domain.E(domain.CodeForbidden, "account does not exist and auto-creation is disabled")
+			return nil, false, domain.E(domain.CodeForbidden, "account does not exist and auto-creation is disabled")
 		}
 		uname, err := s.uniqueUsername(ctx, candidateUsername(claims))
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		displayName, _ := claims["name"].(string)
 		email, _ := claims["email"].(string)
 		created, err := s.users.Create(ctx, db.NewUser{Username: uname, DisplayName: displayName, Email: email, Role: role})
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if err := s.users.AddIdentity(ctx, created.ID, settings.IssuerURL, subject); err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		return created, nil
+		return created, false, nil
 	}
 
 	if usr.Disabled {
-		return nil, domain.E(domain.CodeAccountDisabled, "account disabled")
+		return nil, false, domain.E(domain.CodeAccountDisabled, "account disabled")
 	}
 	if settings.SyncRoles && role != usr.Role {
 		updated, err := s.users.Update(ctx, usr.ID, db.UserUpdate{Role: &role})
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		usr = updated
 	}
-	return usr, nil
+	return usr, linked, nil
 }
 
 func groupsClaimOrDefault(settings domain.OIDCSettings) string {
@@ -454,4 +477,35 @@ func (s *Service) mergeUserInfo(ctx context.Context, rt *oidcRuntime, tok *oauth
 			claims[k] = v
 		}
 	}
+}
+
+// matchByVerifiedEmail returns a local user whose email equals the token's
+// email claim, but only when the provider vouches for the address:
+// email_verified must be true or absent. An explicit false never links, so an
+// unverified address registered at the IdP cannot take over a local account.
+func (s *Service) matchByVerifiedEmail(ctx context.Context, claims map[string]any) *domain.User {
+	email, _ := claims["email"].(string)
+	email = strings.TrimSpace(email)
+	if email == "" || !strings.Contains(email, "@") {
+		return nil
+	}
+	if v, present := claims["email_verified"]; present {
+		switch t := v.(type) {
+		case bool:
+			if !t {
+				return nil
+			}
+		case string:
+			if !strings.EqualFold(t, "true") {
+				return nil
+			}
+		default:
+			return nil
+		}
+	}
+	usr, err := s.users.FindByEmail(ctx, email)
+	if err != nil {
+		return nil
+	}
+	return usr
 }
