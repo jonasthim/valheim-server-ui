@@ -34,7 +34,7 @@ export function InstancePage() {
           ))}
         </Tabs.List>
         <Tabs.Panel value="overview" pt="md"><OverviewTab id={id} /></Tabs.Panel>
-        <Tabs.Panel value="console" pt="md"><ConsoleTab id={id} /></Tabs.Panel>
+        <Tabs.Panel value="console" pt="md"><ConsoleTab key={id} id={id} /></Tabs.Panel>
         <Tabs.Panel value="config" pt="md"><ConfigTab id={id} /></Tabs.Panel>
         <Tabs.Panel value="players" pt="md"><PlayersTab id={id} /></Tabs.Panel>
         <Tabs.Panel value="worlds" pt="md"><WorldsTab id={id} /></Tabs.Panel>
