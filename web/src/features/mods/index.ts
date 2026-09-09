@@ -4,6 +4,7 @@ export { InstalledModsTable } from './InstalledModsTable'
 export { UploadModCard } from './UploadModCard'
 export { ThunderstoreBrowser } from './ThunderstoreBrowser'
 export { ConfigEditor } from './ConfigEditor'
+export { CheckModUpdatesButton } from './CheckModUpdatesButton'
 export {
   useModsOverview,
   useInstallBepinex,

@@ -1,12 +1,13 @@
 // Mods tab: BepInEx loader status, installed mods, manual upload, the
 // Thunderstore browser modal, and the BepInEx config editor. Owned by WP-13
 // (docs/WORKPLAN.md); kept thin, composing web/src/features/mods/*.
-import { Button, Stack, Text } from '@mantine/core'
+import { Button, Group, Stack, Text } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { IconWorldSearch } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import {
   BepInExCard,
+  CheckModUpdatesButton,
   ConfigEditor,
   InstalledModsTable,
   ThunderstoreBrowser,
@@ -29,9 +30,12 @@ export function ModsTab({ id }: { id: string }) {
           title="Thunderstore"
           description="Search the Valheim mod catalogue and install mods with their dependencies."
           actions={
-            <Button leftSection={<IconWorldSearch size={16} />} onClick={browserHandlers.open}>
-              Browse Thunderstore
-            </Button>
+            <Group gap="xs">
+              <CheckModUpdatesButton id={id} />
+              <Button leftSection={<IconWorldSearch size={16} />} onClick={browserHandlers.open}>
+                Browse Thunderstore
+              </Button>
+            </Group>
           }
         >
           <Text size="sm" c="dimmed">
