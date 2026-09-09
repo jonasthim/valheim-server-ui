@@ -172,6 +172,17 @@ export function SettingsPage() {
               )}
 
               <Divider label="Single sign-on (OIDC)" labelPosition="left" />
+              <Text size="sm" c="dimmed">
+                Setup guide with provider recipes (Authelia, Keycloak, Authentik, Pocket ID, Google, Entra ID) and
+                troubleshooting:{' '}
+                <Anchor
+                  href="https://github.com/jonasthim/valheim-server-ui/blob/main/docs/OIDC.md"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  docs/OIDC.md
+                </Anchor>
+              </Text>
 
               <Switch label="Enabled" {...form.getInputProps('auth.oidc.enabled', { type: 'checkbox' })} />
 

@@ -223,6 +223,11 @@ func (s *Service) OIDCCallback(w http.ResponseWriter, r *http.Request) {
 		fail(domain.CodeOIDCError)
 		return
 	}
+	// Many providers (Authelia, Google, Authentik and Keycloak by default) put
+	// groups, email or name only in the UserInfo response, not in the ID token.
+	// Merge UserInfo claims for keys the ID token does not carry; a UserInfo
+	// failure is not fatal since the ID token alone was verified.
+	s.mergeUserInfo(ctx, rt, tok, claims)
 
 	usr, err := s.resolveOIDCUser(ctx, rt.settings, idToken.Subject, claims)
 	if err != nil {
@@ -414,4 +419,39 @@ func (s *Service) uniqueUsername(ctx context.Context, base string) (string, erro
 		candidate = trimmed + suffix
 	}
 	return "", domain.E(domain.CodeConflict, "could not generate a unique username")
+}
+
+// mergeUserInfo fetches the provider's UserInfo endpoint (when discovery
+// advertises one) and adds claims missing from the ID token. The subject
+// must match; otherwise the response is ignored.
+func (s *Service) mergeUserInfo(ctx context.Context, rt *oidcRuntime, tok *oauth2.Token, claims map[string]any) {
+	if rt == nil || rt.provider == nil || tok == nil {
+		return
+	}
+	var ep struct {
+		UserInfoEndpoint string `json:"userinfo_endpoint"`
+	}
+	if err := rt.provider.Claims(&ep); err != nil || ep.UserInfoEndpoint == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	info, err := rt.provider.UserInfo(ctx, oauth2.StaticTokenSource(tok))
+	if err != nil {
+		s.log.Debug("oidc: userinfo unavailable, using id_token claims only", "err", err)
+		return
+	}
+	if sub, _ := claims["sub"].(string); sub != "" && info.Subject != "" && sub != info.Subject {
+		s.log.Warn("oidc: userinfo subject mismatch ignored", "id_token_sub", sub, "userinfo_sub", info.Subject)
+		return
+	}
+	var extra map[string]any
+	if err := info.Claims(&extra); err != nil {
+		return
+	}
+	for k, v := range extra {
+		if _, exists := claims[k]; !exists {
+			claims[k] = v
+		}
+	}
 }

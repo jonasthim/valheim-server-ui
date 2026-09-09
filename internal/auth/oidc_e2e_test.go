@@ -33,6 +33,7 @@ type fakeOIDCProvider struct {
 	mu        sync.Mutex
 	authCodes map[string]authCodeState // code -> state captured at /authorize
 	extra     map[string]any           // extra id_token claims (e.g. "groups")
+	userinfo  map[string]any           // claims served by /userinfo (nil = no endpoint)
 }
 
 type authCodeState struct {
@@ -52,6 +53,7 @@ func newFakeOIDCProvider(t *testing.T, extraClaims map[string]any) *fakeOIDCProv
 	mux.HandleFunc("/jwks", p.jwks)
 	mux.HandleFunc("/authorize", p.authorize)
 	mux.HandleFunc("/token", p.token)
+	mux.HandleFunc("/userinfo", p.userInfo)
 	p.Server = httptest.NewServer(mux)
 	t.Cleanup(p.Server.Close)
 	return p
@@ -63,6 +65,7 @@ func (p *fakeOIDCProvider) discovery(w http.ResponseWriter, r *http.Request) {
 		"authorization_endpoint":                p.Server.URL + "/authorize",
 		"token_endpoint":                        p.Server.URL + "/token",
 		"jwks_uri":                              p.Server.URL + "/jwks",
+		"userinfo_endpoint":                     p.Server.URL + "/userinfo",
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"RS256"},
@@ -129,6 +132,26 @@ func (p *fakeOIDCProvider) token(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (p *fakeOIDCProvider) userInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") != "Bearer fake-access-token" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	p.mu.Lock()
+	ui := p.userinfo
+	p.mu.Unlock()
+	if ui == nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	body := map[string]any{"sub": "user-123"}
+	for k, v := range ui {
+		body[k] = v
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func (p *fakeOIDCProvider) signClaims(claims map[string]any) string {
@@ -385,5 +408,48 @@ func TestOIDCCallbackRejectsBadState(t *testing.T) {
 	loc := rec.Header().Get("Location")
 	if loc != "/login?error=oidc_error" {
 		t.Fatalf("expected redirect to /login?error=oidc_error, got %q", loc)
+	}
+}
+
+// Groups (and profile claims) delivered only through UserInfo must still map
+// to a role: Authelia, Google and default Keycloak/Authentik configurations do
+// not put them in the ID token.
+func TestOIDCLoginUsesUserInfoClaimsWhenIDTokenLacksThem(t *testing.T) {
+	provider := newFakeOIDCProvider(t, map[string]any{})
+	provider.userinfo = map[string]any{
+		"groups":             []string{"valheim-admins"},
+		"preferred_username": "bob",
+		"email":              "bob@example.com",
+		"name":               "Bob",
+	}
+	svc, appServer := newOIDCTestSetup(t, provider, map[string]domain.Role{"valheim-admins": domain.RoleAdmin}, "deny", true, true)
+
+	result := doOIDCLogin(t, appServer, "/")
+	if result.cookie == nil {
+		t.Fatalf("expected a session cookie; final status %d", result.statusCode)
+	}
+	usr, err := svc.users.GetByUsername(context.Background(), "bob")
+	if err != nil {
+		t.Fatalf("expected user 'bob' created from userinfo claims: %v", err)
+	}
+	if usr.Role != domain.RoleAdmin || usr.Email != "bob@example.com" || usr.DisplayName != "Bob" {
+		t.Fatalf("userinfo claims not applied: %+v", usr)
+	}
+}
+
+// ID token claims win over UserInfo when both are present.
+func TestOIDCLoginIDTokenClaimsTakePrecedence(t *testing.T) {
+	provider := newFakeOIDCProvider(t, map[string]any{"groups": []string{"ops"}, "preferred_username": "carol"})
+	provider.userinfo = map[string]any{"groups": []string{"admins"}}
+	svc, appServer := newOIDCTestSetup(t, provider, map[string]domain.Role{"admins": domain.RoleAdmin, "ops": domain.RoleOperator}, "deny", true, true)
+	if result := doOIDCLogin(t, appServer, "/"); result.cookie == nil {
+		t.Fatalf("expected a session cookie; final status %d", result.statusCode)
+	}
+	usr, err := svc.users.GetByUsername(context.Background(), "carol")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usr.Role != domain.RoleOperator {
+		t.Fatalf("expected id_token groups to win, got role %v", usr.Role)
 	}
 }

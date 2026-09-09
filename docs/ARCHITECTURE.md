@@ -383,13 +383,16 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
   `Origin`/`Referer` matching `base_url` when present. Cookies are SameSite=Lax.
 - **OIDC**: one provider configured by an admin in Settings (issuer, client id/secret,
   scopes default `openid profile email groups`, provider display name). Auth code
-  flow with PKCE, state and nonce in a short-lived cookie. Identity key is
-  `(issuer, sub)`. On first login create a user (`auto_create_users`) with role from
+  flow with PKCE, state and nonce in a short-lived cookie. Claims come from the
+  verified ID token, supplemented by UserInfo for keys the token lacks (ID token
+  wins; UserInfo ignored on subject mismatch). Identity key is `(issuer, sub)`.
+  On first login create a user (`auto_create_users`) with role from
   `role_mapping` (groups claim → role, highest wins) else `default_role`; if
   `sync_roles` is on, re-evaluate on every login. Username = `preferred_username`
   or email local part, de-duplicated with a numeric suffix. `local_login_enabled`
   can be switched off once OIDC works; the CLI `valheim-ui admin reset-password`
   is the break-glass path and the last admin cannot be deleted or demoted.
+  Operator guide with provider recipes: `docs/OIDC.md`.
 - **First run**: while `users` is empty the SPA shows `/setup`, which calls
   `POST /api/v1/auth/setup` to create the first admin. The endpoint 404s afterwards.
 - **Audit**: every mutating endpoint writes an `audit_log` row

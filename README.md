@@ -153,13 +153,16 @@ preset such as "Daily at 04:00". Valheim has no way to warn players, so keep
 sign-on, Settings → Authentication → OIDC: issuer URL, client id and secret, map
 your groups to roles, press "Test connection", save. The redirect URI to register
 at the provider is shown in the form. Keep one local admin until SSO is proven.
+Provider recipes and troubleshooting: [docs/OIDC.md](docs/OIDC.md).
 
 **Run several servers.** Create another instance with a different port range
 (each uses three consecutive UDP ports). Each instance has its own game install,
 so mod sets can differ.
 
-More operational detail, including upgrades, host-level backups, OIDC examples for
-Authelia and Keycloak, and troubleshooting, is in [docs/RUNBOOK.md](docs/RUNBOOK.md).
+More operational detail, including upgrades, host-level backups and
+troubleshooting, is in [docs/RUNBOOK.md](docs/RUNBOOK.md); single sign-on setup
+for Authelia, Keycloak, Authentik, Pocket ID, Google and Entra ID is in
+[docs/OIDC.md](docs/OIDC.md).
 
 ## Roles
 

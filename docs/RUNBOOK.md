@@ -169,32 +169,16 @@ sudo -u valheim sqlite3 /var/lib/valheim/manager.db ".backup /tmp/manager-backup
 World backups made by the UI are plain zips under `instances/<id>/backups/` and
 are safe to copy off-host at any time.
 
-## 8. OIDC examples
+## 8. Single sign-on (OIDC)
 
-Register a confidential client with redirect URI
-`https://<base_url>/api/v1/auth/oidc/callback` (shown read-only in Settings) and
-scopes `openid profile email groups`.
+Full guide with settings reference, provider recipes (Authelia, Keycloak,
+Authentik, Pocket ID, Google, Entra ID) and troubleshooting: [OIDC.md](OIDC.md).
 
-Authelia (`configuration.yml`):
-
-```yaml
-identity_providers:
-  oidc:
-    clients:
-      - client_id: valheim-ui
-        client_secret: '$pbkdf2-sha512$...'
-        redirect_uris: [https://valheim.example.com/api/v1/auth/oidc/callback]
-        scopes: [openid, profile, email, groups]
-        authorization_policy: two_factor
-```
-
-Keycloak: create a client (Standard flow, Client authentication on), add a
-"Group Membership" mapper named `groups` (full path off) to the client scope, and
-map the group names to roles in Settings → OIDC → Role mapping. Set the default
-role to `deny` if only mapped groups may log in.
-
-Keep at least one local admin until SSO is proven; `local_login_enabled` can be
-switched off afterwards, and `admin reset-password` remains the break-glass path.
+Short version: register a confidential client with redirect URI
+`https://<base_url>/api/v1/auth/oidc/callback` and scopes
+`openid profile email groups`, fill in Settings → Authentication → OIDC, press
+Test connection, map your groups to roles, keep one local admin until SSO is
+proven.
 
 ## 9. Troubleshooting
 
