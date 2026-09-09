@@ -4,10 +4,12 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/jonasthim/valheim-server-ui/internal/config"
@@ -252,5 +254,112 @@ func TestPreUpdateBackup(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].Kind != domain.BackupPreUpdate {
 		t.Fatalf("expected one pre_update backup, got %+v", list)
+	}
+}
+
+// worldGen describes one save generation to fabricate inside a Valheim 1.0
+// world directory: _main.<N>.fwl2/.db2/.chunks plus, when committed, the
+// _main.<N>.ok marker the game writes last.
+type worldGen struct {
+	N         int
+	Committed bool
+}
+
+// writeWorldDir fabricates a Valheim 1.0 (l-1.0.7+) world directory
+// worlds_local/<world>/ with the given generations and two chunk files per
+// generation, and returns the directory path. File contents are distinct
+// per name so round-trip tests can compare bytes.
+func (e *testEnv) writeWorldDir(id, world string, gens ...worldGen) string {
+	e.t.Helper()
+	dir := filepath.Join(e.inst.Paths(id).WorldsDir(), world)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		e.t.Fatalf("mkdir world dir: %v", err)
+	}
+	for _, g := range gens {
+		names := []string{
+			fmt.Sprintf("_main.%d.fwl2", g.N),
+			fmt.Sprintf("_main.%d.db2", g.N),
+			fmt.Sprintf("_main.%d.chunks", g.N),
+			fmt.Sprintf("1e_1e__1_%d.chunk", g.N),
+			fmt.Sprintf("20_20__1_%d.chunk", g.N),
+		}
+		if g.Committed {
+			names = append(names, fmt.Sprintf("_main.%d.ok", g.N))
+		}
+		for _, n := range names {
+			if err := os.WriteFile(filepath.Join(dir, n), []byte(world+"/"+n), 0o640); err != nil {
+				e.t.Fatalf("write %s: %v", n, err)
+			}
+		}
+	}
+	return dir
+}
+
+// dirFileNames lists the plain file names directly inside dir, sorted.
+func dirFileNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read dir %s: %v", dir, err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ---------------------------------------------------------------- Create, Valheim 1.0 directory layout
+
+func TestCreate_DirectoryLayout(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	dir := env.writeWorldDir("main", "Dedicated", worldGen{N: 3, Committed: true})
+
+	b, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	zipPath := filepath.Join(env.inst.Paths("main").Backups, b.Filename)
+	names := zipEntryNames(t, zipPath)
+	for _, n := range dirFileNames(t, dir) {
+		if !containsString(names, "worlds_local/Dedicated/"+n) {
+			t.Errorf("backup is missing %s; entries: %v", n, names)
+		}
+	}
+	m := readZipManifest(t, zipPath)
+	if m.World != "Dedicated" || !containsString(m.Files, "worlds_local/Dedicated/_main.3.db2") {
+		t.Errorf("unexpected manifest: %+v", m)
+	}
+}
+
+func TestCreate_DirectoryLayout_UncommittedOnly_IsValidationError(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.writeWorldDir("main", "Dedicated", worldGen{N: 1, Committed: false})
+
+	_, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "")
+	de := requireDomainError(t, err)
+	if de.Code != domain.CodeValidationFailed {
+		t.Errorf("expected validation_failed, got %v", de.Code)
+	}
+}
+
+func TestCreate_MixedLayout_KeepsLegacyFilesToo(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.writeWorldFiles("main", "Dedicated", []byte("legacy-db"), []byte("legacy-fwl"))
+	env.writeWorldDir("main", "Dedicated", worldGen{N: 1, Committed: true})
+
+	b, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	names := zipEntryNames(t, filepath.Join(env.inst.Paths("main").Backups, b.Filename))
+	for _, want := range []string{"worlds_local/Dedicated.db", "worlds_local/Dedicated.fwl", "worlds_local/Dedicated/_main.1.db2", "worlds_local/Dedicated/_main.1.ok"} {
+		if !containsString(names, want) {
+			t.Errorf("backup is missing %s; entries: %v", want, names)
+		}
 	}
 }

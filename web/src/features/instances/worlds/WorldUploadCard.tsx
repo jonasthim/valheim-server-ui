@@ -59,7 +59,8 @@ export function WorldUploadCard({ id }: { id: string }) {
             </Dropzone.Idle>
             <div>
               <Text size="sm" inline>
-                Drag a <code>.db</code> + <code>.fwl</code> pair, or a single <code>.zip</code> containing them
+                Drag a <code>.zip</code> of a world folder (Valheim 1.0), or a legacy <code>.db</code> +{' '}
+                <code>.fwl</code> pair
               </Text>
               <Text size="xs" c="dimmed" inline mt={4}>
                 Click to browse files

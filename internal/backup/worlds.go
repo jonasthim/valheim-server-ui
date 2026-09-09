@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 	"github.com/jonasthim/valheim-server-ui/internal/jobs"
@@ -25,72 +24,21 @@ func validWorldName(name string) bool {
 
 // ---------------------------------------------------------------- list
 
-// ListWorlds scans the instance's worlds_local directory for *.fwl/*.db
-// pairs.
+// ListWorlds scans the instance's worlds_local directory for worlds in
+// either save layout (see worldfiles.go).
 func (s *Service) ListWorlds(ctx context.Context, instanceID string) ([]domain.World, error) {
 	inst, err := s.inst.Get(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
 
-	dir := s.inst.Paths(instanceID).WorldsDir()
-	entries, err := os.ReadDir(dir)
+	found, err := scanWorlds(s.inst.Paths(instanceID).WorldsDir())
 	if err != nil {
-		if os.IsNotExist(err) {
-			return []domain.World{}, nil
-		}
-		return nil, domain.Wrap(domain.CodeInternal, "read worlds directory", err)
+		return nil, domain.Wrap(domain.CodeInternal, "scan worlds", err)
 	}
-
-	type acc struct {
-		hasDB, hasFWL bool
-		size          int64
-		modified      time.Time
-	}
-	byName := map[string]*acc{}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		ext := strings.ToLower(filepath.Ext(name))
-		if ext != ".db" && ext != ".fwl" {
-			continue // .old siblings deliberately excluded from the world list
-		}
-		stem := strings.TrimSuffix(name, filepath.Ext(name))
-		if isValheimBackupStem(stem) {
-			continue // Valheim's own rolling copies (-backups), not selectable worlds
-		}
-		fi, err := e.Info()
-		if err != nil {
-			continue
-		}
-		a := byName[stem]
-		if a == nil {
-			a = &acc{}
-			byName[stem] = a
-		}
-		if ext == ".db" {
-			a.hasDB = true
-		} else {
-			a.hasFWL = true
-		}
-		a.size += fi.Size()
-		if fi.ModTime().After(a.modified) {
-			a.modified = fi.ModTime()
-		}
-	}
-
-	out := make([]domain.World, 0, len(byName))
-	for name, a := range byName {
-		out = append(out, domain.World{
-			Name:       name,
-			Active:     name == inst.Config.World,
-			SizeBytes:  a.size,
-			ModifiedAt: a.modified.UTC(),
-			HasDB:      a.hasDB,
-			HasFWL:     a.hasFWL,
-		})
+	out := make([]domain.World, 0, len(found))
+	for name, w := range found {
+		out = append(out, w.toDomain(name == inst.Config.World))
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -98,11 +46,29 @@ func (s *Service) ListWorlds(ctx context.Context, instanceID string) ([]domain.W
 
 // ---------------------------------------------------------------- import
 
-// importFile is one uploaded part already staged to a temp file, so it
-// survives past the HTTP handler returning (its multipart reader would not).
-type importFile struct {
-	origName string
-	tmpPath  string
+// stagedWorld is an uploaded world already staged to temp files, so it
+// survives past the HTTP handler returning (its multipart readers would
+// not). Exactly one of the two shapes is populated: DB+FWL for a legacy
+// pair, DirFiles (basename -> temp path) for a Valheim 1.0 directory.
+type stagedWorld struct {
+	Name     string
+	DB, FWL  string
+	DirFiles map[string]string
+}
+
+// tmpPaths lists every temp file the staged world owns.
+func (w stagedWorld) tmpPaths() []string {
+	out := make([]string, 0, 2+len(w.DirFiles))
+	if w.DB != "" {
+		out = append(out, w.DB)
+	}
+	if w.FWL != "" {
+		out = append(out, w.FWL)
+	}
+	for _, p := range w.DirFiles {
+		out = append(out, p)
+	}
+	return out
 }
 
 // EnqueueWorldImport validates and stages the uploaded file(s) synchronously
@@ -165,30 +131,31 @@ func (s *Service) EnqueueWorldImport(ctx context.Context, instanceID string, fil
 		inputs = append(inputs, stagedInput{origName: base, tmpPath: tmp.Name()})
 	}
 
-	// Normalise to a .db+.fwl pair up front: for a zip, extract (and fully
-	// validate) it right now so a bad archive is rejected synchronously
-	// instead of only failing the job later.
-	var staged []importFile
+	// Normalise up front: for a zip, extract (and fully validate) it right
+	// now so a bad archive is rejected synchronously instead of only failing
+	// the job later.
+	var staged stagedWorld
 	if asZip {
-		world, dbPath, fwlPath, err := extractWorldZipToStaging(inputs[0].tmpPath, stagingDir)
+		extracted, err := extractWorldZipToStaging(inputs[0].tmpPath, stagingDir)
 		_ = os.Remove(inputs[0].tmpPath)
 		if err != nil {
 			return nil, err
 		}
-		staged = []importFile{
-			{origName: world + ".db", tmpPath: dbPath},
-			{origName: world + ".fwl", tmpPath: fwlPath},
-		}
+		staged = extracted
 	} else {
-		staged = make([]importFile, 0, len(inputs))
 		for _, in := range inputs {
-			staged = append(staged, importFile(in))
+			staged.Name = strings.TrimSuffix(in.origName, filepath.Ext(in.origName))
+			if strings.EqualFold(filepath.Ext(in.origName), ".db") {
+				staged.DB = in.tmpPath
+			} else {
+				staged.FWL = in.tmpPath
+			}
 		}
 	}
 
 	cleanup := func() {
-		for _, sf := range staged {
-			_ = os.Remove(sf.tmpPath)
+		for _, p := range staged.tmpPaths() {
+			_ = os.Remove(p)
 		}
 	}
 	job, err := s.runner.Enqueue(ctx, jobs.Spec{
@@ -240,36 +207,35 @@ func validateWorldFilePair(files map[string]io.Reader) error {
 	return nil
 }
 
-func worldFilesExist(worldsDir, world string) bool {
-	return fileExists(filepath.Join(worldsDir, world+".db")) || fileExists(filepath.Join(worldsDir, world+".fwl"))
+func worldFilesExist(worldsDir, world string) (bool, error) {
+	save, err := scanWorld(worldsDir, world)
+	if err != nil {
+		return false, domain.Wrap(domain.CodeInternal, "scan worlds", err)
+	}
+	return save.exists(), nil
 }
 
-// runWorldImport writes staged -- always a normalised .db+.fwl pair by the
-// time EnqueueWorldImport hands it off, whether the original upload was a
-// pair or a zip -- into the instance's worlds_local directory.
-func (s *Service) runWorldImport(ctx context.Context, instanceID string, staged []importFile, overwrite bool, log *jobs.Logger) error {
+// runWorldImport writes the staged world -- a legacy .db+.fwl pair or a
+// Valheim 1.0 directory, normalised by EnqueueWorldImport whether the upload
+// was loose files or a zip -- into the instance's worlds_local directory.
+// With overwrite it replaces whatever exists for that name in either
+// layout, since Valheim would otherwise keep loading the newer of the two.
+func (s *Service) runWorldImport(ctx context.Context, instanceID string, staged stagedWorld, overwrite bool, log *jobs.Logger) error {
 	inst, err := s.inst.Get(ctx, instanceID)
 	if err != nil {
 		return err
 	}
 	worldsDir := s.inst.Paths(instanceID).WorldsDir()
-
-	var world, dbSrc, fwlSrc string
-	for _, sf := range staged {
-		ext := strings.ToLower(filepath.Ext(sf.origName))
-		stem := strings.TrimSuffix(sf.origName, filepath.Ext(sf.origName))
-		world = stem
-		if ext == ".db" {
-			dbSrc = sf.tmpPath
-		} else {
-			fwlSrc = sf.tmpPath
-		}
-	}
+	world := staged.Name
 	if world == "" || !validWorldName(world) {
 		return domain.Validation([]domain.FieldError{{Field: "files", Message: "could not determine a valid world name"}})
 	}
 
-	if worldFilesExist(worldsDir, world) && !overwrite {
+	exists, err := worldFilesExist(worldsDir, world)
+	if err != nil {
+		return err
+	}
+	if exists && !overwrite {
 		return domain.Ef(domain.CodeConflict, "world %q already exists", world)
 	}
 	isActive := world == inst.Config.World
@@ -280,11 +246,28 @@ func (s *Service) runWorldImport(ctx context.Context, instanceID string, staged 
 	if err := os.MkdirAll(worldsDir, 0o750); err != nil {
 		return domain.Wrap(domain.CodeInternal, "create worlds directory", err)
 	}
-	if err := atomicMove(dbSrc, filepath.Join(worldsDir, world+".db")); err != nil {
-		return err
+	if exists {
+		if _, err := removeWorldSave(worldsDir, world); err != nil {
+			return err
+		}
 	}
-	if err := atomicMove(fwlSrc, filepath.Join(worldsDir, world+".fwl")); err != nil {
-		return err
+	if len(staged.DirFiles) > 0 {
+		dir := filepath.Join(worldsDir, world)
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return domain.Wrap(domain.CodeInternal, "create world directory", err)
+		}
+		for base, src := range staged.DirFiles {
+			if err := atomicMove(src, filepath.Join(dir, base)); err != nil {
+				return err
+			}
+		}
+	} else {
+		if err := atomicMove(staged.DB, filepath.Join(worldsDir, world+".db")); err != nil {
+			return err
+		}
+		if err := atomicMove(staged.FWL, filepath.Join(worldsDir, world+".fwl")); err != nil {
+			return err
+		}
 	}
 
 	log.Printf("imported world %q", world)
@@ -362,19 +345,15 @@ func (s *Service) DeleteWorld(ctx context.Context, instanceID, world string) err
 	return nil
 }
 
-// removeWorldFiles deletes every save file belonging to world: the .db/.fwl
-// pair, their .old siblings and Valheim's own rolling copies
-// (<world>_backup_auto-*, _backup_cloud-*, _backup_restore-*). It reports
-// whether anything was removed.
+// removeWorldFiles deletes everything belonging to world: its save in
+// either layout (removeWorldSave) and Valheim's own rolling copies
+// (<world>_backup_auto-*, _backup_cloud-*, _backup_restore-*), which are
+// flat files in the legacy layout and sibling directories in the 1.0 one.
+// It reports whether anything was removed.
 func removeWorldFiles(dir, world string) (bool, error) {
-	removed := false
-	for _, suffix := range []string{".db", ".fwl", ".db.old", ".fwl.old"} {
-		p := filepath.Join(dir, world+suffix)
-		if err := os.Remove(p); err == nil {
-			removed = true
-		} else if !os.IsNotExist(err) {
-			return removed, domain.Wrap(domain.CodeInternal, "delete world file", err)
-		}
+	removed, err := removeWorldSave(dir, world)
+	if err != nil {
+		return removed, err
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -384,17 +363,41 @@ func removeWorldFiles(dir, world string) (bool, error) {
 		return removed, domain.Wrap(domain.CodeInternal, "read worlds directory", err)
 	}
 	for _, e := range entries {
-		if e.IsDir() {
+		name := e.Name()
+		stem := name
+		if !e.IsDir() {
+			stem = strings.TrimSuffix(name, filepath.Ext(name))
+		}
+		if !strings.HasPrefix(stem, world+"_backup_") || !isValheimBackupStem(stem) {
 			continue
 		}
-		name := e.Name()
-		stem := strings.TrimSuffix(name, filepath.Ext(name))
-		if strings.HasPrefix(stem, world+"_backup_") && isValheimBackupStem(stem) {
-			if err := os.Remove(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
-				return removed, domain.Wrap(domain.CodeInternal, "delete world backup copy", err)
-			}
-			removed = true
+		if err := os.RemoveAll(filepath.Join(dir, name)); err != nil && !os.IsNotExist(err) {
+			return removed, domain.Wrap(domain.CodeInternal, "delete world backup copy", err)
 		}
+		removed = true
+	}
+	return removed, nil
+}
+
+// removeWorldSave deletes world's own save files only: the legacy .db/.fwl
+// pair with their .old siblings, and the <world>/ directory. Valheim's
+// rolling copies are left alone. It reports whether anything was removed.
+func removeWorldSave(dir, world string) (bool, error) {
+	removed := false
+	for _, suffix := range []string{".db", ".fwl", ".db.old", ".fwl.old"} {
+		p := filepath.Join(dir, world+suffix)
+		if err := os.Remove(p); err == nil {
+			removed = true
+		} else if !os.IsNotExist(err) {
+			return removed, domain.Wrap(domain.CodeInternal, "delete world file", err)
+		}
+	}
+	worldDir := filepath.Join(dir, world)
+	if fi, err := os.Stat(worldDir); err == nil && fi.IsDir() {
+		if err := os.RemoveAll(worldDir); err != nil {
+			return removed, domain.Wrap(domain.CodeInternal, "delete world directory", err)
+		}
+		removed = true
 	}
 	return removed, nil
 }
@@ -452,7 +455,11 @@ func (s *Service) runWorldRegenerate(ctx context.Context, instanceID, world stri
 	}
 
 	dir := s.inst.Paths(instanceID).WorldsDir()
-	if _, err := os.Stat(filepath.Join(dir, world+".db")); err == nil {
+	save, err := scanWorld(dir, world)
+	if err != nil {
+		return domain.Wrap(domain.CodeInternal, "scan worlds", err)
+	}
+	if save.HasDB() {
 		log.Printf("backing up %q before deleting it", world)
 		// Manual kind: never auto-deleted by retention, since this is the only
 		// copy of a world the operator chose to throw away.
@@ -463,7 +470,7 @@ func (s *Service) runWorldRegenerate(ctx context.Context, instanceID, world stri
 		log.Printf("safety backup written: %s", b.Filename)
 		log.SetSummary("backup", b.Filename)
 	} else {
-		log.Printf("world %q has no .db yet (never saved); nothing to back up", world)
+		log.Printf("world %q has no save data yet (never saved); nothing to back up", world)
 	}
 
 	removed, err := removeWorldFiles(dir, world)
@@ -485,10 +492,10 @@ func (s *Service) runWorldRegenerate(ctx context.Context, instanceID, world stri
 	return nil
 }
 
-// ExportWorld streams a zip of world's .db/.fwl files to w. Existence and
-// the world name are validated before anything is written to w, so a caller
-// that has already set response headers can still turn an error into a
-// proper HTTP status.
+// ExportWorld streams a zip of world's save files (either layout) to w.
+// Existence and the world name are validated before anything is written to
+// w, so a caller that has already set response headers can still turn an
+// error into a proper HTTP status.
 func (s *Service) ExportWorld(ctx context.Context, instanceID, world string, w io.Writer) error {
 	if _, err := s.inst.Get(ctx, instanceID); err != nil {
 		return err
@@ -497,13 +504,14 @@ func (s *Service) ExportWorld(ctx context.Context, instanceID, world string, w i
 		return domain.Validation([]domain.FieldError{{Field: "world", Message: "invalid world name"}})
 	}
 	dir := s.inst.Paths(instanceID).WorldsDir()
-	dbPath := filepath.Join(dir, world+".db")
-	fwlPath := filepath.Join(dir, world+".fwl")
-	hasDB, hasFWL := fileExists(dbPath), fileExists(fwlPath)
-	if !hasDB && !hasFWL {
+	save, err := scanWorld(dir, world)
+	if err != nil {
+		return domain.Wrap(domain.CodeInternal, "scan worlds", err)
+	}
+	if !save.exists() {
 		return domain.NotFound("world")
 	}
-	if err := writeWorldZip(w, world, dbPath, fwlPath, hasDB, hasFWL); err != nil {
+	if err := writeWorldZip(w, dir, save); err != nil {
 		return fmt.Errorf("export world %q: %w", world, err)
 	}
 	return nil

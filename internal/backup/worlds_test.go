@@ -4,9 +4,11 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
@@ -313,5 +315,227 @@ func TestExportWorld_NotFound(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Errorf("expected nothing written to w on a not_found error, got %d bytes", buf.Len())
+	}
+}
+
+// ---------------------------------------------------------------- Valheim 1.0 directory layout
+
+func TestListWorlds_DirectoryLayout(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	dir := env.writeWorldDir("main", "Dedicated", worldGen{N: 3, Committed: true})
+	// Valheim's own rolling copy is a sibling directory; never a world.
+	env.writeWorldDir("main", "Dedicated_backup_auto-20260909-185939", worldGen{N: 1, Committed: true})
+
+	worlds, err := env.svc.ListWorlds(context.Background(), "main")
+	if err != nil {
+		t.Fatalf("ListWorlds: %v", err)
+	}
+	if len(worlds) != 1 {
+		t.Fatalf("expected exactly the Dedicated world, got %+v", worlds)
+	}
+	w := worlds[0]
+	if w.Name != "Dedicated" || !w.Active || !w.HasDB || !w.HasFWL {
+		t.Errorf("unexpected world entry: %+v", w)
+	}
+	var want int64
+	for _, n := range dirFileNames(t, dir) {
+		fi, err := os.Stat(filepath.Join(dir, n))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want += fi.Size()
+	}
+	if w.SizeBytes != want {
+		t.Errorf("size should sum every file in the world directory: got %d want %d", w.SizeBytes, want)
+	}
+}
+
+func TestListWorlds_DirectoryLayout_UncommittedGenerationIsNotASave(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	// _main.2.* exists but the game never wrote _main.2.ok: a torn save.
+	env.writeWorldDir("main", "Dedicated", worldGen{N: 2, Committed: false})
+
+	worlds, err := env.svc.ListWorlds(context.Background(), "main")
+	if err != nil {
+		t.Fatalf("ListWorlds: %v", err)
+	}
+	if len(worlds) != 1 {
+		t.Fatalf("expected the world to be listed, got %+v", worlds)
+	}
+	if worlds[0].HasDB || worlds[0].HasFWL {
+		t.Errorf("an uncommitted generation must not count as a save: %+v", worlds[0])
+	}
+}
+
+func TestListWorlds_MixedLayoutIsOneWorld(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	// A pre-1.0 world after migration: the legacy pair stays next to the new directory.
+	env.writeWorldFiles("main", "Dedicated", []byte("legacy-db"), []byte("legacy-fwl"))
+	env.writeWorldDir("main", "Dedicated", worldGen{N: 1, Committed: true})
+
+	worlds, err := env.svc.ListWorlds(context.Background(), "main")
+	if err != nil {
+		t.Fatalf("ListWorlds: %v", err)
+	}
+	if len(worlds) != 1 {
+		t.Fatalf("legacy files and the directory are the same world, got %+v", worlds)
+	}
+	if !worlds[0].HasDB || !worlds[0].HasFWL {
+		t.Errorf("unexpected entry: %+v", worlds[0])
+	}
+}
+
+func TestListWorlds_EmptyDirectoryIgnored(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.writeWorldDir("main", "Nothing") // directory with no save files at all
+
+	worlds, err := env.svc.ListWorlds(context.Background(), "main")
+	if err != nil {
+		t.Fatalf("ListWorlds: %v", err)
+	}
+	if len(worlds) != 0 {
+		t.Errorf("an empty directory is not a world, got %+v", worlds)
+	}
+}
+
+func TestDeleteWorld_DirectoryLayout_RemovesDirAndRollingCopies(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	dir := env.writeWorldDir("main", "Inactive", worldGen{N: 2, Committed: true})
+	rolling := env.writeWorldDir("main", "Inactive_backup_auto-20260909-185939", worldGen{N: 1, Committed: true})
+	keep := env.writeWorldDir("main", "Inactive2", worldGen{N: 1, Committed: true}) // prefix-similar, unrelated
+
+	if err := env.svc.DeleteWorld(context.Background(), "main", "Inactive"); err != nil {
+		t.Fatalf("DeleteWorld: %v", err)
+	}
+	for _, p := range []string{dir, rolling} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("expected %s to be removed", p)
+		}
+	}
+	if _, err := os.Stat(keep); err != nil {
+		t.Errorf("unrelated world Inactive2 must survive: %v", err)
+	}
+}
+
+func TestExportWorld_DirectoryLayout(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	dir := env.writeWorldDir("main", "Dedicated", worldGen{N: 3, Committed: true})
+
+	var buf bytes.Buffer
+	if err := env.svc.ExportWorld(context.Background(), "main", "Dedicated", &buf); err != nil {
+		t.Fatalf("ExportWorld: %v", err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
+	if err != nil {
+		t.Fatalf("read exported zip: %v", err)
+	}
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	for _, n := range dirFileNames(t, dir) {
+		if !names["worlds_local/Dedicated/"+n] {
+			t.Errorf("export is missing %s; got %v", n, names)
+		}
+	}
+}
+
+// buildWorldDirZip builds a zip holding a Valheim 1.0 world directory under
+// prefix (e.g. "worlds_local/Imported/" or "Imported/"), one committed
+// generation, with content "<name>" per file.
+func buildWorldDirZip(t *testing.T, prefix string, gen int) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, n := range []string{
+		fmt.Sprintf("_main.%d.fwl2", gen), fmt.Sprintf("_main.%d.db2", gen),
+		fmt.Sprintf("_main.%d.chunks", gen), fmt.Sprintf("_main.%d.ok", gen),
+		fmt.Sprintf("1e_1e__1_%d.chunk", gen),
+	} {
+		w, err := zw.Create(prefix + n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(n)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return &buf
+}
+
+func TestWorldImport_ZipWithDirectoryWorld(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+
+	job, err := env.svc.EnqueueWorldImport(context.Background(), "main",
+		map[string]io.Reader{"Imported.zip": buildWorldDirZip(t, "worlds_local/Imported/", 4)}, false, "tester")
+	if err != nil {
+		t.Fatalf("EnqueueWorldImport: %v", err)
+	}
+	final, err := env.run.WaitFor(context.Background(), job.ID)
+	if err != nil || final.Status != domain.JobSucceeded {
+		t.Fatalf("import job: status=%v err=%v jobErr=%s", final.Status, err, final.Error)
+	}
+	dir := filepath.Join(env.inst.Paths("main").WorldsDir(), "Imported")
+	got := dirFileNames(t, dir)
+	if len(got) != 5 || got[0] != "1e_1e__1_4.chunk" || got[4] != "_main.4.ok" {
+		t.Errorf("unexpected imported directory: %v", got)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "_main.4.db2")) //nolint:gosec // test-controlled path
+	if err != nil || string(b) != "_main.4.db2" {
+		t.Errorf("imported db2 content %q err=%v", b, err)
+	}
+	worlds, err := env.svc.ListWorlds(context.Background(), "main")
+	if err != nil || len(worlds) != 1 || !worlds[0].HasDB || !worlds[0].HasFWL {
+		t.Errorf("imported world should be listed with a save: %+v err=%v", worlds, err)
+	}
+}
+
+func TestWorldImport_PairOverwriteReplacesDirectoryWorld(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	dir := env.writeWorldDir("main", "Old", worldGen{N: 9, Committed: true})
+
+	job, err := env.svc.EnqueueWorldImport(context.Background(), "main", map[string]io.Reader{
+		"Old.db":  bytes.NewReader([]byte("new-db")),
+		"Old.fwl": bytes.NewReader([]byte("new-fwl")),
+	}, true, "tester")
+	if err != nil {
+		t.Fatalf("EnqueueWorldImport: %v", err)
+	}
+	final, err := env.run.WaitFor(context.Background(), job.ID)
+	if err != nil || final.Status != domain.JobSucceeded {
+		t.Fatalf("import job: status=%v err=%v jobErr=%s", final.Status, err, final.Error)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("overwrite must remove the directory world, or the game would keep loading generation 9")
+	}
+}
+
+func TestWorldImport_DirectoryWorld_WithoutOverwrite_Conflicts(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.writeWorldDir("main", "Imported", worldGen{N: 1, Committed: true})
+
+	job, err := env.svc.EnqueueWorldImport(context.Background(), "main",
+		map[string]io.Reader{"Imported.zip": buildWorldDirZip(t, "worlds_local/Imported/", 2)}, false, "tester")
+	if err != nil {
+		t.Fatalf("EnqueueWorldImport: %v", err)
+	}
+	final, err := env.run.WaitFor(context.Background(), job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if final.Status != domain.JobFailed || !strings.Contains(final.Error, "already exists") {
+		t.Errorf("expected a conflict on an existing directory world, got status=%v err=%q", final.Status, final.Error)
 	}
 }

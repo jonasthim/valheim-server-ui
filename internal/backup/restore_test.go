@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
@@ -173,4 +174,71 @@ func (e *testEnv) runRestoreSync(instanceID string, backupID int64, stopIfRunnin
 		e.t.Fatalf("wait for restore job: %v", err)
 	}
 	return final
+}
+
+// ---------------------------------------------------------------- Valheim 1.0 directory layout
+
+func TestRestore_DirectoryLayout_ReplacesNewerGeneration(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	dir := env.writeWorldDir("main", "Dedicated", worldGen{N: 3, Committed: true})
+	wantFiles := dirFileNames(t, dir)
+
+	backup, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "snapshot")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// The game keeps playing: generation 5 replaces generation 3 on disk.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	env.writeWorldDir("main", "Dedicated", worldGen{N: 5, Committed: true})
+
+	job := env.runRestoreSync("main", backup.ID, false)
+	if job.Status != domain.JobSucceeded {
+		t.Fatalf("expected restore job to succeed, got %v (err=%s)", job.Status, job.Error)
+	}
+
+	// Valheim loads the highest committed generation, so a restore that
+	// merely adds generation 3 next to 5 would be silently ignored.
+	got := dirFileNames(t, dir)
+	if strings.Join(got, ",") != strings.Join(wantFiles, ",") {
+		t.Errorf("restored directory should hold exactly the backed-up files\n got %v\nwant %v", got, wantFiles)
+	}
+	for _, n := range wantFiles {
+		b, err := os.ReadFile(filepath.Join(dir, n)) //nolint:gosec // test-controlled path
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(b) != "Dedicated/"+n {
+			t.Errorf("%s: restored bytes %q differ from the backup", n, b)
+		}
+	}
+}
+
+func TestRestore_LegacyBackup_RemovesDirectoryWorld(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	paths := env.writeWorldFiles("main", "Dedicated", []byte("legacy-db"), []byte("legacy-fwl"))
+
+	backup, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "before 1.0")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// After the update the game migrated the world into a directory.
+	dir := env.writeWorldDir("main", "Dedicated", worldGen{N: 1, Committed: true})
+
+	job := env.runRestoreSync("main", backup.ID, false)
+	if job.Status != domain.JobSucceeded {
+		t.Fatalf("expected restore job to succeed, got %v (err=%s)", job.Status, job.Error)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Errorf("the directory world must be removed, or the game would load it instead of the restored legacy files")
+	}
+	b, err := os.ReadFile(filepath.Join(paths.WorldsDir(), "Dedicated.db")) //nolint:gosec // test-controlled path
+	if err != nil || string(b) != "legacy-db" {
+		t.Errorf("legacy .db not restored: %q err=%v", b, err)
+	}
 }

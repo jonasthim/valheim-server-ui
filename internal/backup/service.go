@@ -81,9 +81,13 @@ func (s *Service) Create(ctx context.Context, instanceID string, kind domain.Bac
 	paths := s.inst.Paths(instanceID)
 	world := inst.Config.World
 	worldsDir := paths.WorldsDir()
-	if !fileExists(filepath.Join(worldsDir, world+".db")) {
+	save, err := scanWorld(worldsDir, world)
+	if err != nil {
+		return nil, domain.Wrap(domain.CodeInternal, "scan worlds", err)
+	}
+	if !save.HasDB() {
 		return nil, domain.Validation([]domain.FieldError{
-			{Field: "world", Message: fmt.Sprintf("world %q has no save file (.db) to back up", world)},
+			{Field: "world", Message: fmt.Sprintf("world %q has no save file to back up", world)},
 		})
 	}
 
@@ -102,7 +106,7 @@ func (s *Service) Create(ctx context.Context, instanceID string, kind domain.Bac
 		ValheimBuildID: inst.Status.InstalledBuildID,
 		AppVersion:     s.appVersion,
 	}
-	size, err := writeBackupZip(fullPath, worldsDir, paths.Save, world, manifest)
+	size, err := writeBackupZip(fullPath, worldsDir, paths.Save, save, manifest)
 	if err != nil {
 		return nil, domain.Wrap(domain.CodeInternal, "write backup zip", err)
 	}

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 // ErrorCode is the machine-readable error code returned in API error bodies.
@@ -54,10 +55,23 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
+	var b strings.Builder
+	b.WriteString(string(e.Code))
+	b.WriteString(": ")
+	b.WriteString(e.Message)
 	if e.Cause != nil {
-		return fmt.Sprintf("%s: %s: %v", e.Code, e.Message, e.Cause)
+		b.WriteString(": ")
+		b.WriteString(e.Cause.Error())
 	}
-	return fmt.Sprintf("%s: %s", e.Code, e.Message)
+	// Field messages are what a human needs to act on ("world "X" has no
+	// save file"); without them a failed job only says "validation failed".
+	for _, f := range e.Fields {
+		b.WriteString("; ")
+		b.WriteString(f.Field)
+		b.WriteString(": ")
+		b.WriteString(f.Message)
+	}
+	return b.String()
 }
 
 func (e *Error) Unwrap() error { return e.Cause }

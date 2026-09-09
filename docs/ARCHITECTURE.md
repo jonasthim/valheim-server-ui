@@ -75,7 +75,8 @@ All paths below are relative to `data_dir` (default `/var/lib/valheim`), owned b
     │   ├── BepInEx/ doorstop_libs/ start_server_bepinex.sh ...   (when BepInEx installed)
     │   └── BepInEx/plugins/<owner>-<name>/    one folder per managed mod
     ├── save/                       passed as -savedir
-    │   ├── worlds_local/<World>.db, <World>.fwl
+    │   ├── worlds_local/<World>/_main.<N>.{fwl2,db2,chunks,ok} + *.chunk   (Valheim 1.0+)
+    │   ├── worlds_local/<World>.db, <World>.fwl                            (legacy, pre-1.0)
     │   ├── adminlist.txt bannedlist.txt permittedlist.txt
     ├── backups/<id>-<world>-<UTC timestamp>-<kind>.zip
     └── logs/console.log (+ rotated console-<ts>.log)
@@ -303,18 +304,35 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
 
 ## 10. Backups and worlds
 
-- Backup = zip of `save/worlds_local/<World>.db` + `.fwl` (+ `.db.old`/`.fwl.old` if
-  present) + `adminlist.txt` `bannedlist.txt` `permittedlist.txt` + `manifest.json`
-  (`instance_id, world, created_at, kind, valheim_buildid, app_version`).
-- Copy order is `.fwl` then `.db`; Valheim writes `.new` then renames, so live
+- Two save layouts exist and `internal/backup/worldfiles.go` is the only code that
+  knows either: Valheim 1.0 (l-1.0.7+) writes a directory `worlds_local/<World>/`
+  with one committed generation `_main.<N>.fwl2/.db2/.chunks/.ok` plus
+  `<x>_<y>__<kind>_<gen>.chunk` files (each chunk has its own generation and is
+  rewritten only when dirty; `.ok` is written last and marks the generation
+  complete); pre-1.0 servers wrote a flat `<World>.db` + `<World>.fwl` pair. A
+  migrated world keeps the pair next to the directory; the directory is
+  authoritative. Valheim's rolling copies (`<World>_backup_auto-<ts>` as files or
+  directories) are never listed.
+- Backup = zip of the world's files in whichever layout(s) exist -- every file of
+  `worlds_local/<World>/` as `worlds_local/<World>/<file>`, and/or
+  `worlds_local/<World>.db` + `.fwl` (+ `.old` siblings) -- plus `adminlist.txt`
+  `bannedlist.txt` `permittedlist.txt` + `manifest.json`
+  (`instance_id, world, created_at, kind, valheim_buildid, app_version, files`).
+- Legacy copy order is `.fwl` then `.db`; Valheim writes `.new` then renames, so live
   backups are consistent enough (this mirrors Valheim's own `-backups` behaviour).
+  For the directory layout a live backup may include a generation without its
+  `.ok`; restore and the game both ignore it.
+- Restore and world import **replace** the target world completely (legacy pair,
+  `.old` siblings and the directory) before writing, because Valheim loads the
+  highest committed generation it finds and would silently prefer the newer copy.
 - Retention runs after every non-manual backup: keep the newest `backup_keep_last`
   and delete anything older than `backup_keep_days`; **manual and uploaded backups
   are never auto-deleted**.
 - Restore takes a backup id or an uploaded zip; always creates a `pre_restore`
   backup first; requires the instance stopped.
-- Worlds tab lists `worlds_local/*.fwl`, shows which is active, allows upload of a
-  `.db`+`.fwl` pair (or a zip containing them), download as zip, delete inactive.
+- Worlds tab lists worlds in either layout, shows which is active, allows upload of a
+  `.db`+`.fwl` pair or a zip containing a pair or a world directory, download as zip,
+  delete inactive.
 
 ## 11. Scheduling and updates
 

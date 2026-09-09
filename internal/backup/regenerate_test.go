@@ -79,3 +79,35 @@ func TestWorldRegenerateJobBacksUpAndDeletes(t *testing.T) {
 		t.Fatalf("expected one manual safety backup of Midgard, got %+v", backups)
 	}
 }
+
+func TestWorldRegenerateJob_DirectoryLayout_BacksUpAndDeletes(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Midgard", 2456)
+	dir := env.writeWorldDir("main", "Midgard", worldGen{N: 7, Committed: true})
+	rolling := env.writeWorldDir("main", "Midgard_backup_auto-20260909144803", worldGen{N: 6, Committed: true})
+
+	ctx := context.Background()
+	job, err := env.svc.EnqueueWorldRegenerate(ctx, "main", "Midgard", false, "tester")
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	done, err := env.run.WaitFor(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("wait: %v", err)
+	}
+	if done.Status != domain.JobSucceeded {
+		t.Fatalf("job %s: %s", done.Status, done.Error)
+	}
+	for _, p := range []string{dir, rolling} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s should be gone", p)
+		}
+	}
+	backups, err := env.svc.List(ctx, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != 1 || backups[0].Kind != domain.BackupManual {
+		t.Fatalf("expected one manual safety backup before deleting a directory world, got %+v", backups)
+	}
+}
