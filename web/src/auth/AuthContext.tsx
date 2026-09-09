@@ -37,8 +37,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     logout: async () => {
       await api.post('/auth/logout')
-      qc.clear()
-      await qc.invalidateQueries({ queryKey: ['auth'] })
+      // Mark the session gone first so guards redirect immediately, then drop
+      // every other cached query. qc.clear() must not be used here: it removes
+      // the 'me' query from the cache without updating mounted observers, which
+      // leaves the app believing it is still logged in.
+      qc.setQueryData(['auth', 'me'], null)
+      qc.removeQueries({ predicate: (q) => q.queryKey[0] !== 'auth' })
+      await qc.invalidateQueries({ queryKey: ['auth', 'status'] })
     },
   }
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>
