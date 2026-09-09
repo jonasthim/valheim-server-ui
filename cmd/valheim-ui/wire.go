@@ -9,6 +9,7 @@ import (
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 	"github.com/jonasthim/valheim-server-ui/internal/instance"
 	"github.com/jonasthim/valheim-server-ui/internal/players"
+	"github.com/jonasthim/valheim-server-ui/internal/scheduler"
 	"github.com/jonasthim/valheim-server-ui/internal/steam"
 )
 
@@ -54,7 +55,8 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 		}
 		return refs, nil
 	}
-	if err := wirePlayers(ctx, deps, listRefs, inst.Paths, inst.Exists, inst.RegisterEnricher); err != nil {
+	playersMgr, err := wirePlayers(ctx, deps, listRefs, inst.Paths, inst.Exists, inst.RegisterEnricher)
+	if err != nil {
 		return fmt.Errorf("players: %w", err)
 	}
 
@@ -88,10 +90,30 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 	checker := steam.NewUpdateChecker(steamClient, interval, listInstalled, store, deps.Bus)
 	go checker.Run(ctx)
 
-	// WP-05: install/update jobs (pre-update backup hook attached by WP-06 below).
-	var preUpdate instance.PreUpdateBackupFunc
-	wireSteamJobs(deps, inst, runner, steamClient, checker, preUpdate)
+	// WP-06: backups and worlds.
+	backups := wireBackups(deps, inst, runner)
 
-	// WP-06..08 attach here (backups, scheduler, mods).
+	// WP-05: install/update jobs, with a pre-update backup when the instance asks for it.
+	wireSteamJobs(deps, inst, runner, steamClient, checker, backups.PreUpdateBackup)
+
+	// WP-07: schedules drive backups, updates and restarts through hooks.
+	hooks := scheduler.Hooks{
+		Backup: func(ctx context.Context, id, by string) (*domain.Job, error) {
+			return backups.EnqueueBackup(ctx, id, domain.BackupScheduled, "", by)
+		},
+		Update: func(ctx context.Context, id, by string, stopIfRunning bool) (*domain.Job, error) {
+			return deps.Steam.EnqueueUpdate(ctx, id, by, stopIfRunning)
+		},
+		UpdateAvailable: func(ctx context.Context, id string) (bool, error) {
+			info, err := deps.Steam.CheckUpdate(ctx, id)
+			if err != nil {
+				return false, err
+			}
+			return info.UpdateAvailable, nil
+		},
+	}
+	wireScheduler(ctx, deps, inst, runner, playersMgr, hooks)
+
+	// WP-08 (mods, thunderstore) attaches here.
 	return nil
 }

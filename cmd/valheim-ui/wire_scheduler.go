@@ -24,7 +24,7 @@ import (
 // (needs inst) and whichever of WP-05/WP-06 supply hooks.Update/hooks.Backup
 // are ready; deps.Players (domain.PlayerCounter) must also be set (WP-03).
 //
-//nolint:unused // wired in from wire.go by whoever integrates WP-07 (see docs/WORKPLAN.md); not called from this package's own code yet
+
 func wireScheduler(ctx context.Context, deps *api.Deps, inst *instance.Service, runner *jobs.Runner, players domain.PlayerCounter, hooks scheduler.Hooks) *scheduler.Service {
 	svc := scheduler.New(deps.DB, inst, runner, players, hooks, deps.Log)
 	deps.Schedules = svc

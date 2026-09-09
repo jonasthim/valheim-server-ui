@@ -36,17 +36,17 @@ func wirePlayers(
 	paths func(string) domain.InstancePaths,
 	exists func(context.Context, string) (bool, error),
 	register func(domain.StatusEnricher),
-) error {
+) (*players.Manager, error) {
 	store := players.NewSQLStore(deps.DB)
 
 	mgr, err := players.NewManager(ctx, deps.Bus, store, deps.Log, list, paths)
 	if err != nil {
-		return fmt.Errorf("wire players: %w", err)
+		return nil, fmt.Errorf("wire players: %w", err)
 	}
 
 	deps.Players = players.NewService(mgr, store, paths, exists)
 	if register != nil {
 		register(mgr)
 	}
-	return nil
+	return mgr, nil
 }
