@@ -11,3 +11,4 @@ e2e/test-results/
 *.db-wal
 *.db-shm
 .DS_Store
+/valheim-ui

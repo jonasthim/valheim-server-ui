@@ -1,0 +1,6 @@
+Starting server PRESS CTRL-C to exit
+09/09/2026 10:00:01: Valheim version: 0.220.5 (fake) DOORSTOP_ENABLED=unset SteamAppId=892970
+some line with no timestamp at all
+09/09/2026 10:00:02: Zonesystem Start 0
+: weird empty timestamp line
+09/09/2026 99/99/9999 not a real message

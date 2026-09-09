@@ -1,0 +1,18 @@
+Starting server PRESS CTRL-C to exit
+09/09/2026 10:00:00: Valheim version: 0.220.5 (fake) DOORSTOP_ENABLED=unset SteamAppId=892970
+09/09/2026 10:00:00: Load world: Dedicated
+09/09/2026 10:00:01: Zonesystem Start 0
+09/09/2026 10:00:01: DungeonDB Start 0
+09/09/2026 10:00:02: Steam game server initialized
+09/09/2026 10:00:02: Game server connected
+09/09/2026 10:00:02: Session "Fake" with join code 123456 and IP 203.0.113.10:2456 is active with 0 player(s)
+09/09/2026 10:00:07: Got connection SteamID 76561198000000001
+09/09/2026 10:00:07: Got handshake from client 76561198000000001
+09/09/2026 10:00:07: Got character ZDOID from Bjorn : 12345:1
+09/09/2026 10:00:12: Session "Fake" with join code 123456 and IP 203.0.113.10:2456 is active with 1 player(s)
+09/09/2026 10:00:27: Closing socket 76561198000000001
+09/09/2026 10:00:32: Session "Fake" with join code 123456 and IP 203.0.113.10:2456 is active with 0 player(s)
+09/09/2026 10:00:32: World saved ( 42.1ms )
+09/09/2026 10:00:33: OnApplicationQuit
+09/09/2026 10:00:33: World saved ( 38.7ms )
+09/09/2026 10:00:33: Net scene destroyed
