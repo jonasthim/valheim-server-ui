@@ -27,13 +27,13 @@ export function ModsTab({ id }: { id: string }) {
 
       {hasRole('operator') && (
         <SectionCard
-          title="Thunderstore"
+          title="Browse mods"
           description="Search the Valheim mod catalogue and install mods with their dependencies."
           actions={
             <Group gap="xs">
               <CheckModUpdatesButton id={id} />
               <Button leftSection={<IconWorldSearch size={16} />} onClick={browserHandlers.open}>
-                Browse Thunderstore
+                Browse mods
               </Button>
             </Group>
           }

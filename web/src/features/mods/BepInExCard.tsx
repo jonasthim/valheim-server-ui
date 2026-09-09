@@ -56,7 +56,7 @@ export function BepInExCard({ id }: { id: string }) {
   return (
     <SectionCard
       title="BepInEx"
-      description="The mod loader required to run Thunderstore mods on this server. Install it once, then browse Thunderstore or upload mods below."
+      description="The mod loader required to run mods on this server. Install it once, then browse the mod catalogue or upload mods below."
       actions={
         <Group gap="sm" wrap="wrap" justify="flex-end">
           <StatusPill color={bepinex?.installed ? 'moss' : 'gray'}>

@@ -119,7 +119,7 @@ export function ThunderstoreBrowser({
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Browse Thunderstore" size="xl">
+    <Modal opened={opened} onClose={onClose} title="Browse mods" size="xl">
       <Stack gap="sm">
         <Group align="flex-end" wrap="wrap" gap="sm">
           {registries.length > 1 && (
