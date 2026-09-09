@@ -20,7 +20,7 @@ export function DashboardPage() {
 
   return (
     <Stack>
-      <SystemStrip />
+      <SystemStrip instances={instances} />
 
       <Stack gap="md">
         <Group justify="space-between">

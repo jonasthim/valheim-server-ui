@@ -21,6 +21,7 @@ import {
   useRestartInstance,
   useStartInstance,
   useStopInstance,
+  useUpdateInstance,
   canInstall,
   canRestart,
   canStart,
@@ -39,8 +40,28 @@ export function InstanceCard({ instance }: { instance: Instance }) {
   const stop = useStopInstance(instance.id)
   const restart = useRestartInstance(instance.id)
   const install = useInstallInstance(instance.id)
+  const updateNow = useUpdateInstance(instance.id)
 
   const canOperate = hasRole('operator')
+
+  function confirmUpdate() {
+    const running = status.state === 'running'
+    if (running) {
+      modals.openConfirmModal({
+        title: 'Update game files',
+        children: (
+          <Text size="sm">
+            <strong>{instance.name}</strong> is running and will be stopped, updated, and started again. Continue?
+          </Text>
+        ),
+        labels: { confirm: 'Stop and update', cancel: 'Cancel' },
+        confirmProps: { color: 'orange' },
+        onConfirm: () => updateNow.mutate(true, { onSuccess: (res) => openJob(res.job.id) }),
+      })
+    } else {
+      updateNow.mutate(false, { onSuccess: (res) => openJob(res.job.id) })
+    }
+  }
 
   function confirmRestart() {
     if (status.players_online > 0) {
@@ -77,8 +98,8 @@ export function InstanceCard({ instance }: { instance: Instance }) {
             {status.ready ? 'Ready' : 'Not ready'}
           </Badge>
           {status.update_available && (
-            <Badge size="xs" color="blue" variant="light">
-              Update available
+            <Badge size="xs" color="orange" variant="light">
+              Game update available
             </Badge>
           )}
           {status.pending_restart && (
@@ -169,6 +190,18 @@ export function InstanceCard({ instance }: { instance: Instance }) {
                 onClick={() => install.mutate(undefined, { onSuccess: (res) => openJob(res.job.id) })}
               >
                 Install
+              </Button>
+            )}
+            {status.update_available && (
+              <Button
+                size="xs"
+                color="orange"
+                variant="light"
+                leftSection={<IconDownload size={14} />}
+                loading={updateNow.isPending}
+                onClick={confirmUpdate}
+              >
+                Update
               </Button>
             )}
           </Group>

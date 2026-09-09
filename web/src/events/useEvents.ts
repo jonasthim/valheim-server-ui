@@ -58,6 +58,11 @@ export function useEvents(enabled: boolean) {
         qc.invalidateQueries({ queryKey: ['instances', info.instance_id] })
         qc.invalidateQueries({ queryKey: ['system'] })
       })
+      source.addEventListener('app.update_available', () => {
+        // Payload is AppUpdateInfo, but SystemInfo (which embeds it) is the
+        // cached shape ['system'] holds — just refetch it.
+        qc.invalidateQueries({ queryKey: ['system'] })
+      })
       source.addEventListener('instance.log', (e) => {
         const ev = JSON.parse((e as MessageEvent).data) as LogEvent
         listeners['instance.log'].forEach((fn) => fn(ev))

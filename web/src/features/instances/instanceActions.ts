@@ -95,7 +95,11 @@ export function useCheckForUpdate(id: string) {
     mutationFn: () => api.post<UpdateInfo>(`/instances/${id}/update-check`),
     onSuccess: (info) => {
       invalidateInstance(qc)
-      notifySuccess(info.update_available ? `Update available (build ${info.latest_buildid})` : 'Already up to date')
+      notifySuccess(
+        info.update_available
+          ? `Build ${info.latest_buildid} available`
+          : `Up to date, build ${info.installed_buildid ?? info.latest_buildid}`,
+      )
     },
     onError: (err) => notifyError(err, 'Could not check for updates'),
   })

@@ -21,6 +21,7 @@ import { IconAlertTriangle, IconCheck, IconCopy, IconPlayerPlay, IconPlayerStop,
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
+import { useSystemInfo } from '../system'
 import { useInstance } from './useInstance'
 import {
   useCheckForUpdate,
@@ -50,6 +51,7 @@ export function OverviewTab({ id }: { id: string }) {
   const setAutostart = useSetAutostart(id)
 
   const jobsQuery = useJobs({ instance: id, limit: 5 })
+  const systemInfo = useSystemInfo()
 
   if (inst.isLoading) {
     return (
@@ -107,6 +109,8 @@ export function OverviewTab({ id }: { id: string }) {
   }
 
   const jobs = jobsQuery.data ?? []
+  const latestBuildId = checkUpdate.data?.latest_buildid ?? systemInfo.data?.latest_buildid
+  const latestBuildCheckedAt = checkUpdate.data?.checked_at ?? systemInfo.data?.buildid_checked_at
 
   return (
     <Stack>
@@ -227,13 +231,17 @@ export function OverviewTab({ id }: { id: string }) {
             <Group justify="space-between">
               <Title order={4}>Build</Title>
               {status.update_available && (
-                <Badge color="blue" variant="light">
+                <Badge color="orange" variant="light">
                   Update available
                 </Badge>
               )}
             </Group>
             <Text size="sm" c="dimmed">
               Installed build {status.installed_buildid ?? 'unknown'}
+            </Text>
+            <Text size="sm" c="dimmed">
+              Latest known build {latestBuildId ?? 'unknown'}
+              {latestBuildCheckedAt ? ` (checked ${fmtAgo(latestBuildCheckedAt)})` : ''}
             </Text>
             <Group>
               <Badge color={status.bepinex_installed ? 'green' : 'gray'} variant="light">
@@ -248,15 +256,26 @@ export function OverviewTab({ id }: { id: string }) {
                 <Button size="xs" variant="outline" loading={checkUpdate.isPending} onClick={() => checkUpdate.mutate()}>
                   Check for updates
                 </Button>
-                <Button size="xs" variant="light" disabled={!status.update_available} loading={updateNow.isPending} onClick={confirmUpdate}>
-                  Update now
-                </Button>
               </Group>
             )}
-            {checkUpdate.data && (
-              <Text size="xs" c="dimmed">
-                Latest known build: {checkUpdate.data.latest_buildid ?? 'unknown'} (checked {fmtAgo(checkUpdate.data.checked_at)})
-              </Text>
+            {status.update_available && (
+              <Alert color="orange" icon={<IconAlertTriangle size={16} />} title="Game update available">
+                <Stack gap="xs">
+                  <Text size="sm">
+                    Build {latestBuildId ?? 'a newer build'} is available.{' '}
+                    {instance.config.backup_before_update
+                      ? 'A backup will be taken automatically before updating.'
+                      : 'Enable "Backup before update" in Config to snapshot the world first.'}
+                  </Text>
+                  {canOperate && (
+                    <Group>
+                      <Button size="xs" color="orange" loading={updateNow.isPending} onClick={confirmUpdate}>
+                        Update now
+                      </Button>
+                    </Group>
+                  )}
+                </Stack>
+              </Alert>
             )}
           </Stack>
         </Paper>
