@@ -83,6 +83,11 @@ type Runner struct {
 	queues map[string]*jobQueue
 	jobs   map[string]*jobRecord
 
+	// lifecycleMu serialises Enqueue (read side) against Start's stale-job
+	// recovery (write side), so a job inserted by this process can never be
+	// mistaken for one left behind by a previous process and marked failed.
+	lifecycleMu sync.RWMutex
+
 	wg sync.WaitGroup
 
 	started bool
@@ -132,7 +137,9 @@ func (r *Runner) Start(ctx context.Context) error {
 	r.started = true
 	r.mu.Unlock()
 
+	r.lifecycleMu.Lock()
 	stale, err := r.recoverStaleJobs(ctx)
+	r.lifecycleMu.Unlock()
 	if err != nil {
 		return fmt.Errorf("jobs: recover stale jobs: %w", err)
 	}
@@ -256,14 +263,18 @@ func (r *Runner) Enqueue(ctx context.Context, spec Spec, fn Func) (*domain.Job, 
 		RequestedBy: spec.RequestedBy,
 		CreatedAt:   now,
 	}
+	// Insert the row and register the in-memory record as one unit with
+	// respect to startup recovery (see lifecycleMu).
+	r.lifecycleMu.RLock()
 	if err := r.insertJob(ctx, job); err != nil {
+		r.lifecycleMu.RUnlock()
 		return nil, fmt.Errorf("jobs: enqueue: %w", err)
 	}
-
 	rec := &jobRecord{job: job, phase: phaseQueued, spec: spec, fn: fn, done: make(chan struct{})}
 	r.mu.Lock()
 	r.jobs[job.ID] = rec
 	r.mu.Unlock()
+	r.lifecycleMu.RUnlock()
 
 	r.publish(rec)
 	r.scheduleToQueue(spec.InstanceID, job.ID)

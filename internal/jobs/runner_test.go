@@ -391,6 +391,70 @@ collect:
 	}
 }
 
+// TestStartDoesNotFailJobsEnqueuedBeforeRecovery pins the startup race that
+// made TestLogFileAndEvents flaky: a job enqueued by this process must never
+// be reported as a stale "manager restarted" failure by Start's recovery.
+func TestStartDoesNotFailJobsEnqueuedBeforeRecovery(t *testing.T) {
+	r, sqldb, bus := testRunner(t)
+	sub := bus.Subscribe("")
+	defer sub.Close()
+
+	release := make(chan struct{})
+	fn := func(ctx context.Context, log *Logger) error {
+		select {
+		case <-release:
+		case <-ctx.Done():
+		}
+		log.Printf("done")
+		return nil
+	}
+	// Enqueued before Start: the row is queued/running in the DB exactly when
+	// recovery looks for leftovers from a previous process.
+	job, err := r.Enqueue(context.Background(), Spec{Type: domain.JobBackup, InstanceID: "pre"}, fn)
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	startRunner(t, r)
+
+	// Give recovery a real chance to run before the job finishes.
+	deadline := time.Now().Add(500 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		var status string
+		if err := sqldb.QueryRow(`SELECT status FROM jobs WHERE id = ?`, job.ID).Scan(&status); err != nil {
+			t.Fatalf("query status: %v", err)
+		}
+		if status == string(domain.JobFailed) {
+			t.Fatalf("recovery marked a job owned by this process as failed")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(release)
+
+	final := waitTerminal(t, r, job.ID)
+	if final.Status != domain.JobSucceeded {
+		t.Fatalf("expected succeeded, got %s (%s)", final.Status, final.Error)
+	}
+	// No job.updated event for this job may carry the stale-recovery failure.
+	for {
+		select {
+		case ev := <-sub.C:
+			if ev.Name != domain.EventJobUpdated {
+				continue
+			}
+			if j, ok := ev.Data.(domain.Job); ok && j.ID == job.ID {
+				if j.Status == domain.JobFailed {
+					t.Fatalf("got a spurious failed event: %q", j.Error)
+				}
+				if j.Status.Terminal() {
+					return
+				}
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for the terminal job.updated event")
+		}
+	}
+}
+
 func TestRecoveryOnStart(t *testing.T) {
 	sqldb, err := db.OpenMemory(context.Background())
 	if err != nil {

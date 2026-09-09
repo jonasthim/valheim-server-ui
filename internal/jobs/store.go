@@ -156,7 +156,8 @@ type recoveredJob struct {
 
 // recoverStaleJobs marks every row left in queued/running (from a process
 // that died without a clean shutdown) as failed, and returns them so the
-// caller can publish job.updated events.
+// caller can publish job.updated events. Jobs this process already owns
+// (enqueued before Start, which is allowed) are not stale and are skipped.
 func (r *Runner) recoverStaleJobs(ctx context.Context) ([]recoveredJob, error) {
 	rows, err := r.db.QueryContext(ctx, `SELECT id, instance_id, type, title, requested_by FROM jobs WHERE status IN ('queued','running')`)
 	if err != nil {
@@ -180,6 +181,16 @@ func (r *Runner) recoverStaleJobs(ctx context.Context) ([]recoveredJob, error) {
 		return nil, fmt.Errorf("query stale jobs: %w", err)
 	}
 	_ = rows.Close()
+
+	r.mu.Lock()
+	owned := stale[:0]
+	for _, rj := range stale {
+		if _, ok := r.jobs[rj.id]; !ok {
+			owned = append(owned, rj)
+		}
+	}
+	r.mu.Unlock()
+	stale = owned
 
 	now := time.Now().UTC()
 	for _, rj := range stale {
