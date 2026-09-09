@@ -185,7 +185,7 @@ client, notifications, theme.
 ### WP-10 Auth, setup, account, users, settings, audit pages
 Owns: `web/src/features/auth/**`, `web/src/features/account/**`,
 `web/src/features/users/**`, `web/src/features/settings/**`, `web/src/features/audit/**`.
-Done when: setup wizard on empty DB, local login, OIDC button when enabled,
+Done when: the first-run wizard at /setup is reachable on an empty database, creates the admin (username, display name, optional email, password with confirmation and strength hints) and logs them straight in, and is unreachable afterwards; local login, OIDC button when enabled,
 change password, users CRUD with last-admin guard messaging, settings form with
 OIDC test button and redirect URI copy field, audit table with filters.
 

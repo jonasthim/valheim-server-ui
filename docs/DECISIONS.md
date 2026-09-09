@@ -58,3 +58,16 @@ The UI enforces Valheim's rule and the "password must not appear in the server n
 ## ADR-012 Scheduled restarts cannot warn players
 Valheim has no server console, RCON or broadcast. Mitigation is `only_when_empty`.
 Announcements would require a BepInEx mod and are out of scope for v1.
+
+## ADR-013 OpenAPI type generator runs outside the dependency tree
+`openapi-typescript` 7.x depends on `@redocly/openapi-core` 1.x, which pins a `js-yaml`
+line with an open advisory; 2.x of the core is incompatible with the generator. Rather
+than carry a known CVE in `package-lock.json`, `web/src/api/schema.d.ts` is committed
+and regenerated with `npx --yes openapi-typescript@7.13.0` (`make gen`); CI regenerates
+and fails on drift. Revisit when a generator release moves to the patched core.
+
+## ADR-014 First-run setup wizard, no seeded credentials
+No default admin password ever exists. While the users table is empty the SPA routes to
+`/setup`, where the first administrator is created through `POST /api/v1/auth/setup`;
+the endpoint disappears (404 `setup_done`) after the first user. Break-glass afterwards
+is `valheim-ui admin reset-password` on the host.

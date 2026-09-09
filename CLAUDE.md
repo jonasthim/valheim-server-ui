@@ -30,6 +30,16 @@ the API contract; `docs/WORKPLAN.md` lists the work packages and who owns which 
 - **Commits**: conventional messages (`feat(mods): thunderstore search`), one work
   package per commit where possible.
 
+## Dependency and version policy
+
+- Runtimes: latest Go release line with its newest patch (pinned in `go.mod`), Node.js
+  current LTS (22) for tooling. Frontend packages track their latest major.
+- Zero known vulnerabilities: `govulncheck ./...` and `npm audit --audit-level=moderate`
+  must be clean; CI enforces both. Prefer upgrading; if a fix does not exist, remove the
+  dependency (as done for the OpenAPI type generator, which now runs via `npx` outside
+  the lockfile — see ADR-013) rather than ignoring the advisory.
+- Exceptions: TypeScript stays on the 5.x line while the toolchain around it requires it.
+
 ## Commands
 
 ```
