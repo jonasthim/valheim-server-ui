@@ -85,3 +85,44 @@ test.describe.serial('backups, worlds and schedules', () => {
     expect([202, 409]).toContain(run.status())
   })
 })
+
+test.describe.serial('world regenerate and delete with typed confirmation', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page)
+  })
+
+  test('regenerate requires typing the world name, backs up and removes the files', async ({ page }) => {
+    seedWorld('main', 'Midgard')
+    const before = ((await (await page.request.get('/api/v1/instances/main/backups')).json()) as { backups: unknown[] }).backups.length
+    await page.goto('/instances/main/worlds')
+    await page.getByRole('button', { name: /regenerate/i }).first().click()
+    const dialog = page.getByRole('dialog')
+    const confirm = dialog.getByRole('button', { name: /regenerate world/i })
+    await expect(confirm).toBeDisabled()
+    await dialog.getByLabel(/type Midgard to confirm/i).fill('Midgard')
+    await expect(confirm).toBeEnabled()
+    await confirm.click()
+    // job drawer opens; wait for success then verify the effects
+    await expect(page.getByRole('dialog').getByText(/succeeded/i).first()).toBeVisible({ timeout: 20_000 })
+    await page.keyboard.press('Escape')
+    const worlds = (await (await page.request.get('/api/v1/instances/main/worlds')).json()) as { worlds: { name: string }[] }
+    expect(worlds.worlds.find((w) => w.name === 'Midgard')).toBeUndefined()
+    const after = ((await (await page.request.get('/api/v1/instances/main/backups')).json()) as { backups: { kind: string; world: string }[] }).backups
+    expect(after.length).toBe(before + 1)
+    expect(after.some((b) => b.kind === 'manual' && b.world === 'Midgard')).toBeTruthy()
+  })
+
+  test('deleting an inactive world also requires the typed name', async ({ page }) => {
+    seedWorld('main', 'Scratch')
+    await page.goto('/instances/main/worlds')
+    const row = page.getByRole('row', { name: /Scratch/ })
+    await row.getByRole('button', { name: /delete scratch/i }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByRole('button', { name: /delete world/i })).toBeDisabled()
+    await dialog.getByLabel(/type Scratch to confirm/i).fill('Scratch')
+    await dialog.getByRole('button', { name: /delete world/i }).click()
+    await expect(page.getByText(/world deleted/i).first()).toBeVisible()
+    const worlds = (await (await page.request.get('/api/v1/instances/main/worlds')).json()) as { worlds: { name: string }[] }
+    expect(worlds.worlds.find((w) => w.name === 'Scratch')).toBeUndefined()
+  })
+})
