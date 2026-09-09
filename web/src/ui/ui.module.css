@@ -1,0 +1,102 @@
+.pageHeader {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-md);
+  flex-wrap: wrap;
+  padding-bottom: var(--mantine-spacing-sm);
+}
+.pageTitle {
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.statTile {
+  position: relative;
+  overflow: hidden;
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-lg);
+  min-height: 92px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+  transition: border-color 120ms ease, transform 120ms ease;
+}
+.statTile[data-accent]::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--tile-accent);
+  opacity: 0.9;
+}
+.statValue {
+  font-size: 1.6rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+.sectionCard {
+  padding: 0;
+}
+.sectionHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--mantine-spacing-md);
+  padding: var(--mantine-spacing-md) var(--mantine-spacing-lg);
+  border-bottom: 1px solid var(--vh-border);
+}
+.sectionBody {
+  padding: var(--mantine-spacing-lg);
+}
+.sectionBodyFlush {
+  padding: 0;
+}
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--dot-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-color) 22%, transparent);
+  flex: none;
+}
+.statusDot[data-pulse] {
+  animation: vhPulse 1.6s ease-in-out infinite;
+}
+@keyframes vhPulse {
+  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-color) 22%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--dot-color) 10%, transparent); }
+}
+.statusPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px 3px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--dot-color) 30%, transparent);
+  background: color-mix(in srgb, var(--dot-color) 10%, transparent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--mantine-spacing-sm);
+  padding: calc(var(--mantine-spacing-xl) * 1.5) var(--mantine-spacing-lg);
+  border: 1px dashed var(--vh-border-strong);
+  border-radius: var(--mantine-radius-lg);
+}
+.emptyIcon {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: var(--vh-accent-soft);
+  color: var(--vh-ember);
+}
