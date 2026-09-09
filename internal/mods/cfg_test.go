@@ -218,3 +218,42 @@ func TestListReadWriteConfigFile(t *testing.T) {
 		t.Errorf("expected raw mode to replace the file wholesale, got %q", updated.Raw)
 	}
 }
+
+// BepInEx's ConfigFile.Save orders sections as plain strings, so mods that
+// number their sections ("1 - …", "2 - …", "10 - …") come out of the file as
+// 1, 10, 2. The editor should show them in natural order while keeping each
+// section's keys in file order.
+func TestParseCfg_SectionsInNaturalOrder(t *testing.T) {
+	raw := strings.Join([]string{
+		"[1 - Server & Sync]",
+		"Lock Configuration = On",
+		"",
+		"[10 - Favoriting]",
+		"Favoriting Modifier Key = LeftAlt",
+		"Zebra = 1",
+		"Alpha = 2",
+		"",
+		"[2 - Chests]",
+		"Range = 5",
+		"",
+		"[General]",
+		"Enabled = true",
+		"",
+	}, "\n")
+	entries := parseCfg(raw)
+	var got []string
+	for _, e := range entries {
+		got = append(got, e.Section+"/"+e.Key)
+	}
+	want := []string{
+		"1 - Server & Sync/Lock Configuration",
+		"2 - Chests/Range",
+		"10 - Favoriting/Favoriting Modifier Key",
+		"10 - Favoriting/Zebra",
+		"10 - Favoriting/Alpha",
+		"General/Enabled",
+	}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("section order\n got %v\nwant %v", got, want)
+	}
+}

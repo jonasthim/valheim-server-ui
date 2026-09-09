@@ -137,7 +137,72 @@ func parseCfg(raw string) []domain.ConfigEntry {
 			resetPending()
 		}
 	}
+	sortSectionsNaturally(entries)
 	return entries
+}
+
+// sortSectionsNaturally reorders entries so sections appear in natural order
+// ("1 - …", "2 - …", "10 - …") while every section keeps its keys in file
+// order. BepInEx's ConfigFile.Save writes sections in plain string order,
+// which puts "10" before "2" for mods that number their sections.
+func sortSectionsNaturally(entries []domain.ConfigEntry) {
+	sort.SliceStable(entries, func(i, j int) bool {
+		return naturalLess(entries[i].Section, entries[j].Section)
+	})
+}
+
+// naturalLess compares two strings chunk by chunk, comparing runs of digits
+// by numeric value and everything else case-insensitively.
+func naturalLess(a, b string) bool {
+	for a != "" && b != "" {
+		ca, ra := naturalChunk(a)
+		cb, rb := naturalChunk(b)
+		a, b = ra, rb
+		if ca == cb {
+			continue
+		}
+		da, db := isDigits(ca), isDigits(cb)
+		switch {
+		case da && db:
+			ta, tb := strings.TrimLeft(ca, "0"), strings.TrimLeft(cb, "0")
+			if len(ta) != len(tb) {
+				return len(ta) < len(tb)
+			}
+			if ta != tb {
+				return ta < tb
+			}
+		case da != db:
+			return da // digits sort before letters
+		default:
+			la, lb := strings.ToLower(ca), strings.ToLower(cb)
+			if la != lb {
+				return la < lb
+			}
+		}
+	}
+	return len(a) < len(b)
+}
+
+// naturalChunk splits off the leading run of digits or non-digits.
+func naturalChunk(s string) (chunk, rest string) {
+	digit := isDigits(s[:1])
+	i := 1
+	for i < len(s) && isDigits(s[i:i+1]) == digit {
+		i++
+	}
+	return s[:i], s[i:]
+}
+
+func isDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // applyCfgValues rewrites raw, replacing only the value of each matching
