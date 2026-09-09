@@ -198,6 +198,114 @@ func TestTracker_SpawnWithoutConnectAddsUnboundEntry(t *testing.T) {
 	}
 }
 
+func onlineNames(t *testing.T, tr *tracker) []string {
+	t.Helper()
+	online, _, _, _, _ := tr.snapshot()
+	names := make([]string, 0, len(online))
+	for _, p := range online {
+		names = append(names, p.Name)
+	}
+	return names
+}
+
+func TestTracker_RespawnDoesNotDuplicateOrLeaveGhost(t *testing.T) {
+	// Death and respawn log a second "Got character ZDOID" line for the same
+	// name with no new connection; the tracker must not turn that into an
+	// unbound duplicate that the disconnect can never remove.
+	tr := newTracker("main", &fakePublisher{}, newFakeStore(), testLogger())
+	ctx := context.Background()
+
+	tr.HandleLogEvent(ctx, logs.Connected{ID: "id-1"})
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Pepe Silvia"})
+	tr.HandleLogEvent(ctx, logs.Despawned{Name: "Pepe Silvia"}) // died
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Pepe Silvia"})   // respawned
+	online, _, _, _, _ := tr.snapshot()
+	if len(online) != 1 || online[0].PlatformID != "id-1" {
+		t.Fatalf("online after respawn = %#v, want the single bound entry", online)
+	}
+
+	tr.HandleLogEvent(ctx, logs.Disconnected{ID: "id-1"})
+	if names := onlineNames(t, tr); len(names) != 0 {
+		t.Fatalf("online after disconnect = %v, want empty", names)
+	}
+}
+
+func TestTracker_ReconnectReplacesStaleEntry(t *testing.T) {
+	tr := newTracker("main", &fakePublisher{}, newFakeStore(), testLogger())
+	ctx := context.Background()
+
+	tr.HandleLogEvent(ctx, logs.Connected{ID: "id-1"})
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Bjorn"})
+	// Connection dropped without a line we parse; the player comes back.
+	tr.HandleLogEvent(ctx, logs.Connected{ID: "id-1"})
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Bjorn"})
+	online, _, _, _, _ := tr.snapshot()
+	if len(online) != 1 || online[0].PlatformID != "id-1" {
+		t.Fatalf("online after reconnect = %#v, want one bound Bjorn", online)
+	}
+	tr.HandleLogEvent(ctx, logs.Disconnected{ID: "id-1"})
+	if names := onlineNames(t, tr); len(names) != 0 {
+		t.Fatalf("online after disconnect = %v, want empty", names)
+	}
+}
+
+func TestTracker_BindingSupersedesUnboundEntry(t *testing.T) {
+	tr := newTracker("main", &fakePublisher{}, newFakeStore(), testLogger())
+	ctx := context.Background()
+
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Bjorn"}) // e.g. replayed from backlog
+	tr.HandleLogEvent(ctx, logs.Connected{ID: "id-1"})
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Bjorn"})
+	online, _, _, _, _ := tr.snapshot()
+	if len(online) != 1 || online[0].PlatformID != "id-1" {
+		t.Fatalf("online = %#v, want one bound Bjorn", online)
+	}
+}
+
+func TestTracker_UnmatchedDisconnectDropsUnboundEntry(t *testing.T) {
+	tr := newTracker("main", &fakePublisher{}, newFakeStore(), testLogger())
+	ctx := context.Background()
+
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Ghost"}) // connection line predates the tail
+	tr.HandleLogEvent(ctx, logs.Connected{ID: "id-2"})
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Bound"})
+	tr.HandleLogEvent(ctx, logs.Disconnected{ID: "id-9"}) // nobody we know by id
+	names := onlineNames(t, tr)
+	if len(names) != 1 || names[0] != "Bound" {
+		t.Fatalf("online = %v, want only Bound left", names)
+	}
+}
+
+func TestTracker_A2SReconcilesOnlineList(t *testing.T) {
+	pub := &fakePublisher{}
+	tr := newTracker("main", pub, newFakeStore(), testLogger())
+	ctx := context.Background()
+
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Ghost"})
+	tr.HandleLogEvent(ctx, logs.Connected{ID: "id-1"})
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Bound"})
+
+	// Query port says one player: the unbound entry goes, the bound one stays.
+	tr.HandleA2S(domain.A2SInfo{Players: 1, MaxPlayers: 10})
+	if names := onlineNames(t, tr); len(names) != 1 || names[0] != "Bound" {
+		t.Fatalf("online after A2S=1: %v, want [Bound]", names)
+	}
+	// A matching count changes nothing and publishes nothing.
+	before := pub.count()
+	tr.HandleA2S(domain.A2SInfo{Players: 1, MaxPlayers: 10})
+	if pub.count() != before {
+		t.Fatalf("A2S with a matching count published %d event(s)", pub.count()-before)
+	}
+	// Nobody online according to the server: the list is cleared.
+	tr.HandleA2S(domain.A2SInfo{Players: 0, MaxPlayers: 10})
+	if names := onlineNames(t, tr); len(names) != 0 {
+		t.Fatalf("online after A2S=0: %v, want empty", names)
+	}
+	if ev, ok := pub.last(); !ok || ev.Name != domain.EventInstancePlayers {
+		t.Fatalf("expected an instance.players event after reconciliation, got %#v", ev)
+	}
+}
+
 func TestTracker_ReadyAndJoinCode(t *testing.T) {
 	tr := newTracker("main", &fakePublisher{}, newFakeStore(), testLogger())
 	ctx := context.Background()

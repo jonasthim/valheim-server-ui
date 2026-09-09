@@ -115,7 +115,22 @@ func (t *tracker) HandleA2S(info domain.A2SInfo) {
 	info.QueriedAt = time.Now()
 	t.a2s = &info
 	t.a2sAt = info.QueriedAt
+	// The query port is authoritative for the count (ARCHITECTURE.md §8); use
+	// it to age out entries the log heuristic could not close. Nobody online
+	// clears everything; otherwise only unbound entries are dropped, oldest
+	// first, since bound ones will be closed by their own disconnect line.
+	changed := false
+	switch {
+	case info.Players == 0 && len(t.online) > 0:
+		t.online = map[string]*entry{}
+		changed = true
+	case info.Players > 0 && len(t.online) > info.Players:
+		changed = t.dropUnboundLocked(len(t.online)-info.Players) > 0
+	}
 	t.mu.Unlock()
+	if changed {
+		t.publish()
+	}
 }
 
 func (t *tracker) onConnected(ctx context.Context, id string) {
@@ -123,18 +138,22 @@ func (t *tracker) onConnected(ctx context.Context, id string) {
 		return
 	}
 	t.mu.Lock()
-	if _, ok := t.online["id:"+id]; ok {
-		t.mu.Unlock()
-		return
-	}
 	for _, p := range t.pending {
 		if p.id == id {
 			t.mu.Unlock()
 			return
 		}
 	}
+	// A new connection from an id we still list as online means the previous
+	// session ended without a "Closing socket" line we recognised: drop the
+	// stale entry and let the coming spawn re-bind it.
+	_, wasOnline := t.online["id:"+id]
+	delete(t.online, "id:"+id)
 	t.pending = append(t.pending, pendingConn{id: id, at: time.Now()})
 	t.mu.Unlock()
+	if wasOnline {
+		t.publish()
+	}
 
 	if t.store == nil {
 		return
@@ -155,6 +174,22 @@ func (t *tracker) onSpawned(ctx context.Context, name string) {
 		t.pending = t.pending[1:]
 		boundID = p.id
 		connectedAt = p.at
+	}
+	if boundID == "" {
+		// No connection to bind: if this name is already online this is a
+		// respawn (death, or a second ZDOID line), not a new player. Creating a
+		// second, unbound entry here is what used to leave ghosts behind after
+		// the real entry was removed by the disconnect.
+		for _, e := range t.online {
+			if e.name == name {
+				t.mu.Unlock()
+				return
+			}
+		}
+	} else {
+		// Binding a connection to a name supersedes any unbound entry with
+		// that name (e.g. a spawn replayed from the log backlog).
+		delete(t.online, "name:"+name)
 	}
 	key := "name:" + name
 	if boundID != "" {
@@ -179,15 +214,47 @@ func (t *tracker) onDisconnected(id string) {
 		return
 	}
 	t.mu.Lock()
+	_, matched := t.online["id:"+id]
 	delete(t.online, "id:"+id)
 	for i, p := range t.pending {
 		if p.id == id {
 			t.pending = append(t.pending[:i], t.pending[i+1:]...)
+			matched = true
 			break
 		}
 	}
+	if !matched {
+		// The id matched nothing we track, so the player that left is one we
+		// only know by name (spawn seen without its connection line). Best
+		// effort: drop the longest-connected unbound entry.
+		t.dropUnboundLocked(1)
+	}
 	t.mu.Unlock()
 	t.publish()
+}
+
+// dropUnboundLocked removes up to n name-only entries, oldest connection
+// first. Caller holds t.mu. Returns how many were removed.
+func (t *tracker) dropUnboundLocked(n int) int {
+	removed := 0
+	for removed < n {
+		var oldestKey string
+		var oldest *entry
+		for k, e := range t.online {
+			if e.id != "" {
+				continue
+			}
+			if oldest == nil || e.connectedAt.Before(oldest.connectedAt) {
+				oldestKey, oldest = k, e
+			}
+		}
+		if oldest == nil {
+			break
+		}
+		delete(t.online, oldestKey)
+		removed++
+	}
+	return removed
 }
 
 // reset clears the online set and pending connections (called on Detach: the
