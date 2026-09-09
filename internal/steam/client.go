@@ -231,14 +231,9 @@ func lastLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// runCommand is the default CommandRunner: it execs steamcmdPath in its own
-// process group so ctx cancellation (via cmd.Cancel) can kill the whole
-// group, not just the direct child (steamcmd itself forks helper processes).
-func runCommand(ctx context.Context, steamcmdPath string, args []string, out io.Writer) error {
-	return runCommandEnv(ctx, steamcmdPath, args, out, runOptions{})
-}
-
-// runCommandEnv is runCommand with an explicit environment. When opts.home is
+// runCommandEnv is the default CommandRunner: it execs steamcmdPath in its own
+// process group so ctx cancellation (via cmd.Cancel) can kill the whole group,
+// not just the direct child (steamcmd itself forks helpers). When opts.home is
 // set, HOME (and Steam's own HOME-derived caches) point there so every write
 // lands inside a directory the manager is allowed to touch.
 func runCommandEnv(ctx context.Context, steamcmdPath string, args []string, out io.Writer, opts runOptions) error {
