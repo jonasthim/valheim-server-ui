@@ -44,7 +44,7 @@ export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | unde
         color="blue"
         variant="light"
         icon={<IconSparkles size={16} />}
-        title={`Valheim Server UI v${appUpdate.latest_version ?? '?'} available`}
+        title={`Valheim Server UI ${appUpdate.latest_version ?? '?'} available`}
       >
         <Group justify="space-between" wrap="wrap" gap="sm">
           <Text size="sm" c="dimmed">

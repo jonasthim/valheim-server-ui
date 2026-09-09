@@ -14,7 +14,7 @@ export function ReleaseNotesModal({
   appUpdate: AppUpdateInfo
 }) {
   return (
-    <Modal opened={opened} onClose={onClose} title={`Valheim Server UI v${appUpdate.latest_version ?? ''}`} size="lg">
+    <Modal opened={opened} onClose={onClose} title={`Valheim Server UI ${appUpdate.latest_version ?? ''}`} size="lg">
       <Stack gap="sm">
         {appUpdate.published_at && (
           <Text size="sm" c="dimmed">
