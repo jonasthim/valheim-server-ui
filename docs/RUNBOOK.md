@@ -188,6 +188,7 @@ proven.
 | Install job fails with `Disk write failure` | Almost never a full disk. SteamCMD could not write to `$HOME` or the install dir. The units run with `ProtectHome=true` and set `HOME=/var/lib/valheim`; check `systemctl show valheim-ui -p Environment`, `getent passwd valheim` (home must be `/var/lib/valheim`; re-run `install.sh`, which repoints a pre-existing user), and ownership of `/var/lib/valheim`. |
 | Install job fails with `0x6`/`0x202`/`0x602` | SteamCMD transient errors; the job retries once. Re-run the install; check disk space (`df -h /var/lib/valheim`). |
 | Start fails with "unitctl" or sudo errors | `visudo -cf /etc/sudoers.d/valheim-ui`; confirm `/usr/local/lib/valheim-ui/unitctl` is root-owned 0755; `sudo -u valheim sudo -n /usr/local/lib/valheim-ui/unitctl start <id>`. |
+| Console shows `Failed to open plugin: .../libparty.so` or an `ArgumentNullException` during startup | Stock Valheim dedicated-server noise, seen on every install; the server continues to "Game server connected". Not a permissions or sandbox problem. |
 | Instance goes to `failed` right after start | `journalctl -u valheim@<id>` and `logs/console.log`. Common causes: port already in use, missing 32-bit libs, password shorter than 5 characters. |
 | Players cannot connect | UDP ports not forwarded; server name contains the password (Valheim refuses); wrong crossplay setting for console players. |
 | Player count shows "?" / "from log" | The A2S query port (port+1) is not answering yet; names come from the log heuristic until it does. |
