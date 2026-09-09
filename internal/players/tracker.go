@@ -518,6 +518,15 @@ func (m *Manager) Snapshot(instanceID string) (online []domain.OnlinePlayer, joi
 
 // Enrich implements domain.StatusEnricher.
 func (m *Manager) Enrich(_ context.Context, st *domain.InstanceStatus) {
+	if st.State != domain.StateRunning && st.State != domain.StateStarting {
+		// A stopped/failed process has no live players or session, regardless of
+		// what the tracker saw last (detach may still be in flight).
+		st.Ready = false
+		st.PlayersOnline = 0
+		st.JoinCode = ""
+		st.A2S = nil
+		return
+	}
 	online, joinCode, ready, a2s, a2sAge, tracked := m.Snapshot(st.InstanceID)
 	if !tracked {
 		return

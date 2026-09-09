@@ -1,6 +1,8 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,7 +71,9 @@ type createInstanceRequest struct {
 }
 
 func (d *Deps) createInstance(w http.ResponseWriter, r *http.Request) {
-	var req createInstanceRequest
+	// Pre-populate defaults so omitted config fields keep them and explicit
+	// zeros (e.g. game_backups: 0) survive.
+	req := createInstanceRequest{Config: domain.DefaultInstanceConfig()}
 	if err := DecodeJSON(r, &req); err != nil {
 		WriteError(w, err)
 		return
@@ -125,9 +129,34 @@ func (d *Deps) updateInstance(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, maxJSONBody))
+	if err != nil {
+		WriteError(w, domain.Wrap(domain.CodeValidationFailed, "read body", err))
+		return
+	}
+	// Detect whether "config" was sent at all; when it was, decode it over the
+	// current config so omitted fields keep their stored values.
+	var probe struct {
+		Config json.RawMessage `json:"config"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		WriteError(w, domain.Wrap(domain.CodeValidationFailed, "invalid JSON body: "+err.Error(), err))
+		return
+	}
 	var req updateInstanceRequest
-	if err := DecodeJSON(r, &req); err != nil {
-		WriteError(w, err)
+	if len(probe.Config) > 0 && string(probe.Config) != "null" {
+		cur, err := d.Instances.Get(r.Context(), id)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		cfg := cur.Config
+		req.Config = &cfg
+	}
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		WriteError(w, domain.Wrap(domain.CodeValidationFailed, "invalid JSON body: "+err.Error(), err))
 		return
 	}
 	inst, err := d.Instances.Update(r.Context(), id, req.Name, req.Config, req.Autostart)

@@ -375,7 +375,7 @@ func TestManager_BootstrapsFromListAndEnriches(t *testing.T) {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		st := &domain.InstanceStatus{InstanceID: "main"}
+		st := &domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning}
 		mgr.Enrich(ctx, st)
 		if st.Ready && st.JoinCode == "123456" {
 			break

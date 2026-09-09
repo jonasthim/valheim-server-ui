@@ -111,6 +111,12 @@ const CONFIG_FIELD_KEYS = new Set([
 export function mapConfigFieldErrors(fields: Record<string, string>): Record<string, string> {
   const mapped: Record<string, string> = {}
   for (const [field, message] of Object.entries(fields)) {
+    // The API reports the display name as "display_name" and config fields
+    // relative to config (e.g. "name" is the in-game server name).
+    if (field === 'display_name') {
+      mapped.name = message
+      continue
+    }
     const head = field.split('.')[0]
     mapped[CONFIG_FIELD_KEYS.has(head) ? `config.${field}` : field] = message
   }

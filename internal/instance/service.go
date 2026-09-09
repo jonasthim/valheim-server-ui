@@ -100,7 +100,7 @@ func (s *Service) Get(ctx context.Context, id string) (*domain.Instance, error) 
 func validateDisplayName(name string) error {
 	n := strings.TrimSpace(name)
 	if n == "" || len(name) > 64 {
-		return domain.Validation([]domain.FieldError{{Field: "name", Message: "must be 1-64 characters"}})
+		return domain.Validation([]domain.FieldError{{Field: "display_name", Message: "must be 1-64 characters"}})
 	}
 	return nil
 }
@@ -370,6 +370,7 @@ func (s *Service) composeStatus(ctx context.Context, r row) (*domain.InstanceSta
 		PendingRestart:   r.PendingRestart,
 		Detail:           supSt.Detail,
 		InstalledBuildID: r.InstalledBuildID,
+		UpdateAvailable:  r.LatestBuildID != "" && r.InstalledBuildID != "" && r.LatestBuildID != r.InstalledBuildID,
 		BepInExInstalled: fileExists(paths.BepInExDir() + "/core/BepInEx.Preloader.dll"),
 		BepInExEnabled:   r.Config.BepInExEnabled,
 	}
@@ -507,4 +508,34 @@ func (s *Service) pollOnce(ctx context.Context, last map[string]domain.InstanceS
 			delete(last, id)
 		}
 	}
+}
+
+// SetBuildIDs records the result of a Steam update check (installed vs latest
+// public build) so Status can report update_available. Used by the update
+// checker's StoreFunc.
+func (s *Service) SetBuildIDs(ctx context.Context, id, installed, latest string, checkedAt time.Time) error {
+	r, err := s.getRow(ctx, id)
+	if err != nil {
+		return err
+	}
+	if installed != "" {
+		r.InstalledBuildID = installed
+	}
+	r.LatestBuildID = latest
+	t := checkedAt.UTC()
+	r.BuildIDCheckedAt = &t
+	r.UpdatedAt = time.Now().UTC()
+	return s.saveRow(ctx, r)
+}
+
+// Exists reports whether an instance row exists.
+func (s *Service) Exists(ctx context.Context, id string) (bool, error) {
+	_, err := s.getRow(ctx, id)
+	if err == nil {
+		return true, nil
+	}
+	if domain.AsError(err).Code == domain.CodeNotFound {
+		return false, nil
+	}
+	return false, err
 }
