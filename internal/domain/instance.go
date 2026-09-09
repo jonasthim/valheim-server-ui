@@ -359,3 +359,30 @@ const (
 	SteamAppID     = "896660"
 	SteamGameAppID = "892970"
 )
+
+// PathsFor returns the canonical directory layout for an instance
+// (ARCHITECTURE.md §3). instancesDir is <data_dir>/instances. Every package
+// must derive paths through this function, never by string concatenation.
+func PathsFor(instancesDir, id string) InstancePaths {
+	root := instancesDir + "/" + id
+	return InstancePaths{
+		Root:    root,
+		Server:  root + "/server",
+		Save:    root + "/save",
+		Backups: root + "/backups",
+		Logs:    root + "/logs",
+	}
+}
+
+// Well-known files inside an instance.
+func (p InstancePaths) LaunchFile() string   { return p.Root + "/launch.json" }
+func (p InstancePaths) ConsoleLog() string   { return p.Logs + "/console.log" }
+func (p InstancePaths) WorldsDir() string    { return p.Save + "/worlds_local" }
+func (p InstancePaths) ServerBinary() string { return p.Server + "/valheim_server.x86_64" }
+func (p InstancePaths) AppManifest() string {
+	return p.Server + "/steamapps/appmanifest_" + SteamAppID + ".acf"
+}
+func (p InstancePaths) BepInExDir() string { return p.Server + "/BepInEx" }
+func (p InstancePaths) ListFile(k ListKind) string {
+	return p.Save + "/" + k.FileName()
+}
