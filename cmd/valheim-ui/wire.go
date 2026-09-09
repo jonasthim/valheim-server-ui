@@ -87,9 +87,11 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 	}
 	checker := steam.NewUpdateChecker(steamClient, interval, listInstalled, store, deps.Bus)
 	go checker.Run(ctx)
-	deps.Steam = steam.NewService(steamClient, checker)
 
-	// WP-05..08 attach here in wave 2 (install/update jobs, backups, scheduler, mods).
-	_ = runner
+	// WP-05: install/update jobs (pre-update backup hook attached by WP-06 below).
+	var preUpdate instance.PreUpdateBackupFunc
+	wireSteamJobs(deps, inst, runner, steamClient, checker, preUpdate)
+
+	// WP-06..08 attach here (backups, scheduler, mods).
 	return nil
 }

@@ -3,13 +3,16 @@ package steam
 import (
 	"context"
 
-	"github.com/jonasthim/valheim-server-ui/internal/api"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
-// Compile-time check that Service satisfies api.SteamService.
-var _ api.SteamService = (*Service)(nil)
-
+// Service satisfies api.SteamService structurally (verified where it is
+// wired to api.Deps.Steam in cmd/valheim-ui). It deliberately does not
+// import internal/api itself: internal/api's own internal test files import
+// internal/instance (WP-02, for a real Service in handler tests), and
+// internal/instance (WP-05) depends on internal/steam, so this package
+// importing internal/api back would be an import cycle for those test files.
+//
 // Service adapts a Client (+ optional UpdateChecker) to api.SteamService.
 // EnqueueInstall, EnqueueUpdate and CheckUpdate are instance-scoped
 // operations owned by WP-05 (they need the instance service to stop/start

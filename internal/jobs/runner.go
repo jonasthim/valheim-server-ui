@@ -16,12 +16,15 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/jonasthim/valheim-server-ui/internal/api"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
-// Compile-time check that Runner satisfies api.JobService.
-var _ api.JobService = (*Runner)(nil)
+// Runner satisfies api.JobService structurally (verified where it is wired
+// to api.Deps.Jobs in cmd/valheim-ui). It deliberately does not import
+// internal/api itself: internal/api's own internal test files import
+// internal/instance (WP-02, for a real Service in handler tests), and
+// internal/instance (WP-05) depends on this package, so this package
+// importing internal/api back would be an import cycle for those test files.
 
 // DefaultMaxConcurrent is how many jobs may run at once across all queues
 // when no Option overrides it (ARCHITECTURE.md §9: "At most 4 workers run
