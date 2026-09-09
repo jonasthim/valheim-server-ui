@@ -134,11 +134,16 @@ export function AccountPage() {
       <Card withBorder padding="lg">
         <Stack gap="md">
           <Title order={4}>Password</Title>
-          {user.has_password ? (
+          {user.identities.length > 0 ? (
+            <Text c="dimmed" size="sm">
+              This account is linked to single sign-on; its password is managed by the identity provider and cannot
+              be changed here.
+            </Text>
+          ) : user.has_password ? (
             <ChangePasswordForm />
           ) : (
             <Text c="dimmed" size="sm">
-              This account signs in via single sign-on and has no local password to change.
+              This account has no local password.
             </Text>
           )}
         </Stack>

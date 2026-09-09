@@ -323,7 +323,20 @@ func (s *Service) Delete(ctx context.Context, id int64) error {
 	return s.users.Delete(ctx, id)
 }
 
+// ErrSSOManaged is returned when a password operation targets an account
+// linked to the identity provider: its credential lives at the IdP.
+func errSSOManaged() error {
+	return domain.E(domain.CodeConflict, "this account signs in through single sign-on; its password is managed by the identity provider")
+}
+
 func (s *Service) SetPassword(ctx context.Context, id int64, newPassword string) error {
+	usr, err := s.users.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if len(usr.Identities) > 0 {
+		return errSSOManaged()
+	}
 	if err := validatePassword(newPassword); err != nil {
 		return err
 	}
@@ -338,6 +351,9 @@ func (s *Service) ChangePassword(ctx context.Context, id int64, current, newPass
 	usr, err := s.users.Get(ctx, id)
 	if err != nil {
 		return err
+	}
+	if len(usr.Identities) > 0 {
+		return errSSOManaged()
 	}
 	if !usr.HasPassword {
 		return domain.E(domain.CodeValidationFailed, "account has no local password (OIDC-only)")

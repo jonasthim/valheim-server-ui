@@ -119,9 +119,16 @@ export function UsersPage() {
                         <IconPencil size={16} />
                       </ActionIcon>
                     </Tooltip>
-                    <Tooltip label="Set password">
+                    <Tooltip
+                      label={
+                        u.identities.length > 0
+                          ? 'Password managed by the identity provider (SSO-linked account)'
+                          : 'Set password'
+                      }
+                    >
                       <ActionIcon
                         variant="subtle"
+                        disabled={u.identities.length > 0}
                         onClick={() => setSettingPassword(u)}
                         aria-label={`Set password for ${u.username}`}
                       >

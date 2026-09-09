@@ -47,6 +47,11 @@ account automatically:
   login keeps working), role and history. With **Sync roles** on, the role is
   re-evaluated from the groups on that login like any other SSO login.
 - The audit log records the merge as `auth.oidc.link`.
+- From then on the password is owned by the identity provider: the account's
+  own "change password" and the admin "set password" action are refused for any
+  SSO-linked account (the existing local password keeps working until the
+  provider is the only way in). Host-side break-glass remains
+  `valheim-ui admin reset-password`.
 
 If you use several accounts with the same email on purpose, give the local one a
 different address before enabling SSO.
