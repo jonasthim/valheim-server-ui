@@ -152,6 +152,10 @@ restart — see §11):
 
 Database migrations run automatically on start in all cases.
 
+If the `valheim` user existed before the first install with a different home
+directory, the installer changes it to `/var/lib/valheim`; the manager and any
+running instances are stopped briefly for that one `usermod` and started again.
+
 ## 7. Backup of the manager itself
 
 Everything lives in `/var/lib/valheim`. For a full host backup, stop the manager

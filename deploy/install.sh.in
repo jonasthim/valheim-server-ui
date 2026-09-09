@@ -237,6 +237,7 @@ if [[ $CHECK -eq 1 ]]; then
       echo "  - system user 'valheim': present (home $cur_home)"
     else
       echo "  - system user 'valheim': present with home $cur_home; would be changed to $DATA_DIR (units set HOME=$DATA_DIR and deny /home)"
+      echo "    (valheim-ui and any running valheim@ instances are stopped briefly for usermod, then started again)"
     fi
   else
     echo "  - system user 'valheim': would be created"
@@ -276,8 +277,10 @@ if [[ $CHECK -eq 1 ]]; then
   else
     echo "  - SteamCMD: would be downloaded and self-updated"
   fi
-  if systemctl is-enabled --quiet valheim-ui.service 2>/dev/null; then
-    echo "  - valheim-ui.service: enabled"
+  if systemctl is-active --quiet valheim-ui.service 2>/dev/null; then
+    echo "  - valheim-ui.service: active; would be restarted onto the installed binary"
+  elif systemctl is-enabled --quiet valheim-ui.service 2>/dev/null; then
+    echo "  - valheim-ui.service: enabled but not running; would be started"
   else
     echo "  - valheim-ui.service: would be enabled and started"
   fi
@@ -299,6 +302,12 @@ if [[ $SKIP_DEPS -eq 0 ]]; then
   fi
 fi
 
+MANAGER_WAS_ACTIVE=0
+if systemctl is-active --quiet valheim-ui.service 2>/dev/null; then
+  MANAGER_WAS_ACTIVE=1
+fi
+STOPPED_INSTANCES=()
+
 log "Creating user and directories"
 if ! id valheim >/dev/null 2>&1; then
   useradd --system --home-dir "$DATA_DIR" --shell /usr/sbin/nologin --user-group valheim
@@ -306,6 +315,18 @@ else
   cur_home="$(getent passwd valheim | cut -d: -f6)"
   if [[ "$cur_home" != "$DATA_DIR" ]]; then
     echo "warning: user 'valheim' already exists with home $cur_home; setting it to $DATA_DIR (the units run with ProtectHome=true and HOME=$DATA_DIR). Files under $cur_home are left in place." >&2
+    # usermod refuses to change a user that owns running processes, so stop the
+    # manager and any running game instances first; they are started again below.
+    if [[ $MANAGER_WAS_ACTIVE -eq 1 ]]; then
+      log "Stopping valheim-ui for the home directory change"
+      systemctl stop valheim-ui.service
+    fi
+    while read -r unit; do
+      [[ -n "$unit" ]] || continue
+      log "Stopping $unit for the home directory change"
+      systemctl stop "$unit"
+      STOPPED_INSTANCES+=("$unit")
+    done < <(systemctl list-units --type=service --state=active --plain --no-legend 'valheim@*' 2>/dev/null | awk '{print $1}')
     usermod -d "$DATA_DIR" valheim
   fi
 fi
@@ -358,7 +379,18 @@ fi
 
 log "Starting valheim-ui"
 systemctl daemon-reload
-systemctl enable --now valheim-ui.service
+systemctl enable valheim-ui.service >/dev/null 2>&1 || systemctl enable valheim-ui.service
+if [[ $MANAGER_WAS_ACTIVE -eq 1 ]]; then
+  # Upgrade: pick up the installed binary and unit files. Game instances are
+  # independent units and keep running across this restart.
+  systemctl restart valheim-ui.service
+else
+  systemctl start valheim-ui.service
+fi
+for unit in "${STOPPED_INSTANCES[@]}"; do
+  log "Starting $unit again"
+  systemctl start "$unit" || echo "warning: could not start $unit; start it from the UI" >&2
+done
 sleep 1
 systemctl --no-pager --lines=5 status valheim-ui.service || true
 
