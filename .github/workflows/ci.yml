@@ -17,6 +17,7 @@ jobs:
         with: { version: latest }
       - run: go test -race -count=1 ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - run: make deploy-sync-check
 
   frontend:
     runs-on: ubuntu-latest
@@ -65,9 +66,19 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: web-dist, path: web/dist }
       - run: make build-go VERSION=${{ github.ref_name }} COMMIT=${{ github.sha }}
-      - run: mkdir -p dist && tar -czf dist/valheim-ui_linux_amd64.tar.gz -C bin valheim-ui && tar -czf dist/deploy.tar.gz deploy
+      - run: make deploy-sync-check
+      - run: |
+          set -euo pipefail
+          mkdir -p dist
+          tar -czf dist/valheim-ui_linux_amd64.tar.gz -C bin valheim-ui
+          tar -czf dist/deploy.tar.gz deploy
+          cp deploy/install.sh dist/install.sh
+          ( cd dist && sha256sum valheim-ui_linux_amd64.tar.gz deploy.tar.gz install.sh > SHA256SUMS )
+          cat dist/SHA256SUMS
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/valheim-ui_linux_amd64.tar.gz
             dist/deploy.tar.gz
+            dist/install.sh
+            dist/SHA256SUMS

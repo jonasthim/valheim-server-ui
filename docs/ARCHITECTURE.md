@@ -434,31 +434,90 @@ Contract: `docs/openapi.yaml` (OpenAPI 3.1). Conventions:
 
 ## 16. Deployment
 
+Install is a single command with nothing else to download by hand:
+
+```
+curl -fsSL https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/install.sh | sudo bash
+```
+
+This works because `deploy/install.sh` is fully self-contained: `unitctl`,
+`sudoers.d/valheim-ui`, `valheim-ui.service`, `valheim@.service` and
+`config.example.yaml` are embedded in it as heredocs, generated from the
+standalone files of the same names by `deploy/build-installer.sh` (template:
+`deploy/install.sh.in`, markers `# @@INCLUDE <name>@@`). Those standalone files
+remain the source of truth and are what implementers edit; `make deploy-sync`
+regenerates `deploy/install.sh` from them, and CI (`make deploy-sync-check`,
+also run in the release job) fails the build if the committed file has
+drifted. `deploy/install.sh` is committed so the `raw.githubusercontent.com`
+URL above always serves a working, current installer.
+
+**Binary layout** (fixed; a concurrent piece of the manager, `self-upgrade`,
+depends on it — see §6 and RUNBOOK.md §11):
+
+```
+/var/lib/valheim/bin/                 owned valheim:valheim, mode 0755
+├── valheim-ui                        the real binary, owned valheim:valheim, mode 0755
+└── valheim-ui.prev                   previous binary, kept for rollback (upgrades only)
+/usr/local/bin/valheim-ui             symlink -> /var/lib/valheim/bin/valheim-ui
+```
+
+The real binary lives under `/var/lib/valheim`, owned by the unprivileged
+`valheim` user that runs the manager, specifically so the manager can replace
+its own executable (self-upgrade: download release + verify SHA256SUMS + swap
+the binary via `install`+`rename` + exit) without needing write access to
+root-owned `/usr/local/bin`. `/usr/local/bin/valheim-ui` — a plain symlink — is
+what `ExecStart=`, `sudo -u valheim ... valheim-ui ...` and everything in
+RUNBOOK.md actually invoke; `install.sh` creates and refreshes it on every
+install/upgrade with `ln -sfn`.
+
 `deploy/install.sh` (run as root on Debian 12+/Ubuntu 22.04+, x86_64):
 
-1. `apt-get install` runtime deps: `lib32gcc-s1 lib32stdc++6 libsdl2-2.0-0 libpulse0 libatomic1 ca-certificates curl tar unzip sudo`.
-2. Create system user `valheim` (home `/var/lib/valheim`, nologin), directory tree (§3).
-3. Install `valheim-ui` binary to `/usr/local/bin/` (from a GitHub release asset or
-   `--binary <path>`), `unitctl` to `/usr/local/lib/valheim-ui/unitctl` (root:root 0755),
-   sudoers drop-in `/etc/sudoers.d/valheim-ui` (validated with `visudo -c`),
-   units `valheim-ui.service` and `valheim@.service`, `/etc/valheim-ui/config.yaml`
-   (only if absent).
+1. `apt-get install` runtime deps: `lib32gcc-s1 lib32stdc++6 libsdl2-2.0-0 libpulse0 libatomic1 ca-certificates curl tar unzip sudo`
+   (skippable with `--skip-deps`).
+2. Create system user `valheim` (home `/var/lib/valheim`, nologin), directory tree (§3),
+   plus `/var/lib/valheim/bin` (0755).
+3. Install the `valheim-ui` binary into the layout above: from a downloaded and
+   checksum-verified GitHub release asset (default: latest, or `--version
+   vX.Y.Z`; resolved via the redirect of `.../releases/latest`, falling back to
+   the GitHub API) or from `--binary <path>` for a local build (skips
+   download/verification). `unitctl` to `/usr/local/lib/valheim-ui/unitctl`
+   (root:root 0755), sudoers drop-in `/etc/sudoers.d/valheim-ui` (validated
+   with `visudo -c`), units `valheim-ui.service` and `valheim@.service`,
+   `/etc/valheim-ui/config.yaml` (only if absent).
 4. Download SteamCMD (`https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz`)
    into `/var/lib/valheim/steamcmd` and run it once as `valheim` to self-update.
 5. `systemctl daemon-reload && systemctl enable --now valheim-ui`; print the URL and
    the note that first visit creates the admin account.
 
-Idempotent: re-running upgrades the binary and unit files without touching data.
-`--uninstall` removes units, sudoers and binary but keeps `/var/lib/valheim`.
+Idempotent: re-running upgrades the binary (keeping the previous one as
+`valheim-ui.prev`) and unit files without touching data. `--uninstall` removes
+units, sudoers, the symlink and the bin directory but keeps `/var/lib/valheim`.
+`--check` performs no writes: it prints the installed vs. latest/target version
+and, for every step above, whether it is already up to date or would change
+(composes with `--uninstall` too).
 
 Manager unit essentials: `User=valheim`, `ProtectSystem=strict`,
 `ReadWritePaths=/var/lib/valheim`, `NoNewPrivileges=no` (sudo needs it),
-`Restart=on-failure`. Instance template essentials: `User=valheim`,
+`Restart=always`, `RestartSec=3` — a clean `exit(0)` after a self-upgrade swap
+is what triggers the restart onto the new binary, so this must not be
+`on-failure`. Instance template essentials: `User=valheim`,
 `WorkingDirectory=/var/lib/valheim/instances/%i/server`,
 `ExecStart=/usr/local/bin/valheim-ui launch --instance %i`,
 `StandardOutput=append:/var/lib/valheim/instances/%i/logs/console.log`,
 `StandardError=inherit`, `KillSignal=SIGINT`, `TimeoutStopSec=120`,
-`Restart=on-failure`, `RestartSec=10`, `LimitNOFILE=100000`.
+`Restart=on-failure`, `RestartSec=10`, `LimitNOFILE=100000`. Instance units
+carry no `Wants=`/`After=`/`PartOf=` relationship to `valheim-ui.service` in
+either direction, and never will: that independence is what lets the manager
+restart (on-failure or after a self-upgrade) without touching running game
+servers.
+
+Release assets (built by the `release` job in `.github/workflows/ci.yml` on
+`v*` tags, version ldflag = the tag): `valheim-ui_linux_amd64.tar.gz` (single
+file `valheim-ui`), `deploy.tar.gz` (the `deploy/` directory), `install.sh`
+(same file served at the raw URL above, attached directly so
+`curl -fsSLO .../releases/latest/download/install.sh` also works), and
+`SHA256SUMS` covering all three — this is what `install.sh` downloads and
+verifies against.
 
 ## 17. Configuration (`/etc/valheim-ui/config.yaml`)
 

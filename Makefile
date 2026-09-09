@@ -4,7 +4,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 GOFLAGS := CGO_ENABLED=0
 DEVDATA := $(CURDIR)/devdata
 
-.PHONY: all deps gen web build check test lint vet fmt dev dev-backend dev-web e2e clean release fake-server
+.PHONY: all deps gen web build check test lint vet fmt dev dev-backend dev-web e2e clean release fake-server deploy-sync deploy-sync-check
 
 all: build
 
@@ -62,6 +62,18 @@ release: build
 	tar -czf dist/valheim-ui_linux_amd64.tar.gz -C bin valheim-ui
 	cp -r deploy dist/
 	@echo "artifacts in dist/"
+
+# Regenerate deploy/install.sh from deploy/install.sh.in, inlining unitctl,
+# sudoers.d/valheim-ui, valheim-ui.service, valheim@.service and
+# config.example.yaml so the installer stays a single self-contained file.
+# Run this after editing any of those files and commit the result.
+deploy-sync:
+	./deploy/build-installer.sh
+
+# CI check: fails if deploy/install.sh was not regenerated after an edit to
+# deploy/install.sh.in or one of the files it embeds.
+deploy-sync-check: deploy-sync
+	git diff --exit-code -- deploy/install.sh || (echo "deploy/install.sh is out of date; run 'make deploy-sync' and commit it" && exit 1)
 
 clean:
 	rm -rf bin dist web/dist devdata

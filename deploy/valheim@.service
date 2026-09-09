@@ -1,6 +1,10 @@
 # Installed by deploy/install.sh to /etc/systemd/system/valheim@.service
 # One unit per instance: valheim@<id>.service. Never edited by the manager;
 # per-instance settings live in /var/lib/valheim/instances/<id>/launch.json.
+# This unit is fully independent of valheim-ui.service: it is not "wanted by"
+# or ordered against the manager unit in any way, so a manager restart or
+# self-upgrade (which relies on valheim-ui.service's Restart=always) never
+# stops, restarts or otherwise touches running game instances.
 [Unit]
 Description=Valheim dedicated server (%i)
 After=network-online.target

@@ -8,25 +8,45 @@ rationale live in `ARCHITECTURE.md`; this file is the "how do I" companion.
 Requirements: Debian 12+ or Ubuntu 22.04+ on x86_64, systemd, root access, ~2 GB
 disk per instance plus backups.
 
+One command, nothing else to download by hand:
+
 ```bash
-curl -fsSLO https://github.com/jonasthim/valheim-server-ui/releases/latest/download/deploy.tar.gz
-tar -xzf deploy.tar.gz && cd deploy
-sudo ./install.sh                     # add --listen 0.0.0.0:8080 only for a trusted LAN
+curl -fsSL https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/install.sh | sudo bash
 ```
+
+`install.sh` is fully self-contained (`unitctl`, the sudoers drop-in and both
+systemd units are embedded in it, see `deploy/install.sh.in` and
+`deploy/build-installer.sh`), so the one-liner above is genuinely everything.
+Add flags after the script name if you downloaded it first, e.g.
+`sudo ./install.sh --listen 0.0.0.0:8080` (only for a trusted LAN) or
+`sudo ./install.sh --version v1.2.3` to pin a release.
 
 What the installer does (idempotent, safe to re-run for upgrades):
 
 1. `apt-get install` of the SteamCMD/Valheim runtime libraries.
 2. Creates the system user `valheim` with home `/var/lib/valheim`.
-3. Installs `/usr/local/bin/valheim-ui`, the sudo wrapper `/usr/local/lib/valheim-ui/unitctl`,
-   `/etc/sudoers.d/valheim-ui`, and the units `valheim-ui.service` and `valheim@.service`.
-4. Writes `/etc/valheim-ui/config.yaml` if absent and downloads SteamCMD.
-5. Enables and starts `valheim-ui.service`.
+3. Downloads the release tarball and `SHA256SUMS` for the requested (default:
+   latest) tag, verifies the checksum, and installs the binary to
+   `/var/lib/valheim/bin/valheim-ui` (owned `valheim:valheim`, mode 0755),
+   symlinking `/usr/local/bin/valheim-ui` to it. On an upgrade the previous
+   binary is kept as `/var/lib/valheim/bin/valheim-ui.prev`.
+4. Installs the sudo wrapper `/usr/local/lib/valheim-ui/unitctl`,
+   `/etc/sudoers.d/valheim-ui` (validated with `visudo -c`), and the units
+   `valheim-ui.service` and `valheim@.service`.
+5. Writes `/etc/valheim-ui/config.yaml` if absent and downloads SteamCMD.
+6. Enables and starts `valheim-ui.service`.
 
 Then open the UI. **The first visit shows the setup wizard, which creates the
 administrator account.** No default credentials exist. After that the wizard is gone.
 
-Local build instead of a release: `make build` then `sudo ./deploy/install.sh --binary bin/valheim-ui`.
+Preview what an install or upgrade would do without changing anything:
+`sudo ./install.sh --check` (prints the installed vs. latest/target version and
+which files would be created or updated).
+
+Local build instead of a release: `make build` then `sudo ./deploy/install.sh --binary bin/valheim-ui`
+(skips download and checksum verification).
+
+Uninstall: see §10.
 
 ## 2. Reverse proxy and TLS
 
@@ -106,11 +126,31 @@ The manager never needs root: game units are controlled through
 run `sudo -u valheim sudo -n /usr/local/lib/valheim-ui/unitctl restart main` to
 confirm the grant works.
 
+Host paths for the binary itself: the real executable lives at
+`/var/lib/valheim/bin/valheim-ui` (owned `valheim:valheim`, mode 0755, in a
+directory of the same ownership/mode so the unprivileged `valheim` user can
+replace it); `/usr/local/bin/valheim-ui` is a symlink to it, which is what
+`ExecStart=` and the commands above actually run. This split lets the manager
+process (running as `valheim`) swap its own binary during a self-upgrade
+without needing write access to `/usr/local/bin`. `/var/lib/valheim/bin/valheim-ui.prev`
+is the previous binary, kept for rollback (§11).
+
 ## 6. Upgrade
 
-Re-run `install.sh` with the new release (or `--binary`). Database migrations run
-automatically on start. Game instances keep running across manager upgrades
-because systemd, not the manager, supervises them.
+Any of the following work; all three end with the manager restarting on the
+new binary while game instances keep running (systemd, not the manager,
+supervises them, and `valheim@*.service` units are never touched by a manager
+restart — see §11):
+
+- From the UI: **Settings → Application → Check for updates**, then **Upgrade**.
+- Re-run the installer: `curl -fsSL https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/install.sh | sudo bash`
+  (or `sudo ./install.sh --version vX.Y.Z` / `--binary PATH` if you have the
+  script and a specific build already).
+- On the host directly: `sudo -u valheim /usr/local/bin/valheim-ui self-upgrade --apply`.
+  To undo a bad upgrade: `sudo -u valheim /usr/local/bin/valheim-ui self-upgrade --rollback`
+  (restores `valheim-ui.prev` and restarts the service).
+
+Database migrations run automatically on start in all cases.
 
 ## 7. Backup of the manager itself
 
@@ -173,3 +213,41 @@ switched off afterwards, and `admin reset-password` remains the break-glass path
 sudo ./install.sh --uninstall     # removes units, sudoers, binary; keeps /var/lib/valheim
 sudo rm -rf /var/lib/valheim /etc/valheim-ui && sudo userdel valheim   # only if you want the data gone
 ```
+
+`--check` composes with `--uninstall` too: `sudo ./install.sh --uninstall --check`
+prints what would be removed without touching anything.
+
+## 11. Self-upgrade
+
+The layout `install.sh` sets up exists specifically so the manager can upgrade
+its own binary without any external tooling:
+
+- The real executable is `/var/lib/valheim/bin/valheim-ui`, owned
+  `valheim:valheim` mode 0755, in a directory with the same ownership/mode.
+  `/usr/local/bin/valheim-ui` is only a symlink to it. Because the manager
+  process runs as `valheim` and owns that file and directory, it can replace
+  its own binary while it is running — something it could not do if the
+  binary lived directly under root-owned `/usr/local/bin`.
+- Mechanism (`valheim-ui self-upgrade --apply`, and what "Settings →
+  Application → Check for updates → Upgrade" calls in the API): resolve the
+  target release, download its tarball and `SHA256SUMS`, verify the checksum,
+  copy the current binary to `valheim-ui.prev`, write the new binary as
+  `valheim-ui.new` and rename it over `valheim-ui` (a rename within the same
+  directory, so anything that already has the old file open — or execs
+  through the `/usr/local/bin` symlink — is unaffected until the next exec),
+  then exit cleanly.
+- `valheim-ui.service` has `Restart=always` with `RestartSec=3`, so systemd
+  immediately restarts the manager, this time running the new binary. There is
+  no separate "restart" step to script or forget.
+- Game instances are untouched throughout: `valheim@<id>.service` units are
+  independent systemd units with no ordering or dependency relationship to
+  `valheim-ui.service` (see the comment in `deploy/valheim@.service`), so a
+  manager restart never stops, restarts, or otherwise affects a running
+  Valheim server.
+- Rollback: `valheim-ui self-upgrade --rollback` restores
+  `/var/lib/valheim/bin/valheim-ui.prev` over the current binary and exits, and
+  the same `Restart=always` brings the manager back up on the restored build.
+  Only one previous version is kept; roll back promptly if an upgrade misbehaves.
+- `install.sh` implements the same download-and-verify-and-swap logic for the
+  initial install and for installer-driven upgrades, so a fresh `curl | sudo
+  bash` run and an in-app self-upgrade produce byte-identical results on disk.

@@ -10,8 +10,13 @@ User=valheim
 Group=valheim
 Environment=VALHEIM_UI_CONFIG=/etc/valheim-ui/config.yaml
 ExecStart=/usr/local/bin/valheim-ui serve
-Restart=on-failure
-RestartSec=5
+# Restart=always + a short RestartSec so a clean exit(0) after a self-upgrade
+# (download + checksum + atomic binary swap, see RUNBOOK.md #11) restarts the
+# manager on the new binary automatically. Game instances are supervised by
+# their own independent valheim@<id>.service units (see valheim@.service) and
+# are never affected by the manager restarting.
+Restart=always
+RestartSec=3
 WorkingDirectory=/var/lib/valheim
 # Hardening. NoNewPrivileges must stay off: the manager calls sudo for unitctl.
 ProtectSystem=strict

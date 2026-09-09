@@ -69,16 +69,30 @@ an audit trail, without turning your server box into a Docker puzzle.
 Requirements: Debian 12+ or Ubuntu 22.04+ on x86_64 with systemd, root access,
 about 2 GB of disk per instance plus room for backups.
 
+One command, nothing else to download by hand:
+
 ```bash
-curl -fsSLO https://github.com/jonasthim/valheim-server-ui/releases/latest/download/deploy.tar.gz
-tar -xzf deploy.tar.gz
-sudo ./deploy/install.sh
+curl -fsSL https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/install.sh | sudo bash
 ```
 
 The installer creates the `valheim` system user and `/var/lib/valheim`, installs
-the binary, the sudo wrapper, the systemd units and SteamCMD, then starts the
-service on `127.0.0.1:8080`. Re-running it upgrades in place and never touches
-your data.
+the binary (to `/var/lib/valheim/bin`, symlinked from `/usr/local/bin/valheim-ui`),
+the sudo wrapper, the systemd units and SteamCMD, verifies the release's
+checksum, then starts the service on `127.0.0.1:8080`. Re-running it upgrades in
+place and never touches your data.
+
+Local build instead of a release (installer script and repo checked out already):
+
+```bash
+make build && sudo ./deploy/install.sh --binary bin/valheim-ui
+```
+
+Before installing or upgrading, see what would change without touching
+anything:
+
+```bash
+sudo ./deploy/install.sh --check
+```
 
 Put a TLS reverse proxy in front for remote access and set `base_url` in
 `/etc/valheim-ui/config.yaml` (Caddy and nginx snippets are in the

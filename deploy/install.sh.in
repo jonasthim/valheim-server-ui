@@ -94,148 +94,31 @@ command -v systemctl >/dev/null 2>&1 || die "systemd is required (systemctl not 
 
 unitctl_content() {
   cat <<'UNITCTL_EOF'
-#!/bin/bash
-# /usr/local/lib/valheim-ui/unitctl — the only command the valheim user may sudo.
-# Usage: unitctl <start|stop|restart|enable|disable> <instance-id>
-# The instance id is validated against the same pattern the manager uses
-# (domain.InstanceIDPattern) so the unit name can never escape valheim@*.service.
-set -euo pipefail
-
-if [[ $# -ne 2 ]]; then
-  echo "usage: unitctl <start|stop|restart|enable|disable> <instance-id>" >&2
-  exit 2
-fi
-
-action="$1"
-inst="$2"
-
-if ! [[ "$inst" =~ ^[a-z0-9][a-z0-9-]{0,31}$ ]]; then
-  echo "unitctl: invalid instance id" >&2
-  exit 2
-fi
-
-unit="valheim@${inst}.service"
-
-case "$action" in
-  start|stop|restart)
-    exec /bin/systemctl "$action" "$unit"
-    ;;
-  enable|disable)
-    exec /bin/systemctl "$action" "$unit"
-    ;;
-  *)
-    echo "unitctl: action not allowed: $action" >&2
-    exit 2
-    ;;
-esac
+# @@INCLUDE unitctl@@
 UNITCTL_EOF
 }
 
 sudoers_content() {
   cat <<'SUDOERS_EOF'
-# Installed by deploy/install.sh to /etc/sudoers.d/valheim-ui (mode 0440).
-# Grants the manager exactly one root command; unitctl validates its arguments.
-Defaults:valheim !requiretty
-valheim ALL=(root) NOPASSWD: /usr/local/lib/valheim-ui/unitctl
+# @@INCLUDE sudoers@@
 SUDOERS_EOF
 }
 
 manager_unit_content() {
   cat <<'MANAGER_UNIT_EOF'
-# Installed by deploy/install.sh to /etc/systemd/system/valheim-ui.service
-[Unit]
-Description=Valheim Server UI (manager)
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=valheim
-Group=valheim
-Environment=VALHEIM_UI_CONFIG=/etc/valheim-ui/config.yaml
-ExecStart=/usr/local/bin/valheim-ui serve
-# Restart=always + a short RestartSec so a clean exit(0) after a self-upgrade
-# (download + checksum + atomic binary swap, see RUNBOOK.md #11) restarts the
-# manager on the new binary automatically. Game instances are supervised by
-# their own independent valheim@<id>.service units (see valheim@.service) and
-# are never affected by the manager restarting.
-Restart=always
-RestartSec=3
-WorkingDirectory=/var/lib/valheim
-# Hardening. NoNewPrivileges must stay off: the manager calls sudo for unitctl.
-ProtectSystem=strict
-ReadWritePaths=/var/lib/valheim
-PrivateTmp=true
-ProtectHome=true
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
+# @@INCLUDE valheim-ui.service@@
 MANAGER_UNIT_EOF
 }
 
 instance_unit_content() {
   cat <<'INSTANCE_UNIT_EOF'
-# Installed by deploy/install.sh to /etc/systemd/system/valheim@.service
-# One unit per instance: valheim@<id>.service. Never edited by the manager;
-# per-instance settings live in /var/lib/valheim/instances/<id>/launch.json.
-# This unit is fully independent of valheim-ui.service: it is not "wanted by"
-# or ordered against the manager unit in any way, so a manager restart or
-# self-upgrade (which relies on valheim-ui.service's Restart=always) never
-# stops, restarts or otherwise touches running game instances.
-[Unit]
-Description=Valheim dedicated server (%i)
-After=network-online.target
-Wants=network-online.target
-StartLimitIntervalSec=300
-StartLimitBurst=5
-
-[Service]
-Type=simple
-User=valheim
-Group=valheim
-WorkingDirectory=/var/lib/valheim/instances/%i/server
-Environment=VALHEIM_UI_CONFIG=/etc/valheim-ui/config.yaml
-ExecStart=/usr/local/bin/valheim-ui launch --instance %i
-StandardOutput=append:/var/lib/valheim/instances/%i/logs/console.log
-StandardError=inherit
-KillSignal=SIGINT
-KillMode=mixed
-TimeoutStopSec=120
-Restart=on-failure
-RestartSec=10
-LimitNOFILE=100000
-Nice=-5
-
-[Install]
-WantedBy=multi-user.target
+# @@INCLUDE valheim@.service@@
 INSTANCE_UNIT_EOF
 }
 
 config_example_content() {
   cat <<'CONFIG_EOF'
-# /etc/valheim-ui/config.yaml — manager configuration.
-# Every key can be overridden with VALHEIM_UI_<UPPERCASE_KEY>.
-
-# Address the web UI listens on. Keep it on loopback and put a TLS reverse proxy
-# (Caddy, nginx, Traefik) in front for remote access.
-listen: "127.0.0.1:8080"
-
-# Public URL of the UI. Required for OIDC (redirect URI) and used for the CSRF
-# origin check. Example: https://valheim.example.com
-base_url: ""
-
-data_dir: "/var/lib/valheim"
-
-# systemd (production) or direct (development; instances die with the manager)
-supervisor: "systemd"
-unitctl_path: "/usr/local/lib/valheim-ui/unitctl"
-steamcmd_path: "/var/lib/valheim/steamcmd/steamcmd.sh"
-
-# Set true only when serving plain http on a trusted LAN.
-insecure_cookies: false
-
-log_level: "info"
+# @@INCLUDE config.example.yaml@@
 CONFIG_EOF
 }
 # ---- end embedded content ---------------------------------------------------
