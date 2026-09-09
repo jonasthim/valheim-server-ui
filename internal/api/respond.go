@@ -93,6 +93,8 @@ func NotImplemented(w http.ResponseWriter, _ *http.Request) {
 }
 
 // audit is a nil-safe helper for handlers.
+//
+//nolint:unused // used by handler files as they land
 func (d *Deps) audit(r *http.Request, action, instanceID, target string, details map[string]any) {
 	if d.Audit != nil {
 		d.Audit.Record(r, action, instanceID, target, details)

@@ -1,17 +1,31 @@
-import { Tabs, Title, Stack, Text } from '@mantine/core'
+import { Tabs, Title, Stack, Group, Badge } from '@mantine/core'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useInstance } from './useInstance'
 import { INSTANCE_TABS } from './tabs'
+import { OverviewTab } from './OverviewTab'
+import { ConsoleTab } from './ConsoleTab'
+import { ConfigTab } from './ConfigTab'
+import { PlayersTab } from './PlayersTab'
+import { WorldsTab } from './WorldsTab'
+import { BackupsTab } from './BackupsTab'
+import { ModsTab } from './ModsTab'
+import { SchedulesTab } from './SchedulesTab'
 
-// Instance page with tab routing (/instances/:id/:tab). Wave 0 shell; WP-11
-// owns this file plus Overview/Config/Console tabs, WP-12 Players/Worlds/
-// Backups/Schedules, WP-13 Mods. Each tab lives in its own file.
+// Instance page with tab routing (/instances/:id/:tab). Owned by WP-11; the tab
+// components are owned by WP-11 (Overview/Console/Config), WP-12
+// (Players/Worlds/Backups/Schedules) and WP-13 (Mods). Keep this file thin.
 export function InstancePage() {
   const { id = '', tab = 'overview' } = useParams()
   const navigate = useNavigate()
+  const inst = useInstance(id)
+  const state = inst.data?.status.state
   return (
     <Stack>
-      <Title order={2}>{id}</Title>
-      <Tabs value={tab} onChange={(t) => navigate(`/instances/${id}/${t ?? 'overview'}`)}>
+      <Group>
+        <Title order={2}>{inst.data?.name ?? id}</Title>
+        {state && <Badge variant="light">{state}</Badge>}
+      </Group>
+      <Tabs value={tab} onChange={(t) => navigate(`/instances/${id}/${t ?? 'overview'}`)} keepMounted={false}>
         <Tabs.List>
           {INSTANCE_TABS.map((t) => (
             <Tabs.Tab key={t} value={t} tt="capitalize">
@@ -19,11 +33,14 @@ export function InstancePage() {
             </Tabs.Tab>
           ))}
         </Tabs.List>
-        {INSTANCE_TABS.map((t) => (
-          <Tabs.Panel key={t} value={t} pt="md">
-            <Text c="dimmed">Tab "{t}" not implemented yet.</Text>
-          </Tabs.Panel>
-        ))}
+        <Tabs.Panel value="overview" pt="md"><OverviewTab id={id} /></Tabs.Panel>
+        <Tabs.Panel value="console" pt="md"><ConsoleTab id={id} /></Tabs.Panel>
+        <Tabs.Panel value="config" pt="md"><ConfigTab id={id} /></Tabs.Panel>
+        <Tabs.Panel value="players" pt="md"><PlayersTab id={id} /></Tabs.Panel>
+        <Tabs.Panel value="worlds" pt="md"><WorldsTab id={id} /></Tabs.Panel>
+        <Tabs.Panel value="backups" pt="md"><BackupsTab id={id} /></Tabs.Panel>
+        <Tabs.Panel value="mods" pt="md"><ModsTab id={id} /></Tabs.Panel>
+        <Tabs.Panel value="schedules" pt="md"><SchedulesTab id={id} /></Tabs.Panel>
       </Tabs>
     </Stack>
   )

@@ -24,7 +24,7 @@ const (
 	CodeInstanceBusy         ErrorCode = "instance_busy"
 	CodePortInUse            ErrorCode = "port_in_use"
 	CodeLastAdmin            ErrorCode = "last_admin"
-	CodeInvalidCredentials   ErrorCode = "invalid_credentials"
+	CodeInvalidCredentials   ErrorCode = "invalid_credentials" //nolint:gosec // error code, not a credential
 	CodeAccountLocked        ErrorCode = "account_locked"
 	CodeAccountDisabled      ErrorCode = "account_disabled"
 	CodeSetupDone            ErrorCode = "setup_done"

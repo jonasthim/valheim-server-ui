@@ -47,7 +47,7 @@ func runServe(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 
 	self, err := os.Executable()
 	if err != nil {

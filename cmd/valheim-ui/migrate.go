@@ -23,7 +23,7 @@ func runMigrate(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 	fmt.Println("migrations applied:", cfg.DBPath())
 	return nil
 }

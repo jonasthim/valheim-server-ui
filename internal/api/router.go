@@ -6,7 +6,9 @@ package api
 import (
 	"database/sql"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -61,7 +63,7 @@ type Deps struct {
 // NewRouter builds the full HTTP handler: /api/v1 plus the embedded SPA.
 func NewRouter(d *Deps, spa http.Handler) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RealIP)
+	r.Use(realIP)
 	r.Use(middleware.RequestID)
 	r.Use(requestLogger(d.Log))
 	r.Use(middleware.Recoverer)
@@ -111,6 +113,31 @@ func devFakeAdmin(d *Deps) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), fake)))
 		})
 	}
+}
+
+// realIP trusts X-Forwarded-For / X-Real-IP only when the direct peer is a
+// loopback address, which is the documented deployment (reverse proxy on the
+// same host). chi's RealIP is deliberately not used: it trusts every peer.
+func realIP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.RemoteAddr
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+			fwd := r.Header.Get("X-Real-IP")
+			if fwd == "" {
+				if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+					parts := strings.Split(xff, ",")
+					fwd = strings.TrimSpace(parts[len(parts)-1])
+				}
+			}
+			if fwd != "" && net.ParseIP(fwd) != nil {
+				r.RemoteAddr = net.JoinHostPort(fwd, "0")
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func requestLogger(log *slog.Logger) func(http.Handler) http.Handler {
