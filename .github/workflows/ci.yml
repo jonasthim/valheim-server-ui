@@ -53,7 +53,20 @@ jobs:
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
       - uses: actions/download-artifact@v4
         with: { name: web-dist, path: web/dist }
-      - run: cd web && npm ci && npx playwright install --with-deps chromium
+      - name: Install Playwright Chromium
+        working-directory: web
+        run: |
+          set -euo pipefail
+          npm ci
+          npx playwright install chromium
+          # OS libraries for Chromium. This runs apt-get update, which fails when an
+          # unrelated third-party apt source on the runner image (Google Chrome's,
+          # Microsoft's) serves a stale index; drop those sources and retry once.
+          npx playwright install-deps chromium || {
+            sudo rm -f /etc/apt/sources.list.d/google-chrome*.list /etc/apt/sources.list.d/microsoft*.list
+            sudo apt-get update -qq
+            npx playwright install-deps chromium
+          }
       - run: CGO_ENABLED=0 go build -o bin/valheim-ui ./cmd/valheim-ui
       - run: cd web && npx playwright test --config e2e/playwright.config.ts
       - uses: actions/upload-artifact@v4
