@@ -271,3 +271,12 @@ Installs learn about the release at their next update check (Settings →
 Application, hourly by default); press Upgrade there or re-run the install
 one-liner on the host.
 
+If the `release` job fails at the publish step with `Resource not accessible
+by integration`, the workflow token is not allowed to write releases. Check
+Settings → Actions → General → Workflow permissions ("Read and write
+permissions"), or add a repository secret `RELEASE_TOKEN` holding a
+fine-grained personal access token with *Contents: read and write* on this
+repository; the job prefers that secret when present. The built assets are
+also kept as the workflow artifact `release-vX.Y.Z` for 30 days, so a failed
+publish can be completed by hand with `gh release upload vX.Y.Z dist/*`.
+

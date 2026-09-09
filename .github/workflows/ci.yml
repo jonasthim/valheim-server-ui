@@ -70,6 +70,7 @@ jobs:
     outputs:
       tag: ${{ steps.decide.outputs.tag }}
       publish: ${{ steps.decide.outputs.publish }}
+      create_tag: ${{ steps.decide.outputs.create_tag }}
     steps:
       - uses: actions/checkout@v4
       - id: decide
@@ -82,6 +83,7 @@ jobs:
           set -euo pipefail
           tag=""
           publish=false
+          create_tag=false
           if [[ "$REF" == refs/tags/v* ]]; then
             tag="$REF_NAME"; publish=true
           elif [[ "$EVENT" == workflow_dispatch ]]; then
@@ -91,7 +93,7 @@ jobs:
             if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
               echo "tag $tag already exists; nothing to release"
             else
-              publish=true
+              publish=true; create_tag=true
             fi
           fi
           if [[ "$publish" == true ]]; then
@@ -99,7 +101,8 @@ jobs:
           fi
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "publish=$publish" >> "$GITHUB_OUTPUT"
-          echo "publish=$publish tag=$tag"
+          echo "create_tag=$create_tag" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish tag=$tag create_tag=$create_tag"
 
   release:
     if: needs.version.outputs.publish == 'true'
@@ -124,10 +127,30 @@ jobs:
           cp deploy/install.sh dist/install.sh
           ( cd dist && sha256sum valheim-ui_linux_amd64.tar.gz deploy.tar.gz install.sh > SHA256SUMS )
           cat dist/SHA256SUMS
+      # Keep the built assets as a workflow artifact too, so a failed publish
+      # (e.g. the token lacking release permissions) never loses the build.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ env.RELEASE_TAG }}
+          path: dist/
+          retention-days: 30
+      # VERSION-file releases: create the tag with a plain git push (the checkout
+      # token can do that with contents: write). A tag pushed with GITHUB_TOKEN
+      # does not start another workflow run, so nothing releases twice.
+      - name: Create tag from VERSION
+        if: needs.version.outputs.create_tag == 'true'
+        run: |
+          set -euo pipefail
+          git tag "$RELEASE_TAG" "$GITHUB_SHA"
+          git push origin "refs/tags/$RELEASE_TAG"
+      # The tag exists by now in every path, so no target_commitish is passed:
+      # the release API has been seen to answer 403 to GITHUB_TOKEN when one is.
       - uses: softprops/action-gh-release@v2
         with:
+          # RELEASE_TOKEN (optional repository secret: a fine-grained PAT with
+          # contents:write) takes over when the workflow token may not create releases.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           tag_name: ${{ env.RELEASE_TAG }}
-          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           body: |
             Install or upgrade with one command:
