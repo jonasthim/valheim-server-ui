@@ -105,7 +105,7 @@ func runAdminCreateUser(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 
 	hash, err := auth.HashPassword(pw)
 	if err != nil {
@@ -149,7 +149,7 @@ func runAdminResetPassword(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 
 	users := db.NewUsers(sqldb)
 	usr, err := users.GetByUsername(context.Background(), uname)
@@ -177,7 +177,7 @@ func runAdminListUsers(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer sqldb.Close()
+	defer func() { _ = sqldb.Close() }()
 
 	users, err := db.NewUsers(sqldb).List(context.Background())
 	if err != nil {
