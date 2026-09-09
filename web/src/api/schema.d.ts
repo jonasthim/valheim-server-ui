@@ -775,7 +775,12 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        /** Update display name and/or config; sets pending_restart if running */
+        /**
+         * Update display name and/or config; sets pending_restart if running
+         * @description Fields omitted from `config` keep their stored values, with one exception:
+         *     `config.modifiers` is a set, so when it is present it replaces the stored
+         *     modifiers wholesale (a rule absent from the object becomes unset).
+         */
         patch: {
             parameters: {
                 query?: never;
