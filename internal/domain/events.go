@@ -7,13 +7,14 @@ import (
 
 // Event names sent over the SSE stream. Payloads documented in openapi.yaml → /events.
 const (
-	EventInstanceStatus  = "instance.status"
-	EventInstanceLog     = "instance.log"
-	EventInstancePlayers = "instance.players"
-	EventJobUpdated      = "job.updated"
-	EventJobLog          = "job.log"
-	EventUpdateAvailable = "update.available"
-	EventHeartbeat       = "heartbeat"
+	EventInstanceStatus     = "instance.status"
+	EventInstanceLog        = "instance.log"
+	EventInstancePlayers    = "instance.players"
+	EventJobUpdated         = "job.updated"
+	EventJobLog             = "job.log"
+	EventUpdateAvailable    = "update.available"
+	EventAppUpdateAvailable = "app.update_available"
+	EventHeartbeat          = "heartbeat"
 )
 
 // Event is one message on the in-process bus / SSE stream.

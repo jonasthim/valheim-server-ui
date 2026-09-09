@@ -237,6 +237,35 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SystemInfo' }
+  /system/update-check:
+    post:
+      tags: [system]
+      summary: Query GitHub releases for a newer manager version now
+      x-role: admin
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AppUpdateInfo' }
+        '502': { $ref: '#/components/responses/Error' }
+  /system/upgrade:
+    post:
+      tags: [system]
+      summary: |
+        Download and install a newer manager release, then restart the manager.
+        Game server instances are systemd units and keep running. Returns a job;
+        the SSE stream drops when the manager restarts and the UI reconnects.
+      x-role: admin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version: { type: string, description: 'Tag to install; omit for latest' }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '409': { $ref: '#/components/responses/Error' }
 
   # ------------------------------------------------------------------ instances
   /instances:
@@ -915,6 +944,7 @@ paths:
         - `job.updated`: Job
         - `job.log`: { job_id, line }
         - `update.available`: UpdateInfo
+        - `app.update_available`: AppUpdateInfo
         - `heartbeat`: { ts }
       x-role: viewer
       parameters:
@@ -1138,7 +1168,7 @@ components:
 
     Settings:
       type: object
-      required: [auth, updates, thunderstore]
+      required: [auth, updates, thunderstore, app]
       properties:
         auth:
           type: object
@@ -1156,6 +1186,12 @@ components:
           required: [index_refresh_hours]
           properties:
             index_refresh_hours: { type: integer, minimum: 1, default: 6 }
+        app:
+          type: object
+          required: [update_check_hours, auto_upgrade]
+          properties:
+            update_check_hours: { type: integer, minimum: 0, default: 6, description: 0 disables release polling }
+            auto_upgrade: { type: boolean, default: false, description: Install new releases automatically when no players are online on any instance }
 
     SystemInfo:
       type: object
@@ -1171,6 +1207,22 @@ components:
         started_at: { type: string, format: date-time }
         latest_buildid: { type: string, description: Last known public Valheim build id }
         buildid_checked_at: { type: string, format: date-time }
+        app_update: { $ref: '#/components/schemas/AppUpdateInfo' }
+
+    AppUpdateInfo:
+      type: object
+      required: [current_version, update_available, can_self_upgrade]
+      properties:
+        current_version: { type: string }
+        latest_version: { type: string }
+        update_available: { type: boolean }
+        checked_at: { type: string, format: date-time }
+        release_url: { type: string }
+        release_notes: { type: string, description: Markdown body of the release }
+        published_at: { type: string, format: date-time }
+        can_self_upgrade: { type: boolean, description: The running binary's location is writable by the manager }
+        reason: { type: string, description: Why self-upgrade is unavailable, when it is }
+        previous_version: { type: string, description: Version kept for rollback, if any }
 
     InstanceState:
       type: string
@@ -1525,7 +1577,7 @@ components:
 
     JobType:
       type: string
-      enum: [install, update, backup, restore, world_import, mod_install, mod_update, mod_uninstall, bepinex_install, scheduled_restart, thunderstore_refresh]
+      enum: [install, update, backup, restore, world_import, mod_install, mod_update, mod_uninstall, bepinex_install, scheduled_restart, thunderstore_refresh, self_upgrade]
 
     JobStatus:
       type: string

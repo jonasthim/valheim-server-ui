@@ -48,6 +48,7 @@ const EMPTY_SETTINGS: Settings = {
   },
   updates: { check_interval_minutes: 60 },
   thunderstore: { index_refresh_hours: 6 },
+  app: { update_check_hours: 6, auto_upgrade: false },
 }
 
 interface OidcTestResult {

@@ -90,6 +90,10 @@ type Settings struct {
 	Thunderstore struct {
 		IndexRefreshHours int `json:"index_refresh_hours"`
 	} `json:"thunderstore"`
+	App struct {
+		UpdateCheckHours int  `json:"update_check_hours"` // 0 disables release polling
+		AutoUpgrade      bool `json:"auto_upgrade"`
+	} `json:"app"`
 }
 
 // DefaultSettings returns the settings used when the row does not exist yet.
@@ -107,6 +111,7 @@ func DefaultSettings() Settings {
 	}
 	s.Updates.CheckIntervalMinutes = 60
 	s.Thunderstore.IndexRefreshHours = 6
+	s.App.UpdateCheckHours = 6
 	return s
 }
 

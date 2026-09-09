@@ -582,6 +582,82 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/update-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Query GitHub releases for a newer manager version now */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AppUpdateInfo"];
+                    };
+                };
+                502: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/system/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Download and install a newer manager release, then restart the manager.
+         *     Game server instances are systemd units and keep running. Returns a job;
+         *     the SSE stream drops when the manager restarts and the UI reconnects.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description Tag to install; omit for latest */
+                        version?: string;
+                    };
+                };
+            };
+            responses: {
+                202: components["responses"]["JobResponse"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances": {
         parameters: {
             query?: never;
@@ -2290,6 +2366,7 @@ export interface paths {
          *     - `job.updated`: Job
          *     - `job.log`: { job_id, line }
          *     - `update.available`: UpdateInfo
+         *     - `app.update_available`: AppUpdateInfo
          *     - `heartbeat`: { ts }
          */
         get: {
@@ -2502,6 +2579,18 @@ export interface components {
                 /** @default 6 */
                 index_refresh_hours: number;
             };
+            app: {
+                /**
+                 * @description 0 disables release polling
+                 * @default 6
+                 */
+                update_check_hours: number;
+                /**
+                 * @description Install new releases automatically when no players are online on any instance
+                 * @default false
+                 */
+                auto_upgrade: boolean;
+            };
         };
         SystemInfo: {
             version: string;
@@ -2520,6 +2609,25 @@ export interface components {
             latest_buildid?: string;
             /** Format: date-time */
             buildid_checked_at?: string;
+            app_update?: components["schemas"]["AppUpdateInfo"];
+        };
+        AppUpdateInfo: {
+            current_version: string;
+            latest_version?: string;
+            update_available: boolean;
+            /** Format: date-time */
+            checked_at?: string;
+            release_url?: string;
+            /** @description Markdown body of the release */
+            release_notes?: string;
+            /** Format: date-time */
+            published_at?: string;
+            /** @description The running binary's location is writable by the manager */
+            can_self_upgrade: boolean;
+            /** @description Why self-upgrade is unavailable */
+            reason?: string;
+            /** @description Version kept for rollback */
+            previous_version?: string;
         };
         /** @enum {string} */
         InstanceState: "not_installed" | "stopped" | "starting" | "running" | "stopping" | "failed";
@@ -2833,7 +2941,7 @@ export interface components {
             index_updated_at: string;
         };
         /** @enum {string} */
-        JobType: "install" | "update" | "backup" | "restore" | "world_import" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "scheduled_restart" | "thunderstore_refresh";
+        JobType: "install" | "update" | "backup" | "restore" | "world_import" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade";
         /** @enum {string} */
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";
         Job: {

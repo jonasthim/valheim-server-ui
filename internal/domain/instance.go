@@ -386,3 +386,20 @@ func (p InstancePaths) BepInExDir() string { return p.Server + "/BepInEx" }
 func (p InstancePaths) ListFile(k ListKind) string {
 	return p.Save + "/" + k.FileName()
 }
+
+// AppUpdateInfo describes the manager's own release status (self-upgrade).
+type AppUpdateInfo struct {
+	CurrentVersion  string     `json:"current_version"`
+	LatestVersion   string     `json:"latest_version,omitempty"`
+	UpdateAvailable bool       `json:"update_available"`
+	CheckedAt       *time.Time `json:"checked_at,omitempty"`
+	ReleaseURL      string     `json:"release_url,omitempty"`
+	ReleaseNotes    string     `json:"release_notes,omitempty"`
+	PublishedAt     *time.Time `json:"published_at,omitempty"`
+	CanSelfUpgrade  bool       `json:"can_self_upgrade"`
+	Reason          string     `json:"reason,omitempty"`
+	PreviousVersion string     `json:"previous_version,omitempty"`
+}
+
+// GitHubRepo is the source of manager releases.
+const GitHubRepo = "jonasthim/valheim-server-ui"

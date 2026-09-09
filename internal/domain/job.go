@@ -16,6 +16,7 @@ const (
 	JobBepInExInstall      JobType = "bepinex_install"
 	JobScheduledRestart    JobType = "scheduled_restart"
 	JobThunderstoreRefresh JobType = "thunderstore_refresh"
+	JobSelfUpgrade         JobType = "self_upgrade"
 )
 
 type JobStatus string
