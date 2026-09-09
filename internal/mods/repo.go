@@ -131,9 +131,9 @@ func (s *Service) saveModRow(ctx context.Context, r modRow) error {
 	if err != nil {
 		return err
 	}
-	q := `UPDATE mods SET version = ?, enabled = ?, files_json = ?, deps_json = ?, website_url = ?, icon_url = ?, updated_at = ?
+	q := `UPDATE mods SET source = ?, version = ?, enabled = ?, files_json = ?, deps_json = ?, website_url = ?, icon_url = ?, updated_at = ?
 		WHERE instance_id = ? AND id = ?`
-	res, err := s.db.ExecContext(ctx, q, r.Version, boolToInt(r.Enabled), filesJSON, depsJSON, r.WebsiteURL, r.IconURL,
+	res, err := s.db.ExecContext(ctx, q, string(r.Source), r.Version, boolToInt(r.Enabled), filesJSON, depsJSON, r.WebsiteURL, r.IconURL,
 		nullableTime(r.UpdatedAt), r.InstanceID, r.ID)
 	if err != nil {
 		return fmt.Errorf("update mod %d: %w", r.ID, err)

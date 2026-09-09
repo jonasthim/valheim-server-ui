@@ -64,8 +64,8 @@ All paths below are relative to `data_dir` (default `/var/lib/valheim`), owned b
 ├── manager.db                      SQLite database (WAL mode)
 ├── steamcmd/                       SteamCMD install (steamcmd.sh, linux32/...)
 ├── cache/
-│   ├── thunderstore/index.json     cached package index (+ index.etag, index.ts)
-│   └── thunderstore/pkgs/<owner>-<name>-<ver>.zip   downloaded packages
+│   └── registries/<id>/index.json  cached package index per registry (+ index.ts)
+│       registries/<id>/pkgs/<owner>-<name>-<ver>.zip   downloaded packages
 ├── jobs/<job-id>.log               job output logs
 └── instances/<id>/
     ├── launch.json                 rendered launch contract (0600), see §7
@@ -359,11 +359,14 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
 - **Registries**: the browse/install path supports N Thunderstore-compatible package
   registries (`internal/mods.Registries`), each a Thunderstore-compatible v1 index. Two
   ship enabled: `thunderstore` (the default) and `hexium` (`valheim.hexium.gg`). A mod
-  records the registry it came from as its `source`; updates and dependency resolution
-  route back to that same registry, and package downloads are restricted to that
-  registry's own hosts (Thunderstore `thunderstore.io`, Hexium `hexium.gg`). BepInEx is
-  always installed from the default registry. The description below is the Thunderstore
-  registry; Hexium behaves identically with its own index URL and CDN.
+  records the registry it came from as its `source`. Update checks compare the mod's
+  `owner-name` across **all** registries and offer the newest (latest wins); updating
+  pulls from whichever registry has that version and switches the mod's `source` to it.
+  Dependency resolution for an install/update runs within the registry that install
+  came from. Package downloads are restricted to the source registry's own hosts
+  (Thunderstore `thunderstore.io`, Hexium `hexium.gg`), enforced on every redirect hop.
+  BepInEx is always installed from the default registry. The description below is the
+  Thunderstore registry; Hexium behaves identically with its own index URL and CDN.
 - **Thunderstore client**: `GET https://thunderstore.io/c/valheim/api/v1/package/`
   (≈12 MB, ≈10.5k packages) cached on disk, refreshed every
   `settings.thunderstore.index_refresh_hours` (default 6) or on demand. Search is

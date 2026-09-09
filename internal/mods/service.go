@@ -83,8 +83,8 @@ func (s *Service) Overview(ctx context.Context, instanceID string) (*domain.Mods
 	mods := make([]domain.Mod, 0, len(rows))
 	for _, r := range rows {
 		latest := ""
-		if reg, ok := s.regs.Lookup(string(r.Source)); ok {
-			if v, ok := reg.LatestVersion(r.Owner, r.Name); ok {
+		if r.Source != domain.ModSourceManual {
+			if v, _, ok := s.regs.LatestAcross(r.Owner, r.Name); ok {
 				latest = v
 			}
 		}
@@ -238,6 +238,7 @@ func (s *Service) installStep(ctx context.Context, log *jobs.Logger, instanceID 
 			}
 		}
 		row := *existing
+		row.Source = source
 		row.Version = st.Version
 		row.Files = files
 		row.Deps = st.Dependencies
@@ -505,8 +506,8 @@ func (s *Service) SetEnabled(ctx context.Context, instanceID string, modID int64
 	}
 
 	latest := ""
-	if reg, ok := s.regs.Lookup(string(row.Source)); ok {
-		if v, ok := reg.LatestVersion(row.Owner, row.Name); ok {
+	if row.Source != domain.ModSourceManual {
+		if v, _, ok := s.regs.LatestAcross(row.Owner, row.Name); ok {
 			latest = v
 		}
 	}
@@ -535,15 +536,33 @@ func (s *Service) EnqueueUninstall(ctx context.Context, instanceID string, modID
 }
 
 func (s *Service) runUpdate(ctx context.Context, log *jobs.Logger, instanceID string, row modRow, version string) error {
-	reg, ok := s.regs.Lookup(string(row.Source))
-	if !ok {
+	if row.Source == domain.ModSourceManual {
 		return domain.E(domain.CodeValidationFailed, "cannot update a manually-uploaded mod")
 	}
+	// Latest wins across registries: an explicit version comes from whichever
+	// registry has it; "latest" is the newest across both, and the mod's
+	// source switches to wherever the update was pulled from.
+	var reg *Thunderstore
+	target := version
+	if version != "" {
+		r, ok := s.regs.FindVersion(row.Owner, row.Name, version)
+		if !ok {
+			return domain.Ef(domain.CodePackageNotFound, "%s-%s version %s not found in any registry", row.Owner, row.Name, version)
+		}
+		reg = r
+	} else {
+		v, r, ok := s.regs.LatestAcross(row.Owner, row.Name)
+		if !ok {
+			return domain.Ef(domain.CodePackageNotFound, "%s-%s not found in any registry", row.Owner, row.Name)
+		}
+		reg, target = r, v
+	}
+	source := domain.ModSource(reg.ID())
 	installed, err := s.installedIndex(ctx, instanceID, row.ID)
 	if err != nil {
 		return err
 	}
-	plan, needsBepInEx, err := resolvePlan(ctx, reg, installed, row.Owner, row.Name, version)
+	plan, needsBepInEx, err := resolvePlan(ctx, reg, installed, row.Owner, row.Name, target)
 	if err != nil {
 		return err
 	}
@@ -557,7 +576,7 @@ func (s *Service) runUpdate(ctx context.Context, log *jobs.Logger, instanceID st
 	}
 	for _, st := range plan {
 		force := strings.EqualFold(st.Owner, row.Owner) && strings.EqualFold(st.Name, row.Name)
-		if err := s.installStep(ctx, log, instanceID, reg, row.Source, st, force); err != nil {
+		if err := s.installStep(ctx, log, instanceID, reg, source, st, force); err != nil {
 			return err
 		}
 	}
@@ -570,8 +589,8 @@ func (s *Service) EnqueueUpdate(ctx context.Context, instanceID string, modID in
 	if err != nil {
 		return nil, err
 	}
-	if _, ok := s.regs.Lookup(string(row.Source)); !ok {
-		return nil, domain.E(domain.CodeValidationFailed, "cannot check updates for a manually-uploaded mod")
+	if row.Source == domain.ModSourceManual {
+		return nil, domain.E(domain.CodeValidationFailed, "cannot update a manually-uploaded mod")
 	}
 	title := fmt.Sprintf("Update %s-%s", row.Owner, row.Name)
 	return s.runner.Enqueue(ctx, jobs.Spec{Type: domain.JobModUpdate, InstanceID: instanceID, Title: title, RequestedBy: requestedBy},

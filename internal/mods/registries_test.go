@@ -106,3 +106,76 @@ func TestRegistry_DownloadHostAllowlistIsPerRegistry(t *testing.T) {
 		})
 	}
 }
+
+func seedClient(id string, pkgs ...rawPackage) *Thunderstore {
+	c := bareClient(id, id, []string{"example.test"})
+	c.setIndex(pkgs, time.Now())
+	return c
+}
+
+func onePkg(owner, name string, versionsNewestFirst ...string) rawPackage {
+	p := rawPackage{Owner: owner, Name: name, FullName: owner + "-" + name}
+	for _, v := range versionsNewestFirst {
+		p.Versions = append(p.Versions, rawVersion{VersionNumber: v, FullName: owner + "-" + name + "-" + v})
+	}
+	return p
+}
+
+func TestRegistries_LatestAcross(t *testing.T) {
+	tsID, hxID := domain.RegistryThunderstoreID, domain.RegistryHexiumID
+
+	t.Run("newest wins from hexium", func(t *testing.T) {
+		ts := seedClient(tsID, onePkg("Alice", "Bar", "1.2.0"))
+		hx := seedClient(hxID, onePkg("Alice", "Bar", "1.3.0"))
+		v, reg, ok := NewRegistries(ts, hx).LatestAcross("Alice", "Bar")
+		if !ok || v != "1.3.0" || reg != hx {
+			t.Fatalf("LatestAcross = %q, %v, %v; want 1.3.0 from hexium", v, reg, ok)
+		}
+	})
+	t.Run("newest wins from thunderstore", func(t *testing.T) {
+		ts := seedClient(tsID, onePkg("Alice", "Bar", "1.3.0"))
+		hx := seedClient(hxID, onePkg("Alice", "Bar", "1.2.0"))
+		v, reg, ok := NewRegistries(ts, hx).LatestAcross("Alice", "Bar")
+		if !ok || v != "1.3.0" || reg != ts {
+			t.Fatalf("LatestAcross = %q, %v, %v; want 1.3.0 from thunderstore", v, reg, ok)
+		}
+	})
+	t.Run("tie goes to the earlier registry", func(t *testing.T) {
+		ts := seedClient(tsID, onePkg("Alice", "Bar", "1.0.0"))
+		hx := seedClient(hxID, onePkg("Alice", "Bar", "1.0.0"))
+		_, reg, ok := NewRegistries(ts, hx).LatestAcross("Alice", "Bar")
+		if !ok || reg != ts {
+			t.Fatalf("tie should resolve to thunderstore, got %v, %v", reg, ok)
+		}
+	})
+	t.Run("present in only one registry", func(t *testing.T) {
+		ts := seedClient(tsID)
+		hx := seedClient(hxID, onePkg("Alice", "Bar", "2.0.0"))
+		v, reg, ok := NewRegistries(ts, hx).LatestAcross("Alice", "Bar")
+		if !ok || v != "2.0.0" || reg != hx {
+			t.Fatalf("LatestAcross = %q, %v, %v; want 2.0.0 from hexium", v, reg, ok)
+		}
+	})
+	t.Run("absent everywhere", func(t *testing.T) {
+		regs := NewRegistries(seedClient(tsID), seedClient(hxID))
+		if _, _, ok := regs.LatestAcross("Nobody", "Nope"); ok {
+			t.Fatalf("expected ok=false for an unknown package")
+		}
+	})
+}
+
+func TestRegistries_FindVersion(t *testing.T) {
+	ts := seedClient(domain.RegistryThunderstoreID, onePkg("Alice", "Bar", "1.2.0"))
+	hx := seedClient(domain.RegistryHexiumID, onePkg("Alice", "Bar", "1.3.0"))
+	regs := NewRegistries(ts, hx)
+
+	if r, ok := regs.FindVersion("Alice", "Bar", "1.3.0"); !ok || r != hx {
+		t.Errorf("FindVersion 1.3.0 should be hexium, got %v, %v", r, ok)
+	}
+	if r, ok := regs.FindVersion("Alice", "Bar", "1.2.0"); !ok || r != ts {
+		t.Errorf("FindVersion 1.2.0 should be thunderstore, got %v, %v", r, ok)
+	}
+	if _, ok := regs.FindVersion("Alice", "Bar", "9.9.9"); ok {
+		t.Errorf("FindVersion of a missing version should be false")
+	}
+}

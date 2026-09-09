@@ -537,3 +537,110 @@ func TestEnqueueInstall_UnknownRegistryIsValidationError(t *testing.T) {
 		t.Fatalf("expected validation_failed for an unknown registry, got %v", err)
 	}
 }
+
+// newTestModsServiceMulti is newTestModsService with more than one registry,
+// for cross-source update tests.
+func newTestModsServiceMulti(t *testing.T, clients ...*Thunderstore) (*Service, *instance.Service, *fakeSupervisor, *jobs.Runner) {
+	t.Helper()
+	ctx := context.Background()
+	sqldb, err := db.OpenMemory(ctx)
+	if err != nil {
+		t.Fatalf("open memory db: %v", err)
+	}
+	t.Cleanup(func() { _ = sqldb.Close() })
+
+	cfg := config.Default()
+	cfg.DataDir = t.TempDir()
+	cfg.Supervisor = "direct"
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+
+	sup := newFakeSupervisor()
+	instSvc := instance.New(sqldb, fakeBus{}, sup, cfg, log)
+	runner := jobs.New(sqldb, fakeBus{}, cfg.JobsDir(), log)
+	modSvc := NewService(sqldb, NewRegistries(clients...), instSvc, runner, cfg.CacheDir(), log)
+	return modSvc, instSvc, sup, runner
+}
+
+// coreLibOnly builds a single-package index (Alice-CoreLib at version, no
+// dependencies) whose download_url points at the shared test server path.
+func coreLibOnly(version string) []rawPackage {
+	return []rawPackage{{
+		Name: "CoreLib", FullName: "Alice-CoreLib", Owner: "Alice",
+		Categories: []string{"Libraries"},
+		Versions: []rawVersion{{
+			Name: "CoreLib", FullName: "Alice-CoreLib-" + version, VersionNumber: version,
+			DownloadURL: "https://thunderstore.io/package/download/Alice/CoreLib/" + version + "/",
+		}},
+	}}
+}
+
+func seedMiniRegistry(t *testing.T, id, name, version string) *Thunderstore {
+	t.Helper()
+	srv := newTestThunderstoreServer(t, coreLibOnly(version))
+	srv.setZip("Alice", "CoreLib", version, coreLibZip(t))
+	c := NewThunderstore(
+		id, name, domain.RegistryThunderstoreIndexURL, []string{"thunderstore.io"},
+		srv.client(), t.TempDir(), func() time.Duration { return time.Hour }, "test-agent", nil,
+	)
+	if err := c.Refresh(context.Background()); err != nil {
+		t.Fatalf("refresh %s: %v", id, err)
+	}
+	return c
+}
+
+// TestEnqueueUpdate_CrossSource_LatestWinsAndSwitchesSource: a mod installed
+// from Thunderstore updates to a newer version that only Hexium has, and its
+// recorded source switches to Hexium.
+func TestEnqueueUpdate_CrossSource_LatestWinsAndSwitchesSource(t *testing.T) {
+	ctx := context.Background()
+	ts := seedMiniRegistry(t, domain.RegistryThunderstoreID, domain.RegistryThunderstoreName, "1.0.0")
+	hx := seedMiniRegistry(t, domain.RegistryHexiumID, domain.RegistryHexiumName, "1.1.0")
+	modSvc, instSvc, _, runner := newTestModsServiceMulti(t, ts, hx)
+	createTestInstance(t, instSvc, "main")
+
+	job, err := modSvc.EnqueueInstall(ctx, "main", domain.RegistryThunderstoreID, "Alice", "CoreLib", "", "tester")
+	if err != nil {
+		t.Fatalf("EnqueueInstall: %v", err)
+	}
+	mustSucceed(t, runner, job.ID)
+
+	ov, err := modSvc.Overview(ctx, "main")
+	if err != nil {
+		t.Fatalf("Overview: %v", err)
+	}
+	var mod domain.Mod
+	for _, m := range ov.Mods {
+		if m.Name == "CoreLib" {
+			mod = m
+		}
+	}
+	if mod.ID == 0 || mod.Source != domain.ModSourceThunderstore || mod.Version != "1.0.0" {
+		t.Fatalf("after install: %+v", mod)
+	}
+	if mod.LatestVersion != "1.1.0" || !mod.UpdateAvailable {
+		t.Fatalf("cross-source latest should be 1.1.0 with update available, got %+v", mod)
+	}
+
+	ujob, err := modSvc.EnqueueUpdate(ctx, "main", mod.ID, "", "tester")
+	if err != nil {
+		t.Fatalf("EnqueueUpdate: %v", err)
+	}
+	mustSucceed(t, runner, ujob.ID)
+
+	ov2, err := modSvc.Overview(ctx, "main")
+	if err != nil {
+		t.Fatalf("Overview after update: %v", err)
+	}
+	var after domain.Mod
+	for _, m := range ov2.Mods {
+		if m.Name == "CoreLib" {
+			after = m
+		}
+	}
+	if after.Version != "1.1.0" || after.Source != domain.ModSourceHexium {
+		t.Fatalf("after cross-source update, want 1.1.0 from hexium, got %+v", after)
+	}
+	if after.UpdateAvailable {
+		t.Errorf("no further update should be available, got %+v", after)
+	}
+}

@@ -65,6 +65,33 @@ func (r *Registries) List() []domain.Registry {
 	return out
 }
 
+// LatestAcross returns the newest version of owner-name across every
+// registry, and the registry that holds it. Ties go to the earlier registry
+// (Thunderstore before Hexium). Reports false when no registry has it.
+func (r *Registries) LatestAcross(owner, name string) (version string, reg *Thunderstore, ok bool) {
+	for _, c := range r.order {
+		v, has := c.LatestVersion(owner, name)
+		if !has {
+			continue
+		}
+		if reg == nil || compareVersions(v, version) > 0 {
+			version, reg = v, c
+		}
+	}
+	return version, reg, reg != nil
+}
+
+// FindVersion returns the first registry that has exactly this
+// owner-name-version, or false if none does.
+func (r *Registries) FindVersion(owner, name, version string) (*Thunderstore, bool) {
+	for _, c := range r.order {
+		if _, ok := c.versionEntry(owner, name, version); ok {
+			return c, true
+		}
+	}
+	return nil, false
+}
+
 // RunAll starts each registry's background refresh loop on its own goroutine,
 // all bound to ctx.
 func (r *Registries) RunAll(ctx context.Context) {
