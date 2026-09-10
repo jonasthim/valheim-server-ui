@@ -223,11 +223,12 @@ func TestRender_Sizes(t *testing.T) {
 	if testing.Short() {
 		return
 	}
+	// 1024² keeps the race-detector run short; BenchmarkRender2048 measures the real size.
 	start := time.Now()
-	if _, err := Render(context.Background(), synthLayers(2048), DefaultParams(3), nil); err != nil {
+	if _, err := Render(context.Background(), synthLayers(1024), DefaultParams(3), nil); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("2048² render: %s", time.Since(start))
+	t.Logf("1024² render: %s", time.Since(start))
 }
 
 func BenchmarkRender2048(b *testing.B) {

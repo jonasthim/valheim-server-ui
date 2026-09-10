@@ -43,7 +43,7 @@ func tileService(t *testing.T) (*Service, domain.InstancePaths) {
 
 func TestTiles_RenderCacheAndFog(t *testing.T) {
 	old := prewarmZoom
-	prewarmZoom = 2 // 21 tiles instead of 341 under the race detector
+	prewarmZoom = 1 // 5 tiles instead of 341: renders are slow under the race detector
 	t.Cleanup(func() { prewarmZoom = old })
 	s, paths := tileService(t)
 	ctx := context.Background()
@@ -119,13 +119,13 @@ func TestTiles_RenderCacheAndFog(t *testing.T) {
 	}
 
 	// Pre-warm produced the low levels in the background.
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(90 * time.Second)
 	for {
-		if _, err := os.Stat(filepath.Join(TileDir(paths), "42-64-v1-builtin", "2", "3", "3.png")); err == nil {
+		if _, err := os.Stat(filepath.Join(TileDir(paths), "42-64-v1-builtin", "1", "1", "1.png")); err == nil {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("pre-warm did not render level 2")
+			t.Fatal("pre-warm did not render level 1")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
