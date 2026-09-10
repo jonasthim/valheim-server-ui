@@ -1,8 +1,8 @@
 <h1 align="center">Valheim Server UI</h1>
 
 <p align="center">
-  Run, configure, back up and mod <b>Valheim dedicated servers on Linux</b> from a web browser.<br/>
-  One static binary. Native SteamCMD installs. systemd-supervised instances. Multi-user with SSO.
+  Run, configure, back up and mod <b>Valheim dedicated servers</b> from a web browser, on <b>Linux or Windows</b>.<br/>
+  One static binary. Native SteamCMD installs. Supervised instances (systemd or a Windows service). Multi-user with SSO.
 </p>
 
 <p align="center">
@@ -13,17 +13,18 @@
 
 ## Why
 
-Running a Valheim server on Linux means juggling SteamCMD, a start script full of
-quoted flags, `adminlist.txt`, world files that need backing up, BepInEx plugins
-and their `.cfg` files, and a restart every time Iron Gate ships a patch. This
-project puts all of that behind a clean web UI with proper forms, live logs and
-an audit trail, without turning your server box into a Docker puzzle.
+Running a Valheim server means juggling SteamCMD, a start script or batch file
+full of quoted flags, `adminlist.txt`, world files that need backing up, BepInEx
+plugins and their `.cfg` files, and a restart every time Iron Gate ships a patch.
+This project puts all of that behind a clean web UI with proper forms, live logs
+and an audit trail, on a Linux box or a Windows machine, without turning your
+server into a Docker puzzle.
 
 ## Features
 
 | Area | What you get |
 |------|--------------|
-| **Instances** | Several isolated servers per host, each with its own game install, world folder, ports and systemd unit. Start, stop, restart, autostart. |
+| **Instances** | Several isolated servers per host, each with its own game install, world folder, ports and process (a systemd unit on Linux, a supervised child of the service on Windows). Start, stop, restart, autostart. |
 | **Configuration** | Real form controls for every server option: name, world, password, port, public, crossplay, difficulty preset, every combat/death/resource/raid/portal modifier, world keys, save interval, Valheim's own rolling saves. Validation with the same rules Valheim enforces. |
 | **Live console** | Streams the server log in real time with filter, follow, download, and highlighting for ready/join/leave/save events. |
 | **Players** | Online players (via the query port and the log), a history of everyone who ever joined, and editors for the admin, banned and permitted lists. |
@@ -31,10 +32,10 @@ an audit trail, without turning your server box into a Docker puzzle.
 | **Mods** | Install BepInEx, browse and install from Thunderstore with dependency resolution, upload zips or DLLs, enable/disable/update/uninstall, and edit plugin `.cfg` files with typed inputs. |
 | **Schedules** | Cron-based restarts, backups and Steam update checks with a "only when nobody is online" switch. |
 | **Updates** | Detects new Valheim builds on Steam and updates with an optional pre-update backup. |
-| **Self-upgrade** | The manager polls GitHub releases, shows what's new, and upgrades itself from the UI with a verified download, atomic swap and rollback. Game servers keep running while it restarts. |
+| **Self-upgrade** | The manager polls GitHub releases, shows what's new, and upgrades itself from the UI with a verified download, atomic swap and rollback. On Linux game servers keep running while it restarts; on Windows they are stopped cleanly and autostarted again. |
 | **Users & SSO** | First-run wizard creates the admin. Local accounts plus one OIDC provider (Authelia, Keycloak, Authentik, Google…) with group-to-role mapping. Roles: viewer, operator, admin. |
 | **Operations** | Job queue with live logs for every long operation, an audit log that records exactly which fields each edit changed, live CPU and memory for the host and for each game server, disk usage and SteamCMD health on the dashboard. |
-| **Security** | The manager runs unprivileged; its only path to root is a 15-line sudo wrapper that validates its arguments. Argon2id passwords, hardened session cookies, CSRF guard, no default credentials. |
+| **Security** | The manager runs unprivileged; on Linux its only path to root is a small sudo wrapper that validates its arguments, on Windows it is a service under its own virtual account. Argon2id passwords, hardened session cookies, CSRF guard, no default credentials. |
 
 ## Screenshots
 
@@ -71,9 +72,14 @@ A dark-first, modern interface with Valheim accents; light mode is one click awa
 
 ## Install
 
-Requirements: Debian 12+ or Ubuntu 22.04+ on x86_64 with systemd, root access,
-about 2 GB of disk per instance plus room for backups. Windows is supported too
-(see below).
+Both platforms get one installer command, a checksum-verified binary, SteamCMD,
+and a service listening on `127.0.0.1:8080`. Re-running the installer upgrades in
+place and never touches your data. Budget about 2 GB of disk per instance plus
+room for backups.
+
+### Linux
+
+Requirements: Debian 12+ or Ubuntu 22.04+ on x86_64 with systemd and root access.
 
 One command, nothing else to download by hand:
 
@@ -84,8 +90,7 @@ curl -fsSL https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/de
 The installer creates the `valheim` system user and `/var/lib/valheim`, installs
 the binary (to `/var/lib/valheim/bin`, symlinked from `/usr/local/bin/valheim-ui`),
 the sudo wrapper, the systemd units and SteamCMD, verifies the release's
-checksum, then starts the service on `127.0.0.1:8080`. Re-running it upgrades in
-place and never touches your data.
+checksum, then starts `valheim-ui.service`.
 
 Local build instead of a release (installer script and repo checked out already):
 
@@ -107,7 +112,8 @@ Put a TLS reverse proxy in front for remote access and set `base_url` in
 
 ### Windows
 
-Windows Server 2019+ or Windows 10+ (x64). From an elevated PowerShell:
+Requirements: Windows Server 2019+ or Windows 10/11 (x64) and an administrator
+PowerShell.
 
 ```powershell
 irm https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/install.ps1 -OutFile install.ps1
@@ -117,11 +123,16 @@ irm https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/in
 The installer registers the Windows service `valheim-ui` (running as the
 virtual account `NT SERVICE\valheim-ui`), puts the binary in
 `%ProgramFiles%\valheim-ui`, data and `config.yaml` in `%ProgramData%\valheim-ui`,
-downloads SteamCMD, verifies the release checksum and starts the service on
-`127.0.0.1:8080`. Re-running upgrades in place. Game servers run as child
-processes of the service and stop with a console Ctrl+C, so worlds are saved
-on stop exactly as on Linux; see the [runbook](docs/RUNBOOK.md#13-windows) for
-what differs.
+downloads SteamCMD, verifies the release checksum and starts the service.
+`.\install.ps1 -Check` reports without changing anything; `-Uninstall` removes
+the service and binary and keeps the data. Game servers run as child processes
+of the service and are stopped with a console Ctrl+C, so worlds are saved on
+stop exactly as on Linux. Open UDP `port` and `port+1` per instance in Windows
+Firewall. The [runbook](docs/RUNBOOK.md#13-windows) lists what differs from
+Linux.
+
+For remote access on either platform, put a TLS reverse proxy in front and set
+`base_url` in the config file.
 
 ## First run
 
@@ -170,9 +181,11 @@ schedule of kind *update* with "only when empty" on.
 show when a new release is out, with its release notes. Press Upgrade: the
 manager downloads the release, verifies its checksum, sanity-runs the new
 binary, swaps it in atomically and restarts within seconds; the page reconnects
-on the new version. Your game servers are separate systemd units and keep
-running throughout. Turn on *auto-upgrade* to have this happen automatically
-when nobody is online. Rollback on the host: `valheim-ui self-upgrade --rollback`.
+on the new version. On Linux your game servers are separate systemd units and
+keep running throughout; on Windows they belong to the service, so they are
+saved and stopped first and autostarted again afterwards. Turn on *auto-upgrade*
+to have this happen automatically when nobody is online. Rollback on the host:
+`valheim-ui self-upgrade --rollback`, then restart the service.
 
 **Schedule restarts.** Instance → Schedules → New schedule, kind *restart*, pick a
 preset such as "Daily at 04:00". Valheim has no way to warn players, so keep
@@ -203,6 +216,8 @@ for Authelia, Keycloak, Authentik, Pocket ID, Google and Entra ID is in
 
 ## How it works
 
+Linux:
+
 ```
 Browser ──HTTPS (your proxy)──► valheim-ui (Go, unprivileged)
                                    │ sudo unitctl start|stop|restart <id>   (only root path)
@@ -213,13 +228,27 @@ Browser ──HTTPS (your proxy)──► valheim-ui (Go, unprivileged)
                            valheim_server.x86_64  ── stdout ──► console.log ──► live UI
 ```
 
+Windows:
+
+```
+Browser ──HTTPS (your proxy)──► valheim-ui service (NT SERVICE\valheim-ui)
+                                   │ spawns valheim-ui launch --instance <id>  (hidden console, job object)
+                                   ▼
+                           launch proxy ── "stop" on stdin ──► console Ctrl+C
+                                   │
+                                   ▼
+                           valheim_server.exe  ── stdout ──► console.log ──► live UI
+```
+
 The manager renders each instance's command line into `launch.json`; the
-`launch` subcommand execs the real server binary with the right environment,
-including the BepInEx doorstop variables read from the pack's own start script.
-The manager tails the console log for readiness, join codes and players, and
-polls the Steam query port for the authoritative player count. Everything else
-(SteamCMD, Thunderstore downloads, backups) runs as tracked jobs with streamed
-logs. Full design: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+`launch` subcommand starts the real server binary with the right environment
+(on Linux it execs it, with the BepInEx doorstop variables read from the pack's
+own start script; on Windows it stays in front of the game as a proxy and
+drives Doorstop through its command-line flags). The manager tails the console
+log for readiness, join codes and players, and polls the Steam query port for
+the authoritative player count. Everything else (SteamCMD, Thunderstore
+downloads, backups) runs as tracked jobs with streamed logs. Full design:
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Development
 
@@ -230,16 +259,20 @@ make check        # vet, golangci-lint, go test -race, typecheck, lint
 make e2e          # Playwright suite against a fake game server
 make dev-backend  # backend on :8080 (direct supervisor + fake server, no systemd needed)
 make dev-web      # Vite dev server on :5173 with API proxy
+make build-go-windows  # cross-compile bin/valheim-ui.exe
 ```
 
 Requirements: Go 1.26, Node 22. The API contract is `docs/openapi.yaml`; frontend
 types are generated from it (`make gen`). Dependencies stay on their latest
 majors with zero known vulnerabilities; CI runs `govulncheck` and `npm audit`.
+Platform-specific code lives in `_unix.go` / `_windows.go` files; CI vets the
+Windows build on Linux and runs the launcher, supervisor, metrics and log
+packages natively on a Windows runner against `tools/fake-server`.
 
 Releases are cut by bumping the `VERSION` file on `main`: CI builds, tests and
-publishes the GitHub release `v<VERSION>` with the binary, `install.sh` and
-checksums, and running installs pick it up through the in-app upgrade
-(see `docs/RUNBOOK.md` §12).
+publishes the GitHub release `v<VERSION>` with the Linux and Windows binaries,
+`install.sh`, `install.ps1` and checksums, and running installs pick it up
+through the in-app upgrade (see `docs/RUNBOOK.md` §12).
 
 ## Security
 
@@ -248,12 +281,16 @@ The threat model, hardening measures and the findings of the latest security rev
 In short: unprivileged service user, sandboxed game units, a one-command sudo wrapper,
 root-owned binary with checksum-verified upgrades, argon2id passwords, hashed sessions,
 CSRF and security headers, and every input validated before it touches the filesystem.
+On Windows the game servers share the service's account, so the process isolation is
+weaker there; SECURITY.md spells out the difference.
 
 ## Status and non-goals
 
-v1 targets a single Linux host with systemd. Not in scope: Docker-based game
-runtime, arm64, Valheim Plus, in-game chat/RCON, multi-host management, TLS
-termination (use a reverse proxy).
+Targets a single host: Linux with systemd, or Windows (since v1.4.0; the
+launcher and stop path are exercised in CI against the fake game server, so
+please report anything the real `valheim_server.exe` does differently). Not in
+scope: Docker-based game runtime, arm64, macOS, Valheim Plus, in-game chat/RCON,
+multi-host management, TLS termination (use a reverse proxy).
 
 ## License
 
