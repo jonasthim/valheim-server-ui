@@ -31,7 +31,7 @@ server into a Docker puzzle.
 | **Backups & worlds** | One-click or scheduled world backups, retention policy, restore with an automatic safety backup, world upload/download, switch the active world. |
 | **Mods** | Install BepInEx, browse and install from Thunderstore with dependency resolution, upload zips or DLLs, enable/disable/update/uninstall, and edit plugin `.cfg` files with typed inputs. |
 | **Live world (agent)** | Our own server plugin, installed with BepInEx: day, in-game clock, weather, world keys and players with positions straight from the running server, plus save-now, kick and an in-game broadcast to all players. Nothing to install for players. |
-| **Live map** | The world rendered from the seed on the server with fog of war built from where players have been, from cartography tables and from imported character files, players moving live, portals and their tags, ships, carts, tombstones, beds and boss locations as layers. Pan, zoom, re-render at up to 4096 px. |
+| **Live map** | The world rendered from the seed on the server with fog of war built from where players have been, from cartography tables, players moving live, portals and their tags, ships, carts, tombstones, beds and boss locations as layers. Pan, zoom, re-render at up to 4096 px. |
 | **Schedules** | Cron-based restarts, backups and Steam update checks with a "only when nobody is online" switch. |
 | **Updates** | Detects new Valheim builds on Steam and updates with an optional pre-update backup. |
 | **Self-upgrade** | The manager polls GitHub releases, shows what's new, and upgrades itself from the UI with a verified download, atomic swap and rollback. On Linux game servers keep running while it restarts; on Windows they are stopped cleanly and autostarted again. |
@@ -181,9 +181,8 @@ World card (day, clock, weather, players, world keys) with *Save world* and
 *Broadcast*, the Players tab gets a *Kick* button, and the **Map** tab shows
 the world rendered from its seed under fog of war, with players moving live
 and portals, ships, tombstones and boss locations as layers. The fog comes
-from where players go, from cartography tables, and from character files an
-operator imports with *Import character map*, so a world played for hours
-before the agent existed shows what its players know. Everything runs over
+from where players go and from cartography tables, so what players wrote to
+a table before the agent existed shows up too. Everything runs over
 loopback with a per-instance token; players need nothing. Details:
 [docs/ARCHITECTURE.md §20](docs/ARCHITECTURE.md#20-valheim-ui-agent-server-plugin).
 

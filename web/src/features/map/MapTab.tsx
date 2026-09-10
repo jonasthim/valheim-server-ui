@@ -10,7 +10,6 @@ import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatusPill } from '../../ui'
 import { useAgent } from '../agent'
-import { ImportExploredButton } from './ImportExploredButton'
 import { MapView, type Marker } from './MapView'
 import { fogImageUrl, mapImageUrl, useInstanceMap, useRenderMap, worldToFraction } from './useMap'
 
@@ -164,9 +163,6 @@ export function MapTab({ id }: { id: string }) {
               <Badge variant="outline" color="gray">
                 {info.size} px · seed {info.seed}
               </Badge>
-            )}
-            {hasRole('operator') && data.connected && fogSupported && (
-              <ImportExploredButton id={id} />
             )}
             {hasRole('operator') && data.connected && data.map_supported && (
               <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} loading={render.isPending} disabled={rendering} onClick={confirmRerender}>

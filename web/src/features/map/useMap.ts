@@ -3,7 +3,7 @@
 // the agent.status SSE event (see features/agent/useAgent).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { API_BASE, api } from '../../api/client'
-import type { ExploredImportResult, ExploredInfo, InstanceMap, MapInfo, MapRenderRequest } from '../../api/types'
+import type { ExploredInfo, InstanceMap, MapInfo, MapRenderRequest } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
 
 export function mapKey(id: string) {
@@ -38,25 +38,6 @@ export function useRenderMap(id: string) {
 export function mapImageUrl(id: string, info: MapInfo | undefined): string {
   const v = info ? `${info.seed}-${info.size}-${info.state}` : 'cached'
   return `${API_BASE}/instances/${encodeURIComponent(id)}/map.png?v=${encodeURIComponent(v)}`
-}
-
-/** POST /instances/{id}/map/explored/import with a character file. */
-export function useImportExplored(id: string) {
-  const qc = useQueryClient()
-  return useMutation({
-    mutationFn: (file: File) => {
-      const form = new FormData()
-      form.append('file', file, file.name)
-      return api.upload<ExploredImportResult>(`/instances/${id}/map/explored/import`, form)
-    },
-    onSuccess: (res) => {
-      if (res.ok) notifySuccess(res.message, 'Exploration imported')
-      else notifyError(new Error(res.message), 'Nothing imported')
-      void qc.invalidateQueries({ queryKey: mapKey(id) })
-      void qc.invalidateQueries({ queryKey: ['instances', id, 'agent'] })
-    },
-    onError: (err) => notifyError(err, 'Import failed'),
-  })
 }
 
 /** Fog mask URL, versioned by the exploration version the mask reflects. */

@@ -37,7 +37,6 @@ namespace ValheimUI.Agent
         private readonly MapObjects _objects;
         private float _worldReadyAt = -1f;
         private int _worldSeed;
-        private long _worldUID;
         private string _cacheDir = "";
 
         private HttpApi _api;
@@ -85,8 +84,7 @@ namespace ValheimUI.Agent
                 () => _map.Png(),
                 () => _objects.Json,
                 () => _explored.InfoJson(),
-                () => _explored.MaskPng(),
-                ImportCharacterFile);
+                () => _explored.MaskPng());
             try
             {
                 _api.Start(_bind.Value, port);
@@ -124,7 +122,6 @@ namespace ValheimUI.Agent
                     {
                         _worldReadyAt = now;
                         _worldSeed = snap.Seed;
-                        _worldUID = snap.WorldUID;
                         _explored.Load(snap.Seed, _cacheDir);
                     }
                     if (snap.Ready && _explored.Loaded)
@@ -238,21 +235,6 @@ namespace ValheimUI.Agent
                 w.Append("]}");
             }
             return w.ToString();
-        }
-
-        /// <summary>Runs on the HTTP thread; Exploration is lock-protected and
-        /// the world id was captured on the main thread.</summary>
-        private string ImportCharacterFile(byte[] file)
-        {
-            if (_worldReadyAt < 0f || !_explored.Loaded)
-            {
-                return "{\"ok\":false,\"message\":\"world not loaded yet\",\"added_cells\":0}";
-            }
-            string message;
-            int added = _explored.ImportCharacterFile(file, _worldUID, out message);
-            return "{\"ok\":" + (added >= 0 ? "true" : "false")
-                   + ",\"message\":" + JsonWriter.Quote(message)
-                   + ",\"added_cells\":" + Math.Max(0, added).ToString(System.Globalization.CultureInfo.InvariantCulture) + "}";
         }
 
         private static int GamePortFromCommandLine()

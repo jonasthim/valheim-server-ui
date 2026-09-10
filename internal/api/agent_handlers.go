@@ -1,7 +1,6 @@
 package api
 
 import (
-	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -31,42 +30,6 @@ func registerAgentRoutes(r chi.Router, d *Deps) {
 		Get("/instances/{instanceId}/map/explored.png", getExploredImageHandler(d))
 	r.With(RequireRole(domain.RoleOperator), guard).
 		Post("/instances/{instanceId}/map/render", renderMapHandler(d))
-	r.With(RequireRole(domain.RoleOperator), guard).
-		Post("/instances/{instanceId}/map/explored/import", importExploredHandler(d))
-}
-
-// maxCharacterUploadBytes bounds the multipart upload of a .fch file.
-const maxCharacterUploadBytes = 32 << 20
-
-// importExploredHandler accepts a character file (multipart field "file")
-// and merges the map that character explored into the instance's fog.
-func importExploredHandler(d *Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := InstanceID(r)
-		if err != nil {
-			WriteError(w, err)
-			return
-		}
-		r.Body = http.MaxBytesReader(w, r.Body, maxCharacterUploadBytes)
-		f, hdr, err := r.FormFile("file")
-		if err != nil {
-			WriteValidation(w, domain.FieldError{Field: "file", Message: "a character file (.fch) is required"})
-			return
-		}
-		defer func() { _ = f.Close() }()
-		data, err := io.ReadAll(f)
-		if err != nil {
-			WriteError(w, domain.Wrap(domain.CodeValidationFailed, "read upload", err))
-			return
-		}
-		res, err := d.Agent.ImportExplored(r.Context(), id, data)
-		if err != nil {
-			WriteError(w, err)
-			return
-		}
-		d.audit(r, "agent.explored_import", id, hdr.Filename, map[string]any{"ok": res.OK, "added_cells": res.AddedCells, "message": res.Message})
-		WriteJSON(w, http.StatusOK, res)
-	}
 }
 
 // getExploredImageHandler serves the fog mask (grey+alpha PNG, opaque where

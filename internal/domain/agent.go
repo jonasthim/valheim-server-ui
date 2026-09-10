@@ -92,13 +92,6 @@ type AgentInfo struct {
 	Explored *ExploredInfo `json:"explored,omitempty"`
 }
 
-// ExploredImportResult is the plugin's answer to a character-file import.
-type ExploredImportResult struct {
-	OK         bool   `json:"ok"`
-	Message    string `json:"message"`
-	AddedCells int    `json:"added_cells"`
-}
-
 type AgentEvent struct {
 	Seq  int64           `json:"seq"`
 	Kind string          `json:"kind"`

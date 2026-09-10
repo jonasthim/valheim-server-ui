@@ -170,6 +170,5 @@ type AgentService interface {
 	Map(ctx context.Context, instanceID string, includeHidden bool) (*domain.InstanceMap, error)
 	MapPNG(ctx context.Context, instanceID string) (path string, info *domain.MapInfo, err error)
 	ExploredPNG(ctx context.Context, instanceID string) (path string, info *domain.ExploredInfo, err error)
-	ImportExplored(ctx context.Context, instanceID string, file []byte) (*domain.ExploredImportResult, error)
 	RenderMap(ctx context.Context, instanceID string, req domain.MapRenderRequest) (*domain.MapInfo, error)
 }

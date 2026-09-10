@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -251,32 +250,4 @@ func (c *Client) ExploredPNG(ctx context.Context) ([]byte, *domain.ExploredInfo,
 	default:
 		return nil, nil, &statusError{code: resp.StatusCode, body: strings.TrimSpace(string(data))}
 	}
-}
-
-// ImportExplored uploads a character file (.fch) whose map data for this
-// world the plugin merges into the fog.
-func (c *Client) ImportExplored(ctx context.Context, file []byte) (*domain.ExploredImportResult, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/v1/map/explored/import", bytes.NewReader(file))
-	if err != nil {
-		return nil, fmt.Errorf("agent: build request: %w", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/octet-stream")
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("agent: %w", err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
-	if err != nil {
-		return nil, fmt.Errorf("agent: read response: %w", err)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, &statusError{code: resp.StatusCode, body: strings.TrimSpace(string(data))}
-	}
-	var res domain.ExploredImportResult
-	if err := json.Unmarshal(data, &res); err != nil {
-		return nil, fmt.Errorf("agent: decode import result: %w", err)
-	}
-	return &res, nil
 }

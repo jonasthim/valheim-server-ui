@@ -442,17 +442,7 @@ data of its own, so the agent builds it from two sources:
 - where players go while the agent runs (the game's 100 m reveal radius);
 - the shared map on **cartography tables**: everything a player has written to
   a table becomes explored on the manager's map too. Ask players to write
-  their maps once after upgrading, and the fog matches what they know;
-- **imported character files**: *Import character map* on the Map tab
-  (operators, agent connected) takes a player's `.fch` file and merges the
-  exploration it holds for this world. This is the way to bring in 30 hours
-  of play from before the agent was installed without a table. The file is
-  read once and not stored. Character files live at
-  `%USERPROFILE%\AppData\LocalLow\IronGate\Valheim\characters_local\<name>.fch`
-  on Windows, `~/.config/unity3d/IronGate/Valheim/characters_local/` on
-  Linux, and under `Steam\userdata\<id>\892970\remote\characters\` for
-  Steam Cloud saves. A character that never joined this world imports
-  nothing; the toast says so.
+  their maps once after upgrading, and the fog matches what they know.
 
 Fog and objects refresh within a few seconds: the agent re-encodes the mask
 at most every 3 s and rescans objects every 15 s, the manager polls fog

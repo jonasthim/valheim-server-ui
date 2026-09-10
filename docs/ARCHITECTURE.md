@@ -752,14 +752,6 @@ therefore reconstructs it (`plugin/ValheimUI.Agent/Exploration.cs`):
   bool per 12 m map pixel, then pins, which are ignored). This brings in what
   players explored before the agent existed, as long as someone wrote their
   map to a table. A table is re-read when its data changes;
-- character files can be imported (`POST /v1/map/explored/import`, raw
-  `.fch` bytes, 32 MB cap): the outer `ZPackage` holds a length-prefixed
-  profile which is parsed with the game's own `PlayerProfile` loader, found
-  by reflection (its constructor and accessors have changed between game
-  versions); when that fails, a manual walk of profile versions 29+ reads
-  the per-world entries and picks the one whose UID matches the running
-  world. The world's map data is the same gzip'd `ZPackage` as a table's, so
-  it goes through the same importer. The file is never written to disk;
 - the union is persisted per world at
   `BepInEx/cache/valheimui-agent/explored-<seed>-1024.bin` (once a minute
   when changed, and on shutdown).
@@ -777,9 +769,10 @@ refetching when the agent's mask version moves
 `fog_supported`). The poller reads `explored/info` every 2 s alongside the
 status and publishes it in `AgentInfo.explored` on the `agent.status` event,
 so the Map tab swaps the mask as soon as the version changes without
-waiting for its own poll. `POST /instances/{id}/map/explored/import`
-(multipart `file`, operator, audited as `agent.explored_import`) forwards a
-character file to the agent and drops the cached fog state. The Map tab draws the fog as a dark layer with the mask as
-CSS `mask-image` (default on), and hides objects and locations that lie
-under it, so boss altars are not revealed by the Bosses layer. Players are
+waiting for its own poll.
+
+The Map tab draws the fog as a fully opaque dark layer with the mask as CSS
+`mask-image` (default on): unexplored terrain is not visible at all, not
+dimmed. It hides objects and locations that lie under the fog, so boss altars
+are not revealed by the Bosses layer. Players are
 always drawn. Agents before 1.7.0 report no fog; the toggle explains why.
