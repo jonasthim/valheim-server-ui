@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -33,6 +34,7 @@ type Versioner interface {
 }
 
 type state struct {
+	explored        *domain.ExploredInfo
 	connected       bool
 	lastSeen        time.Time
 	lastError       string
@@ -169,18 +171,49 @@ func (s *Service) poll(ctx context.Context, id string, port int, paths domain.In
 		s.setDisconnected(id, err.Error())
 		return
 	}
+	// Fog state rides along so the map hears about new masks within a
+	// poll instead of its own slower refresh.
+	s.mu.Lock()
+	ms := s.maps[id]
+	if ms == nil {
+		ms = &mapState{}
+		s.maps[id] = ms
+	}
+	fogKnownUnsupported := ms.fogUnsupported || ms.unsupported
+	s.mu.Unlock()
+	var explored *domain.ExploredInfo
+	if !fogKnownUnsupported {
+		ectx, ecancel := context.WithTimeout(ctx, 2*time.Second)
+		ei, eerr := c.ExploredInfo(ectx)
+		ecancel()
+		s.mu.Lock()
+		switch {
+		case eerr == nil:
+			ms.explored, ms.exploredAt = ei, s.now()
+			explored = ei
+		case isNotFound(eerr):
+			ms.fogUnsupported = true
+		default:
+			explored = ms.explored
+		}
+		s.mu.Unlock()
+	}
 	s.mu.Lock()
 	x := s.states[id]
 	if x == nil {
 		x = &state{}
 		s.states[id] = x
 	}
+	x.explored = explored
 	changed := !x.connected
 	x.connected = true
 	x.lastError = ""
 	x.lastSeen = s.now()
 	x.status = st
 	fp := fingerprint(st)
+	if explored != nil {
+		fp += "|mask:" + fmt.Sprint(explored.MaskVersion)
+	}
 	if fp != x.lastFingerprint {
 		changed = true
 		x.lastFingerprint = fp
@@ -294,6 +327,10 @@ func (s *Service) infoLocked(_ string, paths domain.InstancePaths, x *state, inc
 	if s.bundle != nil {
 		info.BundledVersion = s.bundle.Version()
 		info.UpdateAvailable = info.Installed && info.BundledVersion != "0.0.0" && info.InstalledVersion != "" && info.InstalledVersion != info.BundledVersion
+	}
+	if x.explored != nil {
+		ei := *x.explored
+		info.Explored = &ei
 	}
 	if x.status != nil {
 		st := *x.status

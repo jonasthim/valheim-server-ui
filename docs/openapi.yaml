@@ -864,6 +864,32 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ExploredInfo' }
         '409': { description: 'No exploration data yet', $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/map/explored/import:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    post:
+      tags: [agent]
+      summary: Merge the map a character has explored (its .fch save file) into the fog of war
+      description: |
+        The server never holds exploration; a player's character file does. Upload
+        it (Windows `%USERPROFILE%\AppData\LocalLow\IronGate\Valheim\characters_local\<name>.fch`,
+        Linux `~/.config/unity3d/IronGate/Valheim/characters_local/`) and the agent
+        merges this world's map data. The server must be running with an agent of 1.8.0 or later.
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExploredImportResult' }
+        '409': { description: 'Agent not connected or too old', $ref: '#/components/responses/Error' }
   /instances/{instanceId}/map/render:
     parameters: [{ $ref: '#/components/parameters/instanceId' }]
     post:
@@ -1818,6 +1844,7 @@ components:
         last_seen: { type: string, format: date-time }
         last_error: { type: string }
         status: { $ref: '#/components/schemas/AgentStatus' }
+        explored: { $ref: '#/components/schemas/ExploredInfo' }
 
     AgentCommandRequest:
       type: object
@@ -1898,6 +1925,14 @@ components:
       properties:
         size: { type: integer, minimum: 256, maximum: 4096 }
         force: { type: boolean, description: Re-render even when a cached image exists }
+
+    ExploredImportResult:
+      type: object
+      required: [ok, message, added_cells]
+      properties:
+        ok: { type: boolean }
+        message: { type: string }
+        added_cells: { type: integer, description: Newly revealed fog cells }
 
     AgentCommandResult:
       type: object

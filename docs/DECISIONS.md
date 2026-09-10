@@ -195,8 +195,10 @@ history, the union is persisted per world, and the map applies it as a CSS
 mask. Objects and boss locations under the fog are hidden. An admin toggle
 turns the fog off.
 
-**Consequences.** Exploration before the agent existed is only known through
-tables players wrote to; positions of players who hide on the map still
+**Consequences.** Exploration before the agent existed comes in through
+tables players wrote to or by importing a character file on the Map tab
+(the agent parses the profile with the game's own loader and merges only
+this world's map); positions of players who hide on the map still
 reveal terrain (the server sees them), which matches the game's own rule
 that exploration is not secret. The table format is parsed best effort and
 skipped on error, so a game update can degrade history without breaking the

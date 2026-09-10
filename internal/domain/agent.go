@@ -87,6 +87,16 @@ type AgentInfo struct {
 	LastSeen         *time.Time   `json:"last_seen,omitempty"`
 	LastError        string       `json:"last_error,omitempty"`
 	Status           *AgentStatus `json:"status,omitempty"`
+	// Explored is the fog-of-war state, refreshed with every poll so the
+	// map learns about new mask versions through the event stream.
+	Explored *ExploredInfo `json:"explored,omitempty"`
+}
+
+// ExploredImportResult is the plugin's answer to a character-file import.
+type ExploredImportResult struct {
+	OK         bool   `json:"ok"`
+	Message    string `json:"message"`
+	AddedCells int    `json:"added_cells"`
 }
 
 type AgentEvent struct {

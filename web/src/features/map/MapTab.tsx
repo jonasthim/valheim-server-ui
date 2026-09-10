@@ -10,6 +10,7 @@ import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatusPill } from '../../ui'
 import { useAgent } from '../agent'
+import { ImportExploredButton } from './ImportExploredButton'
 import { MapView, type Marker } from './MapView'
 import { fogImageUrl, mapImageUrl, useInstanceMap, useRenderMap, worldToFraction } from './useMap'
 
@@ -59,6 +60,8 @@ export function MapTab({ id }: { id: string }) {
   const hidden = players.filter((p) => !p.position).length
   const fogSupported = !!data?.fog_supported
   const fogOn = fog && fogSupported
+  // The agent stream carries the fog version every 2 s; the map poll is the fallback.
+  const explored = agent.data?.explored ?? data?.explored
 
   const markers = useMemo<Marker[]>(() => {
     const out: Marker[] = []
@@ -162,6 +165,9 @@ export function MapTab({ id }: { id: string }) {
                 {info.size} px · seed {info.seed}
               </Badge>
             )}
+            {hasRole('operator') && data.connected && fogSupported && (
+              <ImportExploredButton id={id} />
+            )}
             {hasRole('operator') && data.connected && data.map_supported && (
               <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} loading={render.isPending} disabled={rendering} onClick={confirmRerender}>
                 Re-render
@@ -190,14 +196,14 @@ export function MapTab({ id }: { id: string }) {
             >
               <div>
                 <Chip checked={fogOn} onChange={setFog} size="xs" variant="filled" color="iron" disabled={!fogSupported}>
-                  Fog of war{data.explored ? ` · ${data.explored.percent.toFixed(1)}% explored` : ''}
+                  Fog of war{explored ? ` · ${explored.percent.toFixed(1)}% explored` : ''}
                 </Chip>
               </div>
             </Tooltip>
           </Group>
           <MapView
             imageUrl={data.image_ready ? mapImageUrl(id, info) : null}
-            fogUrl={fogOn ? fogImageUrl(id, data.explored) : null}
+            fogUrl={fogOn ? fogImageUrl(id, explored) : null}
             markers={markers}
             overlay={overlay}
             onImageError={() => setImageBroken(true)}

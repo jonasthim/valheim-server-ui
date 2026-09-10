@@ -277,3 +277,81 @@ func TestExploredPNG_FetchesWhenVersionChanges(t *testing.T) {
 		t.Fatalf("offline mask: %s %v", p, err)
 	}
 }
+
+func TestImportExplored(t *testing.T) {
+	paths := testPaths(t)
+	installPlugin(t, paths, "1.8.0")
+	cfg, err := EnsureConfig(paths, 2456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []byte
+	var imports atomic.Int32
+	mux := http.NewServeMux()
+	auth := func(r *http.Request) bool { return r.Header.Get("Authorization") == "Bearer "+cfg.Token }
+	mux.HandleFunc("/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		if auth(r) {
+			_, _ = w.Write([]byte(sampleStatus))
+		}
+	})
+	mux.HandleFunc("/v1/map/info", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"state":"ready","progress":1,"seed":42,"size":512,"world_radius":10500,"playable_radius":10000,"sea_level":30}`))
+	})
+	mux.HandleFunc("/v1/map/objects", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"objects":[],"locations":[],"updated_at":"2026-09-10T12:00:00Z"}`))
+	})
+	mux.HandleFunc("/v1/map/explored/info", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"version":1,"size":1024,"explored_cells":10,"total_cells":1048576,"percent":0.01,"mask_version":1}`))
+	})
+	mux.HandleFunc("/v1/map/explored/import", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || !auth(r) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		imports.Add(1)
+		got, _ = io.ReadAll(r.Body)
+		_, _ = w.Write([]byte(`{"ok":true,"message":"Bjorn: 120 new cells revealed","added_cells":120}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning},
+	}}
+	s := NewService(fi, &fakeBus{}, slog.New(slog.NewTextHandler(io.Discard, nil)), fixedVersion("1.8.0"))
+	s.http = srv.Client()
+	s.baseURL = func(int) string { return srv.URL }
+	ctx := context.Background()
+
+	// Not connected yet: refused as a conflict, nothing forwarded.
+	if _, err := s.ImportExplored(ctx, "main", []byte("x")); domain.AsError(err).Code != domain.CodeConflict {
+		t.Fatalf("want conflict while disconnected, got %v", err)
+	}
+	s.tick(ctx)
+	if _, err := s.ImportExplored(ctx, "main", nil); domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("want validation error for an empty file, got %v", err)
+	}
+	if _, err := s.ImportExplored(ctx, "main", make([]byte, maxCharacterFileBytes+1)); domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("want validation error for an oversized file, got %v", err)
+	}
+
+	file := []byte("fake fch bytes")
+	res, err := s.ImportExplored(ctx, "main", file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK || res.AddedCells != 120 || !strings.Contains(res.Message, "Bjorn") {
+		t.Fatalf("result: %+v", res)
+	}
+	if imports.Load() != 1 || string(got) != string(file) {
+		t.Fatalf("agent must receive the file bytes once, got %d %q", imports.Load(), got)
+	}
+	s.mu.Lock()
+	ms := s.maps["main"]
+	cleared := ms == nil || ms.explored == nil
+	s.mu.Unlock()
+	if !cleared {
+		t.Fatal("cached explored info must be dropped after an import")
+	}
+}

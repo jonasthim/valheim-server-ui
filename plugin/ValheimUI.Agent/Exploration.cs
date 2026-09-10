@@ -272,34 +272,43 @@ namespace ValheimUI.Agent
             ZPackage inner;
             try
             {
+                // A .fch is [int length][profile bytes][hash]; ReadByteArray
+                // reads exactly the length-prefixed block.
+                if (file.Length < 8) return "not a Valheim character file";
                 var outer = new ZPackage(file);
-                int size = outer.ReadInt();
-                if (size <= 0 || size > file.Length) return "not a Valheim character file";
-                inner = new ZPackage(outer.ReadBytes(size));
+                var body = outer.ReadByteArray();
+                if (body == null || body.Length < 4) return "not a Valheim character file";
+                inner = new ZPackage(body);
             }
             catch (Exception)
             {
                 return "not a Valheim character file";
             }
 
-            // Preferred: the game's own parser, found by reflection since its
-            // name is private and has changed between versions.
+            // Preferred: the game's own parser. Everything on PlayerProfile is
+            // reached by reflection: its constructor and world-data accessors
+            // pull in assembly_utils types and have changed between versions.
             try
             {
-                var profile = new PlayerProfile();
+                var t = typeof(PlayerProfile);
                 var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
-                foreach (var name in new[] { "LoadPlayerData", "Load" })
+                var profile = NewProfile(t);
+                if (profile != null)
                 {
-                    var m = typeof(PlayerProfile).GetMethod(name, flags, null, new[] { typeof(ZPackage) }, null);
-                    if (m == null) continue;
-                    inner.SetPos(0);
-                    var ok = m.Invoke(profile, new object[] { inner });
-                    if (ok is bool && !(bool)ok) continue;
-                    playerName = profile.GetName() ?? "";
-                    var wpd = profile.GetWorldData(worldUID);
-                    if (wpd == null || wpd.m_mapData == null) return "this character has never visited this world";
-                    mapData = wpd.m_mapData;
-                    return null;
+                    foreach (var name in new[] { "LoadPlayerData", "Load" })
+                    {
+                        var m = t.GetMethod(name, flags, null, new[] { typeof(ZPackage) }, null);
+                        if (m == null) continue;
+                        inner.SetPos(0);
+                        var ok = m.Invoke(profile, new object[] { inner });
+                        if (ok is bool && !(bool)ok) continue;
+                        var getName = t.GetMethod("GetName", flags, null, Type.EmptyTypes, null);
+                        playerName = (getName != null ? getName.Invoke(profile, null) as string : null) ?? "";
+                        var md = ProfileWorldMapData(t, flags, profile, worldUID);
+                        if (md == null) return "this character has never visited this world";
+                        mapData = md;
+                        return null;
+                    }
                 }
             }
             catch (Exception)
@@ -341,6 +350,68 @@ namespace ValheimUI.Agent
             {
                 return "the character file could not be parsed";
             }
+        }
+
+        /// <summary>
+        /// Constructs a PlayerProfile through its constructor's default
+        /// arguments (file name and file source), whatever their types are.
+        /// </summary>
+        private static object NewProfile(Type t)
+        {
+            foreach (var c in t.GetConstructors(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic))
+            {
+                var ps = c.GetParameters();
+                var args = new object[ps.Length];
+                for (int i = 0; i < ps.Length; i++)
+                {
+                    var pt = ps[i].ParameterType;
+                    object v = null;
+                    if (ps[i].HasDefaultValue && ps[i].DefaultValue != null && ps[i].DefaultValue != DBNull.Value)
+                    {
+                        v = ps[i].DefaultValue;
+                        if (pt.IsEnum && !v.GetType().IsEnum) v = Enum.ToObject(pt, v);
+                    }
+                    else if (pt.IsValueType)
+                    {
+                        v = Activator.CreateInstance(pt);
+                    }
+                    args[i] = v;
+                }
+                try
+                {
+                    return c.Invoke(args);
+                }
+                catch (Exception)
+                {
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// The map bytes the profile holds for one world: GetWorldData(long)
+        /// when present, else the m_worldData dictionary, then m_mapData.
+        /// </summary>
+        private static byte[] ProfileWorldMapData(Type t, System.Reflection.BindingFlags flags, object profile, long worldUID)
+        {
+            object wpd = null;
+            var get = t.GetMethod("GetWorldData", flags, null, new[] { typeof(long) }, null);
+            if (get != null)
+            {
+                wpd = get.Invoke(profile, new object[] { worldUID });
+            }
+            else
+            {
+                var f = t.GetField("m_worldData", flags);
+                var dict = f != null ? f.GetValue(profile) as System.Collections.IDictionary : null;
+                if (dict != null && dict.Contains(worldUID)) wpd = dict[worldUID];
+            }
+            if (wpd == null) return null;
+            var wt = wpd.GetType();
+            var mf = wt.GetField("m_mapData", flags);
+            if (mf != null) return mf.GetValue(wpd) as byte[];
+            var mp = wt.GetProperty("m_mapData", flags);
+            return mp != null ? mp.GetValue(wpd, null) as byte[] : null;
         }
 
         /// <summary>

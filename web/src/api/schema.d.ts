@@ -2188,6 +2188,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/map/explored/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge the map a character has explored (its .fch save file) into the fog of war
+         * @description The server never holds exploration; a player's character file does. Upload
+         *     it (Windows `%USERPROFILE%\AppData\LocalLow\IronGate\Valheim\characters_local\<name>.fch`,
+         *     Linux `~/.config/unity3d/IronGate/Valheim/characters_local/`) and the agent
+         *     merges this world's map data. The server must be running with an agent of 1.8.0 or later.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /** Format: binary */
+                        file: string;
+                    };
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExploredImportResult"];
+                    };
+                };
+                /** @description Agent not connected or too old */
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/map/render": {
         parameters: {
             query?: never;
@@ -3444,6 +3498,7 @@ export interface components {
             last_seen?: string;
             last_error?: string;
             status?: components["schemas"]["AgentStatus"];
+            explored?: components["schemas"]["ExploredInfo"];
         };
         AgentCommandRequest: {
             /** @enum {string} */
@@ -3531,6 +3586,12 @@ export interface components {
             size?: number;
             /** @description Re-render even when a cached image exists */
             force?: boolean;
+        };
+        ExploredImportResult: {
+            ok: boolean;
+            message: string;
+            /** @description Newly revealed fog cells */
+            added_cells: number;
         };
         AgentCommandResult: {
             ok: boolean;
