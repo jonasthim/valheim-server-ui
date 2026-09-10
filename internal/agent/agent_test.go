@@ -299,3 +299,36 @@ func TestBundle_OverrideAndMissing(t *testing.T) {
 	}
 	_ = time.Second
 }
+
+// TestService_StatusArraysNeverNull: before the world loads the plugin
+// answers {"ready":false}; the contract still promises global_keys and
+// players as arrays, so neither may reach a client as null.
+func TestService_StatusArraysNeverNull(t *testing.T) {
+	paths := testPaths(t)
+	installPlugin(t, paths, "1.9.0")
+	cfg, err := EnsureConfig(paths, 2456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := fakeAgent(t, cfg.Token, `{"ready":false}`)
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning},
+	}}
+	bus := &fakeBus{}
+	s := NewService(fi, bus, slog.New(slog.NewTextHandler(io.Discard, nil)), fixedVersion("1.9.0"))
+	s.http = srv.Client()
+	s.baseURL = func(int) string { return srv.URL }
+	s.tick(context.Background())
+
+	info, err := s.Info(context.Background(), "main", false)
+	if err != nil || info.Status == nil {
+		t.Fatalf("info: %+v %v", info, err)
+	}
+	for name, v := range map[string]any{"info": info, "event": bus.events[0].Data} {
+		raw, _ := json.Marshal(v)
+		if !strings.Contains(string(raw), `"global_keys":[]`) || !strings.Contains(string(raw), `"players":[]`) {
+			t.Fatalf("%s must carry empty arrays, got %s", name, raw)
+		}
+	}
+}

@@ -336,6 +336,7 @@ func (s *Service) infoLocked(_ string, paths domain.InstancePaths, x *state, inc
 	}
 	if x.status != nil {
 		st := *x.status
+		normalizeStatus(&st)
 		st.Players = make([]domain.AgentPlayer, 0, len(x.status.Players))
 		for _, p := range x.status.Players {
 			if !p.Visible && !includeHidden {

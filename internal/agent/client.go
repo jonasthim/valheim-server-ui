@@ -46,7 +46,20 @@ func (c *Client) Status(ctx context.Context) (*domain.AgentStatus, error) {
 	if err := c.do(ctx, http.MethodGet, "/v1/status", nil, "", &st); err != nil {
 		return nil, err
 	}
+	normalizeStatus(&st)
 	return &st, nil
+}
+
+// normalizeStatus gives every array the contract declares as non-null an
+// empty value: the plugin answers {"ready":false} before the world loads,
+// which leaves Go slices nil and would marshal as JSON null to clients.
+func normalizeStatus(st *domain.AgentStatus) {
+	if st.GlobalKeys == nil {
+		st.GlobalKeys = []string{}
+	}
+	if st.Players == nil {
+		st.Players = []domain.AgentPlayer{}
+	}
 }
 
 // Events returns the agent's events after seq and the newest sequence number.
