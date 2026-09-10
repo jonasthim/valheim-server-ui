@@ -6,6 +6,7 @@ import {
   IconArchive,
   IconCalendar,
   IconLayoutDashboard,
+  IconMap2,
   IconPuzzle,
   IconTerminal2,
   IconUsers,
@@ -17,6 +18,7 @@ import { INSTANCE_TABS, type InstanceTab } from './tabs'
 // visit, behind the Suspense boundary around the panels below.
 const OverviewTab = lazy(() => import('./OverviewTab').then((m) => ({ default: m.OverviewTab })))
 const ConsoleTab = lazy(() => import('./ConsoleTab').then((m) => ({ default: m.ConsoleTab })))
+const MapTab = lazy(() => import('../map/MapTab').then((m) => ({ default: m.MapTab })))
 const ConfigTab = lazy(() => import('./ConfigTab').then((m) => ({ default: m.ConfigTab })))
 const PlayersTab = lazy(() => import('./PlayersTab').then((m) => ({ default: m.PlayersTab })))
 const WorldsTab = lazy(() => import('./WorldsTab').then((m) => ({ default: m.WorldsTab })))
@@ -29,6 +31,7 @@ import { stateColor, stateLabel } from './instanceHelpers'
 const TAB_ICONS: Record<InstanceTab, typeof IconLayoutDashboard> = {
   overview: IconLayoutDashboard,
   console: IconTerminal2,
+  map: IconMap2,
   config: IconAdjustments,
   players: IconUsers,
   worlds: IconWorld,
@@ -77,6 +80,7 @@ export function InstancePage() {
         <Suspense fallback={<Center py="xl"><Loader /></Center>}>
           <Tabs.Panel value="overview" pt="md"><OverviewTab id={id} /></Tabs.Panel>
           <Tabs.Panel value="console" pt="md"><ConsoleTab key={id} id={id} /></Tabs.Panel>
+          <Tabs.Panel value="map" pt="md"><MapTab id={id} /></Tabs.Panel>
           <Tabs.Panel value="config" pt="md"><ConfigTab id={id} /></Tabs.Panel>
           <Tabs.Panel value="players" pt="md"><PlayersTab id={id} /></Tabs.Panel>
           <Tabs.Panel value="worlds" pt="md"><WorldsTab id={id} /></Tabs.Panel>

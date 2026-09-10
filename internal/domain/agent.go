@@ -107,3 +107,64 @@ type AgentCommandResult struct {
 	OK      bool   `json:"ok"`
 	Message string `json:"message"`
 }
+
+// MapInfo is the plugin's render state for the world map (GET /v1/map/info).
+type MapInfo struct {
+	State          string  `json:"state"` // idle|rendering|encoding|ready|failed
+	Progress       float64 `json:"progress"`
+	Seed           int     `json:"seed"`
+	Size           int     `json:"size"`
+	WorldRadius    float64 `json:"world_radius"`
+	PlayableRadius float64 `json:"playable_radius"`
+	SeaLevel       float64 `json:"sea_level"`
+	Error          string  `json:"error,omitempty"`
+}
+
+// MapObject is a point of interest read from the server's ZDO store.
+type MapObject struct {
+	Type  string  `json:"type"` // portal|ship|cart|tombstone|bed
+	Label string  `json:"label"`
+	X     float64 `json:"x"`
+	Y     float64 `json:"y"`
+	Z     float64 `json:"z"`
+	Text  string  `json:"text,omitempty"` // portal tag, owner name
+}
+
+// MapLocation is one of the game's own map icons (boss altars, start temple).
+type MapLocation struct {
+	Name string  `json:"name"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+	Z    float64 `json:"z"`
+}
+
+// MapObjects is GET /v1/map/objects.
+type MapObjects struct {
+	Objects   []MapObject   `json:"objects"`
+	Locations []MapLocation `json:"locations"`
+	UpdatedAt *time.Time    `json:"updated_at"`
+}
+
+// InstanceMap is what GET /instances/{id}/map returns: everything the Map
+// tab needs besides the image itself.
+type InstanceMap struct {
+	Connected bool `json:"connected"`
+	// ImageReady is true when GET /instances/{id}/map.png serves an image now
+	// (from the instance cache or the running agent).
+	ImageReady bool `json:"image_ready"`
+	// Stale is true when the served image was cached from an earlier run and
+	// the agent is not reachable to confirm it matches the current world.
+	Stale     bool          `json:"stale"`
+	Info      *MapInfo      `json:"info,omitempty"`
+	Objects   []MapObject   `json:"objects"`
+	Locations []MapLocation `json:"locations"`
+	ObjectsAt *time.Time    `json:"objects_updated_at,omitempty"`
+	Players   []AgentPlayer `json:"players"`
+	World     *AgentWorld   `json:"world,omitempty"`
+}
+
+// MapRenderRequest asks the plugin to (re)render the map.
+type MapRenderRequest struct {
+	Size  int  `json:"size,omitempty"`
+	Force bool `json:"force,omitempty"`
+}

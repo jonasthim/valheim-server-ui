@@ -1,0 +1,158 @@
+package agent
+
+import (
+	"context"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/jonasthim/valheim-server-ui/internal/domain"
+)
+
+// tinyPNG is the 8-byte signature plus filler: enough for the client's check.
+var tinyPNG = append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, []byte("fake-idat")...)
+
+func mapAgent(t *testing.T, token string, state *atomic.Value) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	auth := func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			w.WriteHeader(401)
+			return false
+		}
+		return true
+	}
+	info := func() string {
+		return `{"state":"` + state.Load().(string) + `","progress":0.5,"seed":42,"size":512,"world_radius":10500,"playable_radius":10000,"sea_level":30}`
+	}
+	mux.HandleFunc("/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		if auth(w, r) {
+			_, _ = w.Write([]byte(sampleStatus))
+		}
+	})
+	mux.HandleFunc("/v1/map/info", func(w http.ResponseWriter, r *http.Request) {
+		if auth(w, r) {
+			_, _ = w.Write([]byte(info()))
+		}
+	})
+	mux.HandleFunc("/v1/map/objects", func(w http.ResponseWriter, r *http.Request) {
+		if auth(w, r) {
+			_, _ = w.Write([]byte(`{"objects":[{"type":"portal","label":"Portal","x":10,"y":31,"z":-20,"text":"home"}],"locations":[{"name":"StartTemple","x":0,"y":30,"z":0}],"updated_at":"2026-09-10T12:00:00Z"}`))
+		}
+	})
+	mux.HandleFunc("/v1/map", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(w, r) {
+			return
+		}
+		if state.Load().(string) != "ready" {
+			w.WriteHeader(202)
+			_, _ = w.Write([]byte(info()))
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(tinyPNG)
+	})
+	mux.HandleFunc("/v1/map/render", func(w http.ResponseWriter, r *http.Request) {
+		if auth(w, r) {
+			state.Store("rendering")
+			w.WriteHeader(202)
+			_, _ = w.Write([]byte(info()))
+		}
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestMap_FetchCacheAndOffline(t *testing.T) {
+	paths := testPaths(t)
+	installPlugin(t, paths, "1.6.0")
+	cfg, err := EnsureConfig(paths, 2456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state atomic.Value
+	state.Store("rendering")
+	srv := mapAgent(t, cfg.Token, &state)
+
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning},
+	}}
+	s := NewService(fi, &fakeBus{}, slog.New(slog.NewTextHandler(io.Discard, nil)), fixedVersion("1.6.0"))
+	s.http = srv.Client()
+	s.baseURL = func(int) string { return srv.URL }
+	ctx := context.Background()
+	s.tick(ctx) // connect
+
+	// Rendering: progress, no image.
+	m, err := s.Map(ctx, "main", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Connected || m.ImageReady || m.Info == nil || m.Info.State != "rendering" || len(m.Objects) != 1 || len(m.Locations) != 1 || len(m.Players) != 2 {
+		t.Fatalf("map while rendering: %+v", m)
+	}
+	if _, info, err := s.MapPNG(ctx, "main"); err != ErrMapRendering || info == nil {
+		t.Fatalf("expected ErrMapRendering with info, got %v %v", err, info)
+	}
+
+	// Ready: fetched once into the instance cache, then served from disk.
+	state.Store("ready")
+	s.mu.Lock()
+	s.maps["main"].infoAt = s.now().Add(-time.Hour)
+	s.mu.Unlock()
+	p, info, err := s.MapPNG(ctx, "main")
+	if err != nil || info == nil || info.State != "ready" {
+		t.Fatalf("MapPNG ready: %v %v", err, info)
+	}
+	want := filepath.Join(MapCacheDir(paths), "map-42-512.png")
+	if p != want {
+		t.Fatalf("cached at %s, want %s", p, want)
+	}
+	if b, _ := os.ReadFile(p); string(b) != string(tinyPNG) {
+		t.Fatal("cached image differs from the agent's")
+	}
+	m, _ = s.Map(ctx, "main", false)
+	if !m.ImageReady || m.Stale {
+		t.Fatalf("map after fetch: %+v", m)
+	}
+
+	// Force re-render drops the cached file and reports rendering.
+	ri, err := s.RenderMap(ctx, "main", domain.MapRenderRequest{Force: true})
+	if err != nil || ri.State != "rendering" {
+		t.Fatalf("RenderMap: %v %v", err, ri)
+	}
+	if _, err := os.Stat(want); !os.IsNotExist(err) {
+		t.Fatal("forced render should drop the cached image")
+	}
+	if _, err := s.RenderMap(ctx, "main", domain.MapRenderRequest{Size: 10}); err == nil {
+		t.Fatal("expected a validation error for size 10")
+	}
+
+	// Agent gone: the newest cached image (write one) is served as stale.
+	state.Store("ready")
+	if _, _, err := s.MapPNG(ctx, "main"); err != nil {
+		t.Fatalf("refetch: %v", err)
+	}
+	srv.Close()
+	s.tick(ctx)
+	p, info, err = s.MapPNG(ctx, "main")
+	if err != nil || p != want || info != nil {
+		t.Fatalf("offline MapPNG: %s %v %v", p, info, err)
+	}
+	m, _ = s.Map(ctx, "main", false)
+	if m.Connected || !m.ImageReady || !m.Stale {
+		t.Fatalf("offline map: %+v", m)
+	}
+	if !strings.HasSuffix(p, ".png") {
+		t.Fatal("unexpected path")
+	}
+}

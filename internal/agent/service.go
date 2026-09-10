@@ -51,6 +51,7 @@ type Service struct {
 	baseURL func(port int) string // tests point this at a fake agent
 	mu      sync.Mutex
 	states  map[string]*state
+	maps    map[string]*mapState
 	now     func() time.Time
 }
 
@@ -64,6 +65,7 @@ func NewService(inst InstanceSource, bus domain.Publisher, log *slog.Logger, bun
 		inst: inst, bus: bus, log: log, bundle: bundle,
 		http:   &http.Client{Timeout: 3 * time.Second},
 		states: map[string]*state{},
+		maps:   map[string]*mapState{},
 		now:    time.Now,
 	}
 }
@@ -131,6 +133,7 @@ func (s *Service) tick(ctx context.Context) {
 	for id := range s.states {
 		if !seen[id] {
 			delete(s.states, id)
+			delete(s.maps, id)
 		}
 	}
 	s.mu.Unlock()

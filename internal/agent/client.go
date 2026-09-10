@@ -135,3 +135,78 @@ func (c *Client) do(ctx context.Context, method, path string, q url.Values, body
 	}
 	return nil
 }
+
+// MapInfo fetches the plugin's render state.
+func (c *Client) MapInfo(ctx context.Context) (*domain.MapInfo, error) {
+	var info domain.MapInfo
+	if err := c.do(ctx, http.MethodGet, "/v1/map/info", nil, "", &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// MapObjects fetches the points of interest.
+func (c *Client) MapObjects(ctx context.Context) (*domain.MapObjects, error) {
+	var out domain.MapObjects
+	if err := c.do(ctx, http.MethodGet, "/v1/map/objects", nil, "", &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// MapPNG fetches the rendered map. While the plugin is still rendering it
+// returns (nil, info, nil) with the render progress.
+func (c *Client) MapPNG(ctx context.Context) ([]byte, *domain.MapInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/v1/map", nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("agent: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("agent: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMapBytes))
+	if err != nil {
+		return nil, nil, fmt.Errorf("agent: read map: %w", err)
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if len(data) < 8 || string(data[1:4]) != "PNG" {
+			return nil, nil, &statusError{code: resp.StatusCode, body: "map response is not a PNG"}
+		}
+		return data, nil, nil
+	case http.StatusAccepted:
+		var info domain.MapInfo
+		_ = json.Unmarshal(data, &info)
+		return nil, &info, nil
+	default:
+		return nil, nil, &statusError{code: resp.StatusCode, body: strings.TrimSpace(string(data))}
+	}
+}
+
+// RenderMap asks the plugin to (re)render at size (0 = its configured size).
+func (c *Client) RenderMap(ctx context.Context, size int, force bool) (*domain.MapInfo, error) {
+	q := url.Values{}
+	if size > 0 {
+		q.Set("size", fmt.Sprint(size))
+	}
+	if force {
+		q.Set("force", "true")
+	}
+	var info domain.MapInfo
+	err := c.do(ctx, http.MethodPost, "/v1/map/render", q, "", &info)
+	var se *statusError
+	if err != nil && asStatusError(err, &se) && se.code == http.StatusAccepted {
+		_ = json.Unmarshal([]byte(se.body), &info)
+		return &info, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// maxMapBytes bounds a map image (4096² PNG stays far below this).
+const maxMapBytes = 64 << 20

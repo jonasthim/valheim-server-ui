@@ -412,3 +412,24 @@ Troubleshooting:
   plugin; press *Update agent* (stops and restarts the instance).
 - **Broadcast shows nothing in-game:** the message uses the raid/sleep banner;
   players in menus or loading screens do not see it.
+
+### 14.1 The map
+
+With the agent installed the instance gets a **Map** tab: the world rendered
+from its seed (no fog) with live players, portals and their tags, ships,
+carts, tombstones, beds and boss locations as toggleable layers.
+
+- The server renders the image itself about 15 s after the world loads, in
+  small slices (default 4 ms per frame, 1024 px), so expect a minute or two
+  before the tab shows terrain; the tab shows the progress meanwhile. The image
+  is cached both in the server directory (`BepInEx/cache/valheimui-agent/`)
+  and in the instance (`cache/map/`), so restarts are instant.
+- *Re-render* (operators) redraws it; raise `[Map] Resolution` in
+  `se.jonasthim.valheimui.agent.cfg` (up to 4096) for a sharper map at the
+  cost of a longer one-time render, or lower `RenderBudgetMs` on a busy server.
+- Players who turned off "visible to other players" appear in the count but
+  without a position for viewers; operators see everyone (this is logged in
+  the audit trail like other agent data access is not; positions are read
+  only, never stored).
+- A new world (different seed) gets a new image automatically; the old file is
+  kept in the cache directory and can be deleted.

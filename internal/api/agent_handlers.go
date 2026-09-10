@@ -21,6 +21,81 @@ func registerAgentRoutes(r chi.Router, d *Deps) {
 		Post("/instances/{instanceId}/agent/commands", agentCommandHandler(d))
 	r.With(RequireRole(domain.RoleOperator), modsGuard).
 		Post("/instances/{instanceId}/agent/install", installAgentHandler(d))
+
+	r.With(RequireRole(domain.RoleViewer), guard).
+		Get("/instances/{instanceId}/map", getMapHandler(d))
+	r.With(RequireRole(domain.RoleViewer), guard).
+		Get("/instances/{instanceId}/map.png", getMapImageHandler(d))
+	r.With(RequireRole(domain.RoleOperator), guard).
+		Post("/instances/{instanceId}/map/render", renderMapHandler(d))
+}
+
+func getMapHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		u := UserFrom(r.Context())
+		includeHidden := u != nil && u.Role.AtLeast(domain.RoleOperator)
+		m, err := d.Agent.Map(r.Context(), id, includeHidden)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		WriteJSON(w, http.StatusOK, m)
+	}
+}
+
+// getMapImageHandler serves the rendered map. 200 image/png when available,
+// 202 with MapInfo while the plugin renders, 409 when nothing exists yet.
+func getMapImageHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		path, info, err := d.Agent.MapPNG(r.Context(), id)
+		if err != nil {
+			if info != nil {
+				WriteJSON(w, http.StatusAccepted, info)
+				return
+			}
+			WriteError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		// The file name carries seed and size, so a new render is a new URL
+		// once the client appends them; keep the browser cache short anyway.
+		w.Header().Set("Cache-Control", "private, max-age=30")
+		http.ServeFile(w, r, path) //nolint:gosec // path is a file the agent service wrote into the instance's own cache dir
+	}
+}
+
+func renderMapHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		var req domain.MapRenderRequest
+		if r.ContentLength != 0 {
+			if err := DecodeJSON(r, &req); err != nil {
+				WriteError(w, err)
+				return
+			}
+		}
+		info, err := d.Agent.RenderMap(r.Context(), id, req)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		d.audit(r, "agent.map_render", id, "", map[string]any{"size": info.Size, "force": req.Force})
+		WriteJSON(w, http.StatusAccepted, info)
+	}
 }
 
 func getAgentHandler(d *Deps) http.HandlerFunc {

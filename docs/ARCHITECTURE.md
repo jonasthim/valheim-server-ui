@@ -703,3 +703,38 @@ release asset verified against `SHA256SUMS`.
 `ZoneSystem` global keys, `WorldGenerator` seed, `MessageHud` RPC) and no
 Harmony patches, so game patches rarely break it; when they do, the fix ships
 with the next manager release and the UI offers the update.
+
+### 20.1 Live map
+
+The plugin renders the world map itself: it samples `WorldGenerator`'s biome
+and height on a `Resolution`² grid (default 1024, config section `[Map]`)
+covering the whole ±10 500 m world, colours it like the in-game map with no
+fog (biome palette, altitude and a light east-west hillshade, water by depth,
+the band beyond the 10 km playable circle darkened), encodes the PNG with its
+own encoder on a worker thread and caches it under
+`BepInEx/cache/valheimui-agent/map-<seed>-<size>.png`. Sampling runs on the
+Unity main thread in slices bounded by `RenderBudgetMs` (default 4 ms per
+frame), so a 1024 px map takes a minute or two after the world loads without
+stalling the server; `AutoRender` starts it 15 s after the world is ready.
+
+- `GET /v1/map` returns the PNG, or `202` with `{state, progress, seed, size,
+  world_radius, playable_radius, sea_level}` while rendering.
+- `GET /v1/map/info` returns that state; `POST /v1/map/render?size=&force=`
+  starts a render.
+- `GET /v1/map/objects` returns `{objects[{type, label, x, y, z, text}],
+  locations[{name, x, y, z}], updated_at}`: portals (with tag), ships, carts,
+  tombstones (owner), claimed beds (owner) from one pass over the ZDO table
+  every 30 s (table accessor resolved by reflection, since it moved between
+  game versions; capped at 5 000 objects), and the game's own location icons
+  (boss altars, the start temple, traders once found).
+
+The manager (`internal/agent/mapcache.go`) copies a ready image into
+`instances/<id>/cache/map/map-<seed>-<size>.png` on first request and serves it
+from there (`GET /instances/{id}/map.png`, `202` with progress while the plugin
+renders, the newest cached image marked `stale` when the agent is away).
+`GET /instances/{id}/map` bundles render state, objects (cached 10 s) and
+players (positions of hidden players only for operators). Image pixel
+mapping: `u = (x + R) / 2R`, `v = (R - z) / 2R` with `R = world_radius`,
+north up. The Map tab (`web/src/features/map`) pans and zooms the image with
+CSS transforms and places markers in image fractions, counter-scaled so they
+keep their screen size; player markers follow the `agent.status` stream.

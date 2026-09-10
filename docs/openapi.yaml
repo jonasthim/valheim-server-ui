@@ -810,6 +810,53 @@ paths:
             schema: { $ref: '#/components/schemas/StopIfRunning' }
       responses:
         '202': { $ref: '#/components/responses/JobResponse' }
+  /instances/{instanceId}/map:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [agent]
+      summary: Live map data (render state, objects, players); the image is /map.png
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InstanceMap' }
+  /instances/{instanceId}/map.png:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [agent]
+      summary: The rendered world map (biomes and terrain from the seed, no fog)
+      description: |
+        `200 image/png` when an image is available (cached in the instance or fetched
+        from the running agent), `202` with MapInfo while the plugin is still
+        rendering, `409` when no map exists yet. Append `?v=<seed>-<size>` to bust
+        browser caches after a re-render.
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '202':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MapInfo' }
+        '409': { description: 'No map yet', $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/map/render:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    post:
+      tags: [agent]
+      summary: Ask the agent to (re)render the map
+      x-role: operator
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MapRenderRequest' }
+      responses:
+        '202':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MapInfo' }
   /instances/{instanceId}/mods/{modId}:
     parameters:
       - { $ref: '#/components/parameters/instanceId' }
@@ -1758,6 +1805,59 @@ components:
         target: { type: string, description: Player name or platform id (kick, ban, unban) }
         message: { type: string, maxLength: 200, description: Text shown to every player (broadcast) }
         style: { type: string, enum: [center, topleft], description: Where the broadcast appears on screen }
+
+    MapInfo:
+      type: object
+      required: [state, progress, seed, size, world_radius, playable_radius, sea_level]
+      properties:
+        state: { type: string, enum: [idle, rendering, encoding, ready, failed] }
+        progress: { type: number, description: 0..1 while rendering }
+        seed: { type: integer }
+        size: { type: integer, description: Image side length in pixels }
+        world_radius: { type: number, description: Half-width of the image in metres (world centre is the image centre, north up) }
+        playable_radius: { type: number }
+        sea_level: { type: number }
+        error: { type: string }
+
+    MapObject:
+      type: object
+      required: [type, label, x, y, z]
+      properties:
+        type: { type: string, enum: [portal, ship, cart, tombstone, bed] }
+        label: { type: string }
+        x: { type: number }
+        y: { type: number }
+        z: { type: number }
+        text: { type: string, description: Portal tag or owner name }
+
+    MapLocation:
+      type: object
+      required: [name, x, y, z]
+      properties:
+        name: { type: string, description: Location prefab name (StartTemple, Eikthyrnir, ...) }
+        x: { type: number }
+        y: { type: number }
+        z: { type: number }
+
+    InstanceMap:
+      type: object
+      required: [connected, image_ready, stale, objects, locations, players]
+      properties:
+        connected: { type: boolean }
+        image_ready: { type: boolean, description: GET map.png serves an image now }
+        stale: { type: boolean, description: The image comes from an earlier run and could not be confirmed against the current world }
+        info: { $ref: '#/components/schemas/MapInfo' }
+        objects: { type: array, items: { $ref: '#/components/schemas/MapObject' } }
+        locations: { type: array, items: { $ref: '#/components/schemas/MapLocation' } }
+        objects_updated_at: { type: string, format: date-time }
+        players: { type: array, items: { $ref: '#/components/schemas/AgentPlayer' } }
+        world: { $ref: '#/components/schemas/AgentWorld' }
+
+    MapRenderRequest:
+      type: object
+      properties:
+        size: { type: integer, minimum: 256, maximum: 4096 }
+        force: { type: boolean, description: Re-render even when a cached image exists }
 
     AgentCommandResult:
       type: object

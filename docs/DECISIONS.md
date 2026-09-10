@@ -162,3 +162,22 @@ plugin depends on public game APIs, so patches can break it and the fix rides
 the next release (the UI shows the update). Loopback plus a token keeps the
 surface local; commands are audited. Runtime behaviour against the real
 server is verified on a real host, not in CI.
+
+## ADR-023 The map is rendered by the server plugin from the seed
+
+**Context.** Valheim's map exploration is client-side; the server has no
+image of the world. The terrain is deterministic from the seed, and only the
+game process has the generator.
+
+**Decision.** The agent plugin samples `WorldGenerator` on the main thread in
+time-boxed slices, encodes the PNG itself (no Unity texture APIs in a
+headless server), caches per seed and size, and serves it over the existing
+loopback API. The manager copies the image into the instance cache and
+overlays live players and ZDO-derived objects in the browser. No third-party
+map mod, no client-side data, no extra port.
+
+**Consequences.** One-time CPU cost per world (minutes at 1024 px, bounded per
+frame); the palette approximates the in-game map rather than reproducing its
+textures. Object scanning walks the ZDO table every 30 s via a reflected
+accessor, capped at 5 000 objects. Exploration fog is intentionally not
+reproduced: the map shows the whole world.

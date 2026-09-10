@@ -2038,6 +2038,143 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /** Live map data (render state, objects, players); the image is /map.png */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InstanceMap"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/map.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * The rendered world map (biomes and terrain from the seed, no fog)
+         * @description `200 image/png` when an image is available (cached in the instance or fetched
+         *     from the running agent), `202` with MapInfo while the plugin is still
+         *     rendering, `409` when no map exists yet. Append `?v=<seed>-<size>` to bust
+         *     browser caches after a re-render.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                    };
+                };
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MapInfo"];
+                    };
+                };
+                /** @description No map yet */
+                409: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/map/render": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask the agent to (re)render the map */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["MapRenderRequest"];
+                };
+            };
+            responses: {
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MapInfo"];
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/mods/{modId}": {
         parameters: {
             query?: never;
@@ -3264,6 +3401,56 @@ export interface components {
              * @enum {string}
              */
             style?: "center" | "topleft";
+        };
+        MapInfo: {
+            /** @enum {string} */
+            state: "idle" | "rendering" | "encoding" | "ready" | "failed";
+            /** @description 0..1 while rendering */
+            progress: number;
+            seed: number;
+            /** @description Image side length in pixels */
+            size: number;
+            /** @description Half-width of the image in metres (world centre is the image centre */
+            world_radius: number;
+            playable_radius: number;
+            sea_level: number;
+            error?: string;
+        };
+        MapObject: {
+            /** @enum {string} */
+            type: "portal" | "ship" | "cart" | "tombstone" | "bed";
+            label: string;
+            x: number;
+            y: number;
+            z: number;
+            /** @description Portal tag or owner name */
+            text?: string;
+        };
+        MapLocation: {
+            /** @description Location prefab name (StartTemple */
+            name: string;
+            x: number;
+            y: number;
+            z: number;
+        };
+        InstanceMap: {
+            connected: boolean;
+            /** @description GET map.png serves an image now */
+            image_ready: boolean;
+            /** @description The image comes from an earlier run and could not be confirmed against the current world */
+            stale: boolean;
+            info?: components["schemas"]["MapInfo"];
+            objects: components["schemas"]["MapObject"][];
+            locations: components["schemas"]["MapLocation"][];
+            /** Format: date-time */
+            objects_updated_at?: string;
+            players: components["schemas"]["AgentPlayer"][];
+            world?: components["schemas"]["AgentWorld"];
+        };
+        MapRenderRequest: {
+            size?: number;
+            /** @description Re-render even when a cached image exists */
+            force?: boolean;
         };
         AgentCommandResult: {
             ok: boolean;

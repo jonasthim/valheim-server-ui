@@ -1,6 +1,7 @@
 export const INSTANCE_TABS = [
   'overview',
   'console',
+  'map',
   'config',
   'players',
   'worlds',
