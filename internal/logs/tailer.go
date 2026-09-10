@@ -50,6 +50,17 @@ type Tailer struct {
 	// at offset 0 (there is no meaningful "backlog" or "end" to skip to: any
 	// bytes written before we got around to opening it are new, not old).
 	wasMissing bool
+	// onOpen, when set, runs once the file is open and positioned (tests
+	// use it to know when writes will be seen instead of sleeping).
+	onOpen func()
+}
+
+// opened reports a completed open to the test hook.
+func (t *Tailer) opened() error {
+	if t.onOpen != nil {
+		t.onOpen()
+	}
+	return nil
 }
 
 // Run follows Path, calling onLine for every complete line (the trailing \n
@@ -171,7 +182,7 @@ func (t *Tailer) check(onLine func(string), log *slog.Logger) error {
 			// Backlog (there is nothing meaningful to treat as history yet).
 			t.offset = 0
 			t.wasMissing = false
-			return nil
+			return t.opened()
 		}
 		if t.Backlog > 0 {
 			lines, size, err := readLastLines(f, t.Backlog)
@@ -201,7 +212,7 @@ func (t *Tailer) check(onLine func(string), log *slog.Logger) error {
 			}
 			t.offset = off
 		}
-		return nil
+		return t.opened()
 	}
 
 	if curIno != t.ino {

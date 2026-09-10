@@ -27,6 +27,31 @@ func (s *lineSink) snapshot() []string {
 	return append([]string(nil), s.lines...)
 }
 
+// tailerWithOpenSignal returns a tailer whose first successful open is
+// reported on the channel, so tests write only once writes will be seen.
+// A fixed sleep raced the initial open+seek-to-end on slow runners: a late
+// open silently skipped whatever the test had already written.
+func tailerWithOpenSignal(path string) (*Tailer, <-chan struct{}) {
+	opened := make(chan struct{}, 1)
+	tl := &Tailer{Path: path}
+	tl.onOpen = func() {
+		select {
+		case opened <- struct{}{}:
+		default:
+		}
+	}
+	return tl, opened
+}
+
+func awaitOpen(t *testing.T, opened <-chan struct{}) {
+	t.Helper()
+	select {
+	case <-opened:
+	case <-time.After(5 * time.Second):
+		t.Fatal("tailer did not open the file within 5s")
+	}
+}
+
 func waitFor(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -93,9 +118,9 @@ func TestTailer_AppendConcurrently(t *testing.T) {
 	defer cancel()
 
 	sink := &lineSink{}
-	tl := &Tailer{Path: path}
+	tl, opened := tailerWithOpenSignal(path)
 	go func() { _ = tl.Run(ctx, sink.add) }()
-	time.Sleep(150 * time.Millisecond) // let the tailer perform its initial open+seek-to-end
+	awaitOpen(t, opened)
 
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -245,9 +270,9 @@ func TestTailer_PartialLineTolerated(t *testing.T) {
 	defer cancel()
 
 	sink := &lineSink{}
-	tl := &Tailer{Path: path}
+	tl, opened := tailerWithOpenSignal(path)
 	go func() { _ = tl.Run(ctx, sink.add) }()
-	time.Sleep(150 * time.Millisecond) // let the tailer perform its initial open+seek-to-end
+	awaitOpen(t, opened)
 
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
@@ -267,7 +292,8 @@ func TestTailer_PartialLineTolerated(t *testing.T) {
 		t.Fatalf("write rest: %v", err)
 	}
 
-	waitFor(t, 2*time.Second, func() bool {
+	// 5 s covers the 1 s poll fallback when fsnotify is late on a loaded runner.
+	waitFor(t, 5*time.Second, func() bool {
 		got := sink.snapshot()
 		return len(got) == 2 && got[0] == "partial-no-newline-yet now complete" && got[1] == "second"
 	})
