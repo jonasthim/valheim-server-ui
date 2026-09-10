@@ -57,7 +57,7 @@ func TestInstalled(t *testing.T) {
 }
 
 func TestInstalledBuildID(t *testing.T) {
-	c := New("/bin/true", nil)
+	c := New(writeFakeSteamCMD(t, "exit 0"), nil)
 
 	installDir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(installDir, "steamapps"), 0o755); err != nil {
@@ -233,7 +233,7 @@ func TestLatestBuildID_CachesResult(t *testing.T) {
 		_, _ = out.Write(fixture)
 		return nil
 	}
-	c := New("/bin/true", nil, WithCommandRunner(run))
+	c := New(writeFakeSteamCMD(t, "exit 0"), nil, WithCommandRunner(run))
 
 	if build, at := c.Latest(); build != "" || !at.IsZero() {
 		t.Fatalf("expected no cached value before the first check, got %q %v", build, at)

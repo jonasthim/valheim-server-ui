@@ -30,7 +30,7 @@ func clientAlwaysReturning(t *testing.T, output []byte) *Client {
 		_, _ = out.Write(output)
 		return nil
 	}
-	return New("/bin/true", nil, WithCommandRunner(run))
+	return New(writeFakeSteamCMD(t, "exit 0"), nil, WithCommandRunner(run))
 }
 
 // writeManifest drops a fake appmanifest with the given buildid into
@@ -182,7 +182,7 @@ func TestUpdateChecker_CheckNow_PropagatesLatestBuildIDError(t *testing.T) {
 	run := func(ctx context.Context, path string, args []string, out io.Writer) error {
 		return errors.New("boom")
 	}
-	client := New("/bin/true", nil, WithCommandRunner(run))
+	client := New(writeFakeSteamCMD(t, "exit 0"), nil, WithCommandRunner(run))
 	checker := NewUpdateChecker(client, func() time.Duration { return 0 }, nil, nil, nil)
 	if err := checker.CheckNow(context.Background()); err == nil {
 		t.Fatal("expected CheckNow to propagate the steamcmd error")
