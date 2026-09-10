@@ -30,6 +30,7 @@ server into a Docker puzzle.
 | **Players** | Online players (via the query port and the log), a history of everyone who ever joined, and editors for the admin, banned and permitted lists. |
 | **Backups & worlds** | One-click or scheduled world backups, retention policy, restore with an automatic safety backup, world upload/download, switch the active world. |
 | **Mods** | Install BepInEx, browse and install from Thunderstore with dependency resolution, upload zips or DLLs, enable/disable/update/uninstall, and edit plugin `.cfg` files with typed inputs. |
+| **Live world (agent)** | Our own server plugin, installed with BepInEx: day, in-game clock, weather, world keys and players with positions straight from the running server, plus save-now, kick and an in-game broadcast to all players. Nothing to install for players. The base for the upcoming live map. |
 | **Schedules** | Cron-based restarts, backups and Steam update checks with a "only when nobody is online" switch. |
 | **Updates** | Detects new Valheim builds on Steam and updates with an optional pre-update backup. |
 | **Self-upgrade** | The manager polls GitHub releases, shows what's new, and upgrades itself from the UI with a verified download, atomic swap and rollback. On Linux game servers keep running while it restarts; on Windows they are stopped cleanly and autostarted again. |
@@ -173,6 +174,13 @@ the UI can stop and restart it for you). Then Browse Thunderstore, pick a mod an
 its version; dependencies are resolved and installed automatically and the plan
 is printed in the job log. Plugin `.cfg` files show up below as typed forms.
 
+**See and steer the live world.** Installing BepInEx also installs the
+Valheim UI Agent, the manager's own server plugin. The Overview then shows a
+World card (day, clock, weather, players, world keys) with *Save world* and
+*Broadcast*, and the Players tab gets a *Kick* button. Everything runs over
+loopback with a per-instance token; players need nothing. Details:
+[docs/ARCHITECTURE.md §20](docs/ARCHITECTURE.md#20-valheim-ui-agent-server-plugin).
+
 **Keep the server up to date.** The overview shows when Steam has a newer build.
 "Update now" stops, backs up, updates and restarts. For hands-off operation add a
 schedule of kind *update* with "only when empty" on.
@@ -289,8 +297,9 @@ weaker there; SECURITY.md spells out the difference.
 Targets a single host: Linux with systemd, or Windows (since v1.4.0; the
 launcher and stop path are exercised in CI against the fake game server, so
 please report anything the real `valheim_server.exe` does differently). Not in
-scope: Docker-based game runtime, arm64, macOS, Valheim Plus, in-game chat/RCON,
-multi-host management, TLS termination (use a reverse proxy).
+scope: Docker-based game runtime, arm64, macOS, Valheim Plus, generic RCON
+(the built-in agent covers admin commands), multi-host management, TLS
+termination (use a reverse proxy).
 
 ## License
 

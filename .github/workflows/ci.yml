@@ -196,6 +196,8 @@ jobs:
         with: { name: web-dist, path: web/dist }
       - uses: actions/download-artifact@v4
         with: { name: agent-plugin, path: dist }
+      # Embed the plugin package so installs work without reaching GitHub.
+      - run: cp dist/valheim-ui-agent.zip internal/agent/assets/
       - run: make build-go VERSION=$RELEASE_TAG COMMIT=${{ github.sha }}
       - run: make build-go-windows VERSION=$RELEASE_TAG COMMIT=${{ github.sha }}
       - run: make deploy-sync-check

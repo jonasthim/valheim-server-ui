@@ -15,6 +15,7 @@ import {
   useModsOverview,
 } from '../mods'
 import { SectionCard } from '../../ui'
+import { AgentCard } from '../agent'
 
 export function ModsTab({ id }: { id: string }) {
   const { hasRole } = useAuth()
@@ -24,6 +25,7 @@ export function ModsTab({ id }: { id: string }) {
   return (
     <Stack gap="lg">
       <BepInExCard id={id} />
+      <AgentCard id={id} />
 
       {hasRole('operator') && (
         <SectionCard

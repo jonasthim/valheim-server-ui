@@ -6,6 +6,7 @@ import { KnownPlayersTable } from './players/KnownPlayersTable'
 import { PlayersOnlinePanel } from './players/PlayersOnlinePanel'
 import { LIST_KINDS, LIST_KIND_LABELS } from './players/constants'
 import { useAddPlayerToList, usePlayers } from './players/usePlayers'
+import { useAgent, useAgentCommand } from '../agent'
 
 // Owned by WP-12 (docs/WORKPLAN.md). Props: the instance id.
 export function PlayersTab({ id }: { id: string }) {
@@ -13,10 +14,22 @@ export function PlayersTab({ id }: { id: string }) {
   const canManage = hasRole('operator')
   const playersQ = usePlayers(id)
   const addToList = useAddPlayerToList(id)
+  const agent = useAgent(id)
+  const agentCommand = useAgentCommand(id)
+  const canKick = canManage && !!agent.data?.connected
 
   return (
     <Stack gap="md">
-      <PlayersOnlinePanel data={playersQ.data} isLoading={playersQ.isLoading} />
+      <PlayersOnlinePanel
+        data={playersQ.data}
+        isLoading={playersQ.isLoading}
+        onKick={
+          canKick
+            ? (p) => agentCommand.mutate({ command: 'kick', target: p.platform_id ?? p.name })
+            : undefined
+        }
+        kickPending={agentCommand.isPending}
+      />
 
       <KnownPlayersTable
         players={playersQ.data?.known ?? []}

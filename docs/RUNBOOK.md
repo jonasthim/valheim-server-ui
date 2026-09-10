@@ -379,3 +379,36 @@ Differences from Linux worth knowing:
 Windows support is new in v1.4.0. The launcher, stop protocol and metrics are
 covered by the Windows CI job against the fake game server; please report
 anything the real `valheim_server.exe` does differently.
+
+## 14. Valheim UI Agent (server plugin)
+
+The agent is the manager's own BepInEx plugin. Installing BepInEx from the Mods
+tab installs it too; instances that had BepInEx before v1.5.0 get an
+**Install agent** button on the Mods tab. It needs nothing on players' machines.
+
+What it gives you: a **World** card on the Overview (day, in-game clock, weather,
+players, world keys) with **Save world** and **Broadcast**, a **Kick** button per
+online player, and `agent_connected` in the instance status.
+
+How it works on the host:
+
+- The plugin listens on `127.0.0.1:<game port>` over TCP, loopback only. Nothing
+  to open in the firewall; the manager talks to it on the same machine.
+- Before every start the manager writes
+  `instances/<id>/server/BepInEx/config/se.jonasthim.valheimui.agent.cfg` with
+  the port and a random token. The token stays in that file and in memory.
+- Commands are audited (`agent.command` with target and message).
+
+Troubleshooting:
+
+- **"agent offline" while the server runs:** check that BepInEx is enabled for
+  the instance (Mods tab) and that `BepInEx/LogOutput.log` in the server
+  directory shows `[Info   :Valheim UI Agent] agent listening on
+  http://127.0.0.1:<port>/`. A `could not listen` line means the port is taken;
+  set `Port` in the cfg to a free TCP port and restart.
+- **`unauthorized` in `last_error`:** the cfg token and the running plugin
+  disagree (the file was edited while the server ran). Restart the instance.
+- **Update available on the agent card:** a manager upgrade shipped a newer
+  plugin; press *Update agent* (stops and restarts the instance).
+- **Broadcast shows nothing in-game:** the message uses the raid/sleep banner;
+  players in menus or loading screens do not see it.

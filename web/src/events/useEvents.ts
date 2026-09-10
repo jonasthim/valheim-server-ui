@@ -3,11 +3,12 @@
 import { useEffect } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { API_BASE } from '../api/client'
-import type { InstanceStatus, Job, UpdateInfo } from '../api/types'
+import type { AgentInfo, InstanceStatus, Job, UpdateInfo } from '../api/types'
 
 export type LogEvent = { instance_id: string; line: string }
 export type JobLogEvent = { job_id: string; line: string }
 export type PlayersEvent = { instance_id: string; online: { name: string; platform_id?: string }[] }
+export type AgentStatusEvent = { instance_id: string; agent: AgentInfo }
 
 type Listener<T> = (e: T) => void
 const listeners = {
@@ -70,6 +71,14 @@ export function useEvents(enabled: boolean) {
       source.addEventListener('job.log', (e) => {
         const ev = JSON.parse((e as MessageEvent).data) as JobLogEvent
         listeners['job.log'].forEach((fn) => fn(ev))
+      })
+      source.addEventListener('agent.status', (e) => {
+        const ev = JSON.parse((e as MessageEvent).data) as AgentStatusEvent
+        // The stream omits hidden players' positions; operators get them from
+        // the next GET, which useAgent() also polls.
+        qc.setQueryData<AgentInfo | undefined>(['instances', ev.instance_id, 'agent'], (prev) =>
+          prev ? { ...prev, ...ev.agent, enabled: prev.enabled } : ev.agent,
+        )
       })
       source.addEventListener('instance.players', (e) => {
         const ev = JSON.parse((e as MessageEvent).data) as PlayersEvent

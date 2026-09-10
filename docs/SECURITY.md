@@ -154,6 +154,17 @@ newline, dash, space, case and length attacks; zip-slip checks in mods and backu
 third-party text in the frontend; `npm audit` and `govulncheck` clean (one module-level
 advisory for an unused `x/crypto` package).
 
+### Server plugin (agent)
+
+The agent runs inside the game process with the same privileges as any mod. Its
+API binds to loopback only and refuses every request without the per-instance
+bearer token the manager writes before each start (a 32-byte random value kept
+in the plugin config, mode 0600). The command set is fixed and mapped to public
+game APIs; there is no arbitrary console. Every command is audited with target
+and message. Positions of players who hide on the map are never sent to viewers
+or on the event stream. The plugin is built in CI from this repository and
+verified against the release's SHA256SUMS when fetched.
+
 ## Accepted risks
 
 - **Release authenticity rests on the GitHub account.** Assets are checksummed, and the

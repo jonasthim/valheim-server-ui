@@ -649,3 +649,57 @@ five minutes. It is registered as a `StatusEnricher`, so `InstanceStatus` carrie
 `cpu_percent` and `memory_bytes` while running, and `GET /system` returns `host` metrics for
 the dashboard tiles.
 
+## 20. Valheim UI Agent (server plugin)
+
+The agent is the manager's own BepInEx plugin (`plugin/`, C#, net472, BepInEx
+5). It runs inside `valheim_server` and gives the manager what the log and the
+query port cannot: live players with positions, day and weather, global keys,
+and a command channel. Players install nothing; it is server-only and works
+with crossplay. It is the foundation for the live map.
+
+**Protocol.** The plugin serves HTTP on `127.0.0.1:<game port>` (TCP, so it
+never collides with the game's UDP ports; `Port` in its config overrides).
+Every request but `/v1/health` carries `Authorization: Bearer <token>`.
+
+- `GET /v1/status`: `{agent_version, game_version, ready, world{name, seed,
+  day, day_fraction, is_night, weather, time_seconds}, global_keys[],
+  players[{uid, name, host, character_id, visible, position?}]}`, captured on
+  the Unity main thread every 500 ms and served as an immutable snapshot.
+- `GET /v1/events?since=N`: ring buffer of `player.join`, `player.leave`,
+  `command`.
+- `POST /v1/commands/{save|kick|ban|unban|broadcast}` with `?target=` or a
+  text body: queued to the main thread, answered within 5 s. Broadcast uses
+  the game's own `ShowMessage` routed RPC (how raids are announced), which is
+  stable across chat protocol changes.
+
+**Manager side** (`internal/agent`).
+
+- `EnsureConfig` writes `BepInEx/config/se.jonasthim.valheimui.agent.cfg`
+  (port, bind, a 32-byte random token) through the instance service's
+  pre-start hook, so every start has a valid credential and the token never
+  leaves the host.
+- The poller asks each running instance with the plugin installed and BepInEx
+  enabled for `/v1/status` every 2 s, publishes `agent.status` on the bus
+  when something changed (players, positions, day, weather; at least every
+  10 s while connected) and sets `agent_connected` on `InstanceStatus`.
+  Positions of players who hide on the map are stripped from the bus and from
+  viewer responses; operators get them from `GET /instances/{id}/agent`.
+- Commands are forwarded by `POST /instances/{id}/agent/commands` (operator,
+  audited as `agent.command` with the target and message).
+
+**Distribution.** CI builds the plugin against the real game assemblies
+(anonymous SteamCMD download of the dedicated server, cached weekly) and
+publishes `valheim-ui-agent.zip` (Thunderstore layout: `manifest.json`,
+`plugins/ValheimUI.Agent.dll`) with every release; the release job also embeds
+it into the manager binary (`internal/agent/assets`). The mods service installs
+it as the managed mod `jonasthim-valheimui_agent` (source `bundled`) as part of
+every BepInEx install, and offers `POST /instances/{id}/agent/install` for
+instances that had BepInEx before, or after a manager upgrade shipped a newer
+plugin (`AgentInfo.update_available`). Resolution order for the package:
+`VALHEIM_UI_AGENT_ZIP` (development), the embedded copy, the matching GitHub
+release asset verified against `SHA256SUMS`.
+
+**Compatibility.** The plugin uses public game APIs only (`ZNet` peers, `EnvMan`,
+`ZoneSystem` global keys, `WorldGenerator` seed, `MessageHud` RPC) and no
+Harmony patches, so game patches rarely break it; when they do, the fix ships
+with the next manager release and the UI offers the update.

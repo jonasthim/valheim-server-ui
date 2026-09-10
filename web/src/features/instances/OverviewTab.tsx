@@ -37,6 +37,7 @@ import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
 import { SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
 import { useModsOverview } from '../mods/useMods'
+import { WorldCard } from '../agent'
 import { CheckModUpdatesButton } from '../mods/CheckModUpdatesButton'
 import { useInstance } from './useInstance'
 import {
@@ -214,6 +215,8 @@ export function OverviewTab({ id }: { id: string }) {
           accent={anyUpdate ? 'var(--vh-ember)' : undefined}
         />
       </SimpleGrid>
+
+      <WorldCard id={id} />
 
       <SectionCard title="Updates" description="Game server files and installed mods.">
         <Stack gap="md">

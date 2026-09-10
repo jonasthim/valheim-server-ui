@@ -142,3 +142,23 @@ sandboxed game units) has no Windows equivalent yet; SECURITY.md records this.
 Metrics come from Win32 counters (no load average). Tests use a Go fake game
 server (`tools/fake-server`) so the launcher and supervisor suites run on a
 Windows CI runner; the real `valheim_server.exe` has not been exercised in CI.
+
+## ADR-022 Our own server plugin instead of RCON
+
+**Context.** Vanilla Valheim has no RCON or command channel; third-party
+RCON mods give a command pipe and nothing else. The UI wants live players
+with positions, world state and admin actions, and eventually a live map.
+
+**Decision.** Ship a server-only BepInEx plugin of our own (`plugin/`) with a
+loopback HTTP API and a per-instance token written by the manager, installed
+automatically with BepInEx and versioned with the manager release. A fixed
+set of commands mapped to public game APIs (save, kick, ban, unban,
+broadcast via the `ShowMessage` RPC) rather than a raw console. CI compiles
+it against the real game assemblies fetched with anonymous SteamCMD; no game
+files are committed.
+
+**Consequences.** Players need nothing installed; crossplay unaffected. The
+plugin depends on public game APIs, so patches can break it and the fix rides
+the next release (the UI shows the update). Loopback plus a token keeps the
+surface local; commands are audited. Runtime behaviour against the real
+server is verified on a real host, not in CI.

@@ -13,3 +13,4 @@ web/e2e/.data/
 *.db-shm
 .DS_Store
 /valheim-ui
+internal/agent/assets/valheim-ui-agent.zip
