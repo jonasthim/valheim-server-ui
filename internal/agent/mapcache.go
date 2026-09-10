@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image/png"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/agent/mapstyle"
@@ -26,8 +29,34 @@ func MapCacheDir(paths domain.InstancePaths) string {
 	return filepath.Join(paths.Root, "cache", "map")
 }
 
+// mapFileName is the flat image agents before 1.10 render themselves.
 func mapFileName(seed, size int) string {
 	return fmt.Sprintf("map-%d-%d.png", seed, size)
+}
+
+// layersFileName is the raw layers image agents 1.10+ export.
+func layersFileName(seed, size int) string {
+	return fmt.Sprintf("layers-%d-%d.png", seed, size)
+}
+
+// parseLayersName recovers seed and size from a layers file name.
+func parseLayersName(name string) (seed, size int, ok bool) {
+	if !strings.HasPrefix(name, "layers-") || !strings.HasSuffix(name, ".png") {
+		return 0, 0, false
+	}
+	parts := strings.Split(strings.TrimSuffix(strings.TrimPrefix(name, "layers-"), ".png"), "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	seed, err1 := strconv.Atoi(parts[0])
+	size, err2 := strconv.Atoi(parts[1])
+	return seed, size, err1 == nil && err2 == nil
+}
+
+// MapTexturesDir is the optional texture pack folder of an instance: PNGs
+// named per mapstyle role replace the builtin textures.
+func MapTexturesDir(paths domain.InstancePaths) string {
+	return filepath.Join(paths.Root, "map-textures")
 }
 
 // newestCachedMap returns the most recently written cached map, or "".
@@ -42,7 +71,12 @@ func newestCachedMap(dir string) string {
 	}
 	var c []cand
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasPrefix(e.Name(), "map-") || !strings.HasSuffix(e.Name(), ".png") {
+		// Styled renders and the flat images of older agents count; layers,
+		// masks and fog composites do not.
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".png") {
+			continue
+		}
+		if !strings.HasPrefix(e.Name(), "map-") && !strings.HasPrefix(e.Name(), "styled-") {
 			continue
 		}
 		fi, err := e.Info()
@@ -58,6 +92,25 @@ func newestCachedMap(dir string) string {
 	return c[0].path
 }
 
+// newestLayers returns the most recently written layers file, or "".
+func newestLayers(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	var best string
+	var bestMod time.Time
+	for _, e := range entries {
+		if _, _, ok := parseLayersName(e.Name()); !ok || e.IsDir() {
+			continue
+		}
+		if fi, err := e.Info(); err == nil && fi.ModTime().After(bestMod) {
+			best, bestMod = filepath.Join(dir, e.Name()), fi.ModTime()
+		}
+	}
+	return best
+}
+
 type mapState struct {
 	objects     *domain.MapObjects
 	objectsAt   time.Time
@@ -71,6 +124,12 @@ type mapState struct {
 	maskVersion    int  // exploration version of the cached mask file
 
 	fog fogState
+
+	styleMu    sync.Mutex     // serialises styling per instance (not held under s.mu)
+	fogMu      sync.Mutex     // serialises fog composites per instance (not held under s.mu)
+	pack       *mapstyle.Pack // texture pack for packFP
+	packFP     string
+	packLogged string // fingerprint whose problems were logged
 }
 
 // fogState is the fogged composite of the cached map and mask: the image
@@ -198,6 +257,8 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 	if ms.unsupported {
 		out.MapSupported = false
 	}
+	out.LayersSupported = ms.info != nil && ms.info.Layers
+	out.StyleVersion = mapstyle.Version
 	out.FogSupported = !ms.fogUnsupported && !ms.unsupported
 	if ms.explored != nil {
 		ei := *ms.explored
@@ -215,17 +276,28 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 	}
 	s.mu.Unlock()
 
-	// Image availability: the cached file for the current seed/size, else
-	// (agent away) the newest cached map from an earlier run.
+	// Image availability: the cached file for the current seed/size (styled
+	// from layers, or an older agent's flat image), else (agent away) the
+	// newest cached map from an earlier run.
 	dir := MapCacheDir(paths)
+	pack := s.packFor(paths, ms)
 	if out.Info != nil && out.Info.Seed != 0 {
-		if _, err := os.Stat(filepath.Join(dir, mapFileName(out.Info.Seed, out.Info.Size))); err == nil {
+		name := mapFileName(out.Info.Seed, out.Info.Size)
+		if out.Info.Layers {
+			name = mapstyle.CacheName(out.Info.Seed, out.Info.Size, pack)
+		}
+		if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
 			out.ImageReady = true
-		} else if out.Info.State == "ready" {
+		} else if out.Info.Layers {
+			if _, err := os.Stat(filepath.Join(dir, layersFileName(out.Info.Seed, out.Info.Size))); err == nil {
+				out.ImageReady = true // styled on first GET map.png
+			}
+		}
+		if !out.ImageReady && out.Info.State == "ready" {
 			out.ImageReady = true // fetched on first GET map.png
 		}
 	}
-	if !out.ImageReady && newestCachedMap(dir) != "" {
+	if !out.ImageReady && (newestCachedMap(dir) != "" || newestLayers(dir) != "") {
 		out.ImageReady = true
 	}
 	// Without a live agent nothing confirms the cached image matches the
@@ -239,17 +311,132 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 		s.scheduleFog(id)
 	}
 	s.mu.Lock()
-	out.ImageVersion = s.imageVersionLocked(ms, dir, out.Info)
+	out.ImageVersion = s.imageVersionLocked(ms, dir, out.Info, pack)
 	s.mu.Unlock()
+	return out, nil
+}
+
+// packFor returns the instance's texture pack, reloaded when the folder's
+// fingerprint changes, and logs its problems once per fingerprint.
+func (s *Service) packFor(paths domain.InstancePaths, ms *mapState) *mapstyle.Pack {
+	dir := MapTexturesDir(paths)
+	fp, err := mapstyle.Fingerprint(dir)
+	if err != nil {
+		s.log.Warn("agent: texture pack", "dir", dir, "err", err)
+		fp = "builtin"
+	}
+	s.mu.Lock()
+	if ms.pack != nil && ms.packFP == fp {
+		p := ms.pack
+		s.mu.Unlock()
+		return p
+	}
+	s.mu.Unlock()
+	pack, err := mapstyle.LoadPack(dir)
+	if err != nil {
+		s.log.Warn("agent: texture pack", "dir", dir, "err", err)
+		pack, _ = mapstyle.LoadPack("")
+	}
+	s.mu.Lock()
+	ms.pack, ms.packFP = pack, fp
+	logIt := ms.packLogged != fp && len(pack.Problems) > 0
+	ms.packLogged = fp
+	s.mu.Unlock()
+	if logIt {
+		for _, p := range pack.Problems {
+			s.log.Warn("agent: texture pack file ignored", "dir", dir, "problem", p)
+		}
+	}
+	return pack
+}
+
+// basePathFor is the file GET map.png?fog=0 would serve for info, whether it
+// exists yet or not.
+func basePathFor(dir string, info *domain.MapInfo, pack *mapstyle.Pack) string {
+	if info == nil || info.Seed == 0 {
+		return ""
+	}
+	if info.Layers {
+		return filepath.Join(dir, mapstyle.CacheName(info.Seed, info.Size, pack))
+	}
+	return filepath.Join(dir, mapFileName(info.Seed, info.Size))
+}
+
+// ensureStyled draws layersPath into the styled file for (seed, size) under
+// the current style version and texture pack, unless it exists. Styling is
+// serialised per instance; other versions or packs of the same seed/size are
+// removed afterwards. Works offline: it needs only the layers file.
+func (s *Service) ensureStyled(ctx context.Context, ms *mapState, paths domain.InstancePaths, layersPath string, seed, size int, worldRadius float32) (string, error) {
+	dir := MapCacheDir(paths)
+	pack := s.packFor(paths, ms)
+	out := filepath.Join(dir, mapstyle.CacheName(seed, size, pack))
+	if _, err := os.Stat(out); err == nil {
+		return out, nil
+	}
+	ms.styleMu.Lock()
+	defer ms.styleMu.Unlock()
+	if _, err := os.Stat(out); err == nil {
+		return out, nil
+	}
+	f, err := os.Open(layersPath) //nolint:gosec // cache file the service wrote
+	if err != nil {
+		return "", fmt.Errorf("agent: open layers: %w", err)
+	}
+	layers, err := mapstyle.DecodeLayers(f)
+	_ = f.Close()
+	if err != nil {
+		return "", fmt.Errorf("agent: %w", err)
+	}
+	params := mapstyle.DefaultParams(seed)
+	if worldRadius > 0 {
+		params.WorldRadius = worldRadius
+	}
+	started := s.now()
+	img, err := mapstyle.Render(ctx, layers, params, pack)
+	if err != nil {
+		return "", fmt.Errorf("agent: style map: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", fmt.Errorf("agent: map cache dir: %w", err)
+	}
+	tmp := out + ".tmp"
+	wf, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640) //nolint:gosec // cache file
+	if err != nil {
+		return "", err
+	}
+	if err := (&png.Encoder{CompressionLevel: png.DefaultCompression}).Encode(wf, img); err != nil {
+		_ = wf.Close()
+		_ = os.Remove(tmp)
+		return "", fmt.Errorf("agent: encode styled map: %w", err)
+	}
+	if err := wf.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	if err := os.Rename(tmp, out); err != nil {
+		_ = os.Remove(tmp)
+		return "", err
+	}
+	s.log.Info("agent: map styled", "seed", seed, "size", size, "took", s.now().Sub(started).Round(time.Millisecond), "pack", pack.Fingerprint())
+	// Other styles or packs of this world are stale now.
+	prefixStyled := fmt.Sprintf("styled-%d-%d-", seed, size)
+	prefixFog := fmt.Sprintf("fogstyled-%d-%d-", seed, size)
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			n := e.Name()
+			if (strings.HasPrefix(n, prefixStyled) || strings.HasPrefix(n, prefixFog)) && filepath.Join(dir, n) != out && !strings.HasSuffix(n, ".tmp") {
+				_ = os.Remove(filepath.Join(dir, n))
+			}
+		}
+	}
 	return out, nil
 }
 
 // imageVersionLocked is a string that changes whenever GET map.png would
 // serve different bytes: the base map's identity plus the fog build time.
-func (s *Service) imageVersionLocked(ms *mapState, dir string, info *domain.MapInfo) string {
-	base := ""
-	if info != nil && info.Seed != 0 {
-		base = filepath.Join(dir, mapFileName(info.Seed, info.Size))
+func (s *Service) imageVersionLocked(ms *mapState, dir string, info *domain.MapInfo, pack *mapstyle.Pack) string {
+	base := basePathFor(dir, info, pack)
+	if base != "" {
 		if _, err := os.Stat(base); err != nil {
 			base = ""
 		}
@@ -264,7 +451,7 @@ func (s *Service) imageVersionLocked(ms *mapState, dir string, info *domain.MapI
 	if err != nil {
 		return ""
 	}
-	return fmt.Sprintf("%d-%d", fi.ModTime().Unix(), ms.fog.builtAt.UnixMilli())
+	return fmt.Sprintf("%d-%d-v%d-%s", fi.ModTime().Unix(), ms.fog.builtAt.UnixMilli(), mapstyle.Version, pack.Fingerprint())
 }
 
 // scheduleFog rebuilds id's fogged composite in the background when the mask
@@ -312,14 +499,17 @@ func (s *Service) foggedPNG(ctx context.Context, id string, wait bool) (string, 
 		}
 		return "", info, merr
 	}
-	key := fileKey(base) + "||" + fileKey(maskPath)
-	out := foggedPathFor(base)
 	s.mu.Lock()
 	ms := s.maps[id]
 	if ms == nil {
 		ms = &mapState{}
 		s.maps[id] = ms
 	}
+	s.mu.Unlock()
+	pack := s.packFor(s.inst.Paths(id), ms)
+	key := fileKey(base) + "||" + fileKey(maskPath) + "||v" + strconv.Itoa(mapstyle.Version) + "||" + pack.Fingerprint()
+	out := foggedPathFor(base)
+	s.mu.Lock()
 	if ms.fog.key == key && ms.fog.path != "" {
 		if _, err := os.Stat(ms.fog.path); err == nil {
 			s.mu.Unlock()
@@ -339,11 +529,25 @@ func (s *Service) foggedPNG(ctx context.Context, id string, wait bool) (string, 
 	}
 	s.mu.Unlock()
 
+	// One composite at a time per instance: a request and the background
+	// rebuild must not write the same file together.
+	ms.fogMu.Lock()
+	defer ms.fogMu.Unlock()
+	s.mu.Lock()
+	if ms.fog.key == key && ms.fog.path != "" {
+		if _, err := os.Stat(ms.fog.path); err == nil {
+			p := ms.fog.path
+			s.mu.Unlock()
+			return p, info, nil
+		}
+	}
+	s.mu.Unlock()
+
 	seed, radius := 0, float32(0)
 	if info != nil {
 		seed, radius = info.Seed, float32(info.WorldRadius)
 	}
-	if err := writeFoggedPNG(base, maskPath, out, mapstyle.NewParchment(seed, nil), radius); err != nil {
+	if err := writeFoggedPNG(base, maskPath, out, mapstyle.NewParchment(seed, pack), radius); err != nil {
 		if prev != "" {
 			return prev, info, nil
 		}
@@ -399,12 +603,20 @@ func (s *Service) basePNG(ctx context.Context, id string) (path string, info *do
 				}
 				s.mu.Unlock()
 				cached := filepath.Join(dir, mapFileName(mi.Seed, mi.Size))
+				fetch := c.MapPNG
+				if mi.Layers {
+					cached = filepath.Join(dir, layersFileName(mi.Seed, mi.Size))
+					fetch = c.MapLayersPNG
+				}
 				switch mi.State {
 				case "ready":
 					if _, err := os.Stat(cached); err == nil {
+						if mi.Layers {
+							return s.styledFrom(ctx, id, paths, cached, mi)
+						}
 						return cached, mi, nil
 					}
-					png, _, perr := c.MapPNG(ctx)
+					png, _, perr := fetch(ctx)
 					if perr == nil && png != nil {
 						if err := os.MkdirAll(dir, 0o750); err != nil {
 							return "", mi, fmt.Errorf("agent: map cache dir: %w", err)
@@ -416,6 +628,9 @@ func (s *Service) basePNG(ctx context.Context, id string) (path string, info *do
 						if err := os.Rename(tmp, cached); err != nil {
 							_ = os.Remove(tmp)
 							return "", mi, fmt.Errorf("agent: install map: %w", err)
+						}
+						if mi.Layers {
+							return s.styledFrom(ctx, id, paths, cached, mi)
 						}
 						return cached, mi, nil
 					}
@@ -431,6 +646,22 @@ func (s *Service) basePNG(ctx context.Context, id string) (path string, info *do
 			}
 		}
 	}
+	// Offline (or the agent has nothing yet): restyle the newest layers if a
+	// world's layers are cached, else the newest styled or flat image.
+	if lp := newestLayers(dir); lp != "" {
+		if seed, size, ok := parseLayersName(filepath.Base(lp)); ok {
+			s.mu.Lock()
+			ms := s.maps[id]
+			if ms == nil {
+				ms = &mapState{}
+				s.maps[id] = ms
+			}
+			s.mu.Unlock()
+			if p, err := s.ensureStyled(ctx, ms, paths, lp, seed, size, 0); err == nil {
+				return p, nil, nil
+			}
+		}
+	}
 	if p := newestCachedMap(dir); p != "" {
 		return p, nil, nil
 	}
@@ -438,6 +669,22 @@ func (s *Service) basePNG(ctx context.Context, id string) (path string, info *do
 		return "", nil, domain.E(domain.CodeConflict, "no map yet: start the server with the agent installed to render one")
 	}
 	return "", nil, domain.E(domain.CodeConflict, "the agent has no map image yet")
+}
+
+// styledFrom styles a fetched layers file for the live world.
+func (s *Service) styledFrom(ctx context.Context, id string, paths domain.InstancePaths, layersPath string, mi *domain.MapInfo) (string, *domain.MapInfo, error) {
+	s.mu.Lock()
+	ms := s.maps[id]
+	if ms == nil {
+		ms = &mapState{}
+		s.maps[id] = ms
+	}
+	s.mu.Unlock()
+	p, err := s.ensureStyled(ctx, ms, paths, layersPath, mi.Seed, mi.Size, float32(mi.WorldRadius))
+	if err != nil {
+		return "", mi, err
+	}
+	return p, mi, nil
 }
 
 // RenderMap forwards a (re)render request.
@@ -469,8 +716,18 @@ func (s *Service) RenderMap(ctx context.Context, id string, req domain.MapRender
 		return nil, domain.Ef(domain.CodeUpstreamError, "the agent refused the render: %v", err)
 	}
 	if req.Force {
-		// The old image is no longer wanted.
-		_ = os.Remove(filepath.Join(MapCacheDir(paths), mapFileName(info.Seed, info.Size)))
+		// The old image, layers and their styled/fogged copies are no longer wanted.
+		dir := MapCacheDir(paths)
+		_ = os.Remove(filepath.Join(dir, mapFileName(info.Seed, info.Size)))
+		_ = os.Remove(filepath.Join(dir, layersFileName(info.Seed, info.Size)))
+		if entries, err := os.ReadDir(dir); err == nil {
+			ps, pf := fmt.Sprintf("styled-%d-%d-", info.Seed, info.Size), fmt.Sprintf("fogstyled-%d-%d-", info.Seed, info.Size)
+			for _, e := range entries {
+				if strings.HasPrefix(e.Name(), ps) || strings.HasPrefix(e.Name(), pf) {
+					_ = os.Remove(filepath.Join(dir, e.Name()))
+				}
+			}
+		}
 	}
 	s.mu.Lock()
 	if ms := s.maps[id]; ms != nil {

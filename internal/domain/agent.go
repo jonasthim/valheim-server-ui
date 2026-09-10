@@ -120,7 +120,11 @@ type MapInfo struct {
 	WorldRadius    float64 `json:"world_radius"`
 	PlayableRadius float64 `json:"playable_radius"`
 	SeaLevel       float64 `json:"sea_level"`
-	Error          string  `json:"error,omitempty"`
+	// Layers is true when the agent exports raw map layers (1.10+) for the
+	// manager to draw; older agents serve a flat styled image instead.
+	Layers        bool   `json:"layers,omitempty"`
+	LayersVersion int    `json:"layers_version,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
 // MapObject is a point of interest read from the server's ZDO store.
@@ -196,6 +200,12 @@ type InstanceMap struct {
 	// (its /v1/map/info answers 404); AgentVersion says which one it is.
 	MapSupported bool   `json:"map_supported"`
 	AgentVersion string `json:"agent_version,omitempty"`
+	// LayersSupported is true when the running agent exports raw layers so
+	// the manager draws the map in the in-game style; false for agents
+	// before 1.10.0, whose own flat render is served instead.
+	LayersSupported bool `json:"layers_supported"`
+	// StyleVersion is the manager's map style; it changes when the look does.
+	StyleVersion int `json:"style_version,omitempty"`
 	// FogSupported is false when the agent has no exploration tracking
 	// (agents before 1.7.0); Explored carries the fog state otherwise.
 	FogSupported bool          `json:"fog_supported"`

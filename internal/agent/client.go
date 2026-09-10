@@ -21,6 +21,9 @@ type Client struct {
 	base  string
 	token string
 	http  *http.Client
+	// images, when set, downloads map images (a 3 s status client also
+	// bounds the body read, too short for a 4096² layers PNG).
+	images *http.Client
 }
 
 // NewClient returns a client for the agent listening on port (the instance's
@@ -38,6 +41,18 @@ func NewClientForURL(base, token string, hc *http.Client) *Client {
 		hc = &http.Client{Timeout: 3 * time.Second}
 	}
 	return &Client{base: strings.TrimRight(base, "/"), token: token, http: hc}
+}
+
+// imageClient is the long-timeout client for image downloads, derived from
+// the status client (same transport) when none was set.
+func (c *Client) imageClient() *http.Client {
+	if c.images != nil {
+		return c.images
+	}
+	ic := *c.http
+	ic.Timeout = 60 * time.Second
+	c.images = &ic
+	return c.images
 }
 
 // Status fetches the world snapshot.
@@ -170,12 +185,17 @@ func (c *Client) MapObjects(ctx context.Context) (*domain.MapObjects, error) {
 // MapPNG fetches the rendered map. While the plugin is still rendering it
 // returns (nil, info, nil) with the render progress.
 func (c *Client) MapPNG(ctx context.Context) ([]byte, *domain.MapInfo, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/v1/map", nil)
+	return c.fetchPNG(ctx, "/v1/map")
+}
+
+// fetchPNG downloads a map image with the long-timeout client.
+func (c *Client) fetchPNG(ctx context.Context, path string) ([]byte, *domain.MapInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+path, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("agent: build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.http.Do(req)
+	resp, err := c.imageClient().Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("agent: %w", err)
 	}
@@ -221,8 +241,15 @@ func (c *Client) RenderMap(ctx context.Context, size int, force bool) (*domain.M
 	return &info, nil
 }
 
-// maxMapBytes bounds a map image (4096² PNG stays far below this).
-const maxMapBytes = 64 << 20
+// maxMapBytes bounds a map or layers image (a 4096² RGBA layers PNG is a
+// few tens of MB).
+const maxMapBytes = 128 << 20
+
+// MapLayersPNG fetches the raw layers image agents 1.10+ export
+// (GET /v1/map/layers). nil bytes with info means it is still being sampled.
+func (c *Client) MapLayersPNG(ctx context.Context) ([]byte, *domain.MapInfo, error) {
+	return c.fetchPNG(ctx, "/v1/map/layers")
+}
 
 // ExploredInfo fetches the fog-of-war state.
 func (c *Client) ExploredInfo(ctx context.Context) (*domain.ExploredInfo, error) {
@@ -241,7 +268,7 @@ func (c *Client) ExploredPNG(ctx context.Context) ([]byte, *domain.ExploredInfo,
 		return nil, nil, fmt.Errorf("agent: build request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+c.token)
-	resp, err := c.http.Do(req)
+	resp, err := c.imageClient().Do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("agent: %w", err)
 	}

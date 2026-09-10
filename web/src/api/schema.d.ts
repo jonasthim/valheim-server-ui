@@ -2087,10 +2087,13 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The rendered world map with the fog of war composited in on the server
-         * @description The image viewers get has unexplored terrain painted over on the server
-         *     (the map and the agent's fog mask are composited into one PNG), so the bare
-         *     world never leaves the manager. `fog=0` asks for the bare render and is
+         * The world map drawn in the in-game style, with the fog of war composited in on the server
+         * @description The manager draws the map from the agent's raw layers (biome, height, forest)
+         *     like the game's own map: textured biomes, tree crowns, hill shading,
+         *     coastlines, and parchment where nobody has been. Admins can replace textures
+         *     with PNGs in `<instance>/map-textures/`. The image viewers get has unexplored
+         *     terrain painted over on the server (the map and the agent's fog mask are
+         *     composited into one PNG), so the bare world never leaves the manager. `fog=0` asks for the bare render and is
          *     allowed for operators only (`403` otherwise). `200 image/png` when an image
          *     is available (cached in the instance or fetched from the running agent),
          *     `202` with MapInfo while the plugin is still rendering or encoding its first
@@ -3479,6 +3482,9 @@ export interface components {
             world_radius: number;
             playable_radius: number;
             sea_level: number;
+            /** @description The agent exports raw map layers (1.10+) and the manager draws the map */
+            layers?: boolean;
+            layers_version?: number;
             error?: string;
         };
         MapObject: {
@@ -3543,6 +3549,10 @@ export interface components {
             map_supported: boolean;
             /** @description Version of the agent running in the server */
             agent_version?: string;
+            /** @description The running agent exports raw layers and the manager draws the map in the in-game style; false for agents before 1.10.0 (their flat render is served) */
+            layers_supported: boolean;
+            /** @description The manager's map style version; changes when the look changes */
+            style_version?: number;
             /** @description False when the running agent has no exploration tracking (before 1.7.0) */
             fog_supported: boolean;
             explored?: components["schemas"]["ExploredInfo"];

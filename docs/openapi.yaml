@@ -825,11 +825,14 @@ paths:
     parameters: [{ $ref: '#/components/parameters/instanceId' }]
     get:
       tags: [agent]
-      summary: The rendered world map with the fog of war composited in on the server
+      summary: The world map drawn in the in-game style, with the fog of war composited in on the server
       description: |
-        The image viewers get has unexplored terrain painted over on the server
-        (the map and the agent's fog mask are composited into one PNG), so the bare
-        world never leaves the manager. `fog=0` asks for the bare render and is
+        The manager draws the map from the agent's raw layers (biome, height, forest)
+        like the game's own map: textured biomes, tree crowns, hill shading,
+        coastlines, and parchment where nobody has been. Admins can replace textures
+        with PNGs in `<instance>/map-textures/`. The image viewers get has unexplored
+        terrain painted over on the server (the map and the agent's fog mask are
+        composited into one PNG), so the bare world never leaves the manager. `fog=0` asks for the bare render and is
         allowed for operators only (`403` otherwise). `200 image/png` when an image
         is available (cached in the instance or fetched from the running agent),
         `202` with MapInfo while the plugin is still rendering or encoding its first
@@ -1851,6 +1854,8 @@ components:
         world_radius: { type: number, description: Half-width of the image in metres (world centre is the image centre, north up) }
         playable_radius: { type: number }
         sea_level: { type: number }
+        layers: { type: boolean, description: The agent exports raw map layers (1.10+) and the manager draws the map }
+        layers_version: { type: integer }
         error: { type: string }
 
     MapObject:
@@ -1905,11 +1910,13 @@ components:
 
     InstanceMap:
       type: object
-      required: [connected, map_supported, fog_supported, image_ready, stale, objects, pins, locations, players]
+      required: [connected, map_supported, layers_supported, fog_supported, image_ready, stale, objects, pins, locations, players]
       properties:
         connected: { type: boolean }
         map_supported: { type: boolean, description: False when the running agent predates the map API (update it from the Mods tab) }
         agent_version: { type: string, description: Version of the agent running in the server }
+        layers_supported: { type: boolean, description: The running agent exports raw layers and the manager draws the map in the in-game style; false for agents before 1.10.0 (their flat render is served) }
+        style_version: { type: integer, description: The manager's map style version; changes when the look changes }
         fog_supported: { type: boolean, description: False when the running agent has no exploration tracking (before 1.7.0) }
         explored: { $ref: '#/components/schemas/ExploredInfo' }
         image_ready: { type: boolean, description: GET map.png serves an image now }

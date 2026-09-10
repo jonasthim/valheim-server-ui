@@ -1,11 +1,15 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jonasthim/valheim-server-ui/internal/agent/mapstyle"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
@@ -335,5 +340,225 @@ func TestService_ExplorationProgressPublishes(t *testing.T) {
 	raw, _ := json.Marshal(bus.events[1].Data)
 	if !strings.Contains(string(raw), `"explored_cells":160`) {
 		t.Fatalf("event must carry the new fog state: %s", raw)
+	}
+}
+
+// islandLayers is a small synthetic world for the styling path: an island
+// of meadows in the ocean.
+func islandLayers(size int) *mapstyle.Layers {
+	l := mapstyle.NewLayers(size)
+	c := float32(size) / 2
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			dx, dy := float32(x)+0.5-c, float32(y)+0.5-c
+			d := float32(math.Hypot(float64(dx), float64(dy))) / c // 0 centre .. 1 edge
+			switch {
+			case d > 0.98:
+				l.Set(x, y, mapstyle.OffWorld, 0, -20, 0)
+			case d > 0.4:
+				l.Set(x, y, mapstyle.Ocean, 0, 30-(d-0.4)*100, 2)
+			default:
+				l.Set(x, y, mapstyle.Meadows, 0, 34+(0.4-d)*60, 1.6)
+			}
+		}
+	}
+	return l
+}
+
+func layersAgent(t *testing.T, token string, layers []byte) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	auth := func(r *http.Request) bool { return r.Header.Get("Authorization") == "Bearer "+token }
+	mux.HandleFunc("/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		if auth(r) {
+			_, _ = w.Write([]byte(sampleStatus))
+		}
+	})
+	mux.HandleFunc("/v1/map/info", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"state":"ready","progress":1,"seed":42,"size":64,"world_radius":10500,"playable_radius":10000,"sea_level":30,"layers":true,"layers_version":1}`))
+	})
+	mux.HandleFunc("/v1/map/layers", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(layers)
+	})
+	mux.HandleFunc("/v1/map", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusGone)
+		_, _ = w.Write([]byte(`{"ok":false,"error":"layers"}`))
+	})
+	mux.HandleFunc("/v1/map/objects", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"objects":[],"pins":[],"locations":[],"updated_at":"2026-09-10T12:00:00Z"}`))
+	})
+	mux.HandleFunc("/v1/map/explored/info", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"version":1,"size":2,"explored_cells":1,"total_cells":4,"percent":25,"mask_version":1}`))
+	})
+	mux.HandleFunc("/v1/map/explored", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(maskPNG(t))
+	})
+	mux.HandleFunc("/v1/map/render", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"state":"rendering","progress":0,"seed":42,"size":64,"world_radius":10500,"playable_radius":10000,"sea_level":30,"layers":true}`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func TestMap_LayersStyledAndCached(t *testing.T) {
+	paths := testPaths(t)
+	installPlugin(t, paths, "1.10.0")
+	cfg, err := EnsureConfig(paths, 2456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layersPNG, err := mapstyle.EncodeLayers(islandLayers(64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := layersAgent(t, cfg.Token, layersPNG)
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning},
+	}}
+	s := NewService(fi, &fakeBus{}, slog.New(slog.NewTextHandler(io.Discard, nil)), fixedVersion("1.10.0"))
+	s.http = srv.Client()
+	s.baseURL = func(int) string { return srv.URL }
+	ctx := context.Background()
+	s.tick(ctx)
+
+	m, err := s.Map(ctx, "main", false)
+	if err != nil || !m.LayersSupported || m.StyleVersion != mapstyle.Version || !m.ImageReady {
+		t.Fatalf("map: %+v %v", m, err)
+	}
+	p, info, err := s.MapPNG(ctx, "main", false)
+	if err != nil || info == nil || !info.Layers {
+		t.Fatalf("bare map: %q %v", p, err)
+	}
+	dir := MapCacheDir(paths)
+	if filepath.Base(p) != "styled-42-64-v1-builtin.png" {
+		t.Fatalf("styled path %q", p)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "layers-42-64.png")); err != nil {
+		t.Fatal("layers must be cached")
+	}
+	// A styled pixel in the island centre is meadows green; the corner is abyss.
+	img, err := decodePNG(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, g, b, _ := img.At(32, 32).RGBA()
+	if g <= r || g <= b {
+		t.Fatalf("island centre not green: %d %d %d", r>>8, g>>8, b>>8)
+	}
+	// Second call: served from the cache without restyling.
+	st1, _ := os.Stat(p)
+	if p2, _, err := s.MapPNG(ctx, "main", false); err != nil || p2 != p {
+		t.Fatalf("second call: %q %v", p2, err)
+	}
+	if st2, _ := os.Stat(p); !st1.ModTime().Equal(st2.ModTime()) {
+		t.Fatal("styled map re-rendered although nothing changed")
+	}
+	// Fogged path uses the styled base and the parchment.
+	fp, _, err := s.MapPNG(ctx, "main", true)
+	if err != nil || filepath.Base(fp) != "fogstyled-42-64-v1-builtin.png" {
+		t.Fatalf("fogged: %q %v", fp, err)
+	}
+	m, _ = s.Map(ctx, "main", false)
+	if !strings.Contains(m.ImageVersion, "-v1-builtin") {
+		t.Fatalf("image version %q must carry style and pack", m.ImageVersion)
+	}
+
+	// A texture pack changes the cache name and the version.
+	texDir := MapTexturesDir(paths)
+	if err := os.MkdirAll(texDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	magenta := image.NewNRGBA(image.Rect(0, 0, 4, 4))
+	for i := range magenta.Pix {
+		magenta.Pix[i] = 255
+	}
+	for i := 1; i < len(magenta.Pix); i += 4 {
+		magenta.Pix[i] = 0 // G = 0
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, magenta); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(texDir, "meadows.png"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p3, _, err := s.MapPNG(ctx, "main", false)
+	if err != nil || p3 == p || strings.HasSuffix(p3, "-builtin.png") {
+		t.Fatalf("pack must re-key the styled map: %q %v", p3, err)
+	}
+	if _, err := os.Stat(p); err == nil {
+		t.Fatal("stale styled file of the old pack must be removed")
+	}
+	img3, _ := decodePNG(p3)
+	r, g, b, _ = img3.At(32, 32).RGBA()
+	if r <= g || b <= g {
+		t.Fatalf("island centre should use the magenta pack texture: %d %d %d", r>>8, g>>8, b>>8)
+	}
+
+	// Force re-render drops the layers and styled files.
+	if _, err := s.RenderMap(ctx, "main", domain.MapRenderRequest{Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"layers-42-64.png", filepath.Base(p3)} {
+		if _, err := os.Stat(filepath.Join(dir, n)); err == nil {
+			t.Fatalf("%s must be removed on a forced re-render", n)
+		}
+	}
+}
+
+func TestMap_OfflineRestyleAcrossStyleVersions(t *testing.T) {
+	paths := testPaths(t)
+	dir := MapCacheDir(paths)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	layersPNG, _ := mapstyle.EncodeLayers(islandLayers(32))
+	if err := os.WriteFile(filepath.Join(dir, "layers-7-32.png"), layersPNG, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(dir, "styled-7-32-v0-builtin.png")
+	if err := os.WriteFile(stale, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateStopped},
+	}}
+	s := NewService(fi, &fakeBus{}, slog.New(slog.NewTextHandler(io.Discard, nil)), fixedVersion("1.10.0"))
+	p, _, err := s.MapPNG(context.Background(), "main", false)
+	if err != nil || filepath.Base(p) != "styled-7-32-v1-builtin.png" {
+		t.Fatalf("offline restyle: %q %v", p, err)
+	}
+	if _, err := os.Stat(stale); err == nil {
+		t.Fatal("styled file of an older style version must be removed")
+	}
+	m, err := s.Map(context.Background(), "main", false)
+	if err != nil || !m.ImageReady {
+		t.Fatalf("offline map must report an image: %+v %v", m, err)
+	}
+}
+
+func TestNewestCachedMap_Prefixes(t *testing.T) {
+	dir := t.TempDir()
+	for i, n := range []string{"explored-1.png", "layers-1-64.png", "fogmap-1-64.png", "fogstyled-1-64-v1-x.png", "map-1-64.png", "styled-1-64-v1-builtin.png"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		mt := time.Now().Add(time.Duration(i) * time.Second)
+		_ = os.Chtimes(filepath.Join(dir, n), mt, mt)
+	}
+	if got := filepath.Base(newestCachedMap(dir)); got != "styled-1-64-v1-builtin.png" {
+		t.Fatalf("newest cached map %q", got)
+	}
+	_ = os.Remove(filepath.Join(dir, "styled-1-64-v1-builtin.png"))
+	if got := filepath.Base(newestCachedMap(dir)); got != "map-1-64.png" {
+		t.Fatalf("flat image must still count: %q", got)
+	}
+	if got := filepath.Base(newestLayers(dir)); got != "layers-1-64.png" {
+		t.Fatalf("newest layers %q", got)
 	}
 }
