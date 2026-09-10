@@ -1541,12 +1541,13 @@ components:
       properties:
         bepinex:
           type: object
-          required: [installed, enabled]
+          required: [installed, enabled, update_available]
           properties:
             installed: { type: boolean }
             enabled: { type: boolean }
             version: { type: string }
             latest_version: { type: string }
+            update_available: { type: boolean }
         mods: { type: array, items: { $ref: '#/components/schemas/Mod' } }
         pending_restart: { type: boolean }
 

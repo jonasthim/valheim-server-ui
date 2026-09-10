@@ -62,7 +62,7 @@ export function BepInExCard({ id }: { id: string }) {
           <StatusPill color={bepinex?.installed ? 'moss' : 'gray'}>
             {bepinex?.installed ? `installed ${bepinex.version ?? ''}`.trim() : 'not installed'}
           </StatusPill>
-          {bepinex?.installed && bepinex.latest_version && bepinex.latest_version !== bepinex.version && (
+          {bepinex?.update_available && (
             <Badge color="frost" variant="light">
               latest {bepinex.latest_version}
             </Badge>
@@ -83,7 +83,7 @@ export function BepInExCard({ id }: { id: string }) {
               onClick={() => confirmInstall(!!bepinex?.installed)}
             >
               {bepinex?.installed
-                ? bepinex.latest_version && bepinex.latest_version !== bepinex.version
+                ? bepinex.update_available
                   ? `Upgrade to ${bepinex.latest_version}`
                   : 'Reinstall'
                 : 'Install BepInEx'}

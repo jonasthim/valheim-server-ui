@@ -2987,6 +2987,7 @@ export interface components {
                 enabled: boolean;
                 version?: string;
                 latest_version?: string;
+                update_available: boolean;
             };
             mods: components["schemas"]["Mod"][];
             pending_restart?: boolean;

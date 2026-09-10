@@ -77,6 +77,7 @@ func bepinexStatus(paths domain.InstancePaths, cfgEnabled bool, reg *Thunderstor
 			st.LatestVersion = latest
 		}
 	}
+	st.UpdateAvailable = st.Installed && st.LatestVersion != "" && compareVersions(st.LatestVersion, st.Version) > 0
 	return st
 }
 

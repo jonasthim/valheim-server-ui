@@ -57,10 +57,11 @@ type Mod struct {
 func (m Mod) FullName() string { return m.Owner + "-" + m.Name }
 
 type BepInExStatus struct {
-	Installed     bool   `json:"installed"`
-	Enabled       bool   `json:"enabled"`
-	Version       string `json:"version,omitempty"`
-	LatestVersion string `json:"latest_version,omitempty"`
+	Installed       bool   `json:"installed"`
+	Enabled         bool   `json:"enabled"`
+	Version         string `json:"version,omitempty"`
+	LatestVersion   string `json:"latest_version,omitempty"`
+	UpdateAvailable bool   `json:"update_available"`
 }
 
 type ModsOverview struct {

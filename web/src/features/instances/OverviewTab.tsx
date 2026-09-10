@@ -139,7 +139,7 @@ export function OverviewTab({ id }: { id: string }) {
   // Updates: game server (SteamCMD buildid) + mods (Thunderstore/Hexium index).
   const bepinex = modsOverview.data?.bepinex
   const modUpdateCount = modsOverview.data?.mods.filter((m) => m.update_available).length ?? 0
-  const bepinexUpdate = !!(bepinex?.installed && bepinex.latest_version && bepinex.latest_version !== bepinex.version)
+  const bepinexUpdate = !!bepinex?.update_available
   const modsPending = modUpdateCount + (bepinexUpdate ? 1 : 0)
   const gameUpdate = !!status.update_available
   const anyUpdate = gameUpdate || modsPending > 0
