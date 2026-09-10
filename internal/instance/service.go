@@ -39,6 +39,9 @@ type Service struct {
 
 	mu        sync.RWMutex
 	enrichers []domain.StatusEnricher
+	// preStart hooks run after launch.json is rendered and before the
+	// supervisor starts the process (the agent writes its plugin config here).
+	preStart []PreStartHook
 }
 
 // New constructs the instance service. bus and sup may be nil-safe fakes in
@@ -53,6 +56,29 @@ func New(db *sql.DB, bus domain.Publisher, sup supervisor.Supervisor, cfg config
 // Paths returns the canonical directory layout for id.
 func (s *Service) Paths(id string) domain.InstancePaths {
 	return domain.PathsFor(s.cfg.InstancesDir(), id)
+}
+
+// PreStartHook prepares an instance's files right before it starts.
+type PreStartHook func(ctx context.Context, id string, paths domain.InstancePaths, cfg domain.InstanceConfig) error
+
+// RegisterPreStart adds a hook run by Start and Restart after launch.json is
+// written. A failing hook aborts the start.
+func (s *Service) RegisterPreStart(h PreStartHook) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.preStart = append(s.preStart, h)
+}
+
+func (s *Service) runPreStart(ctx context.Context, id string, paths domain.InstancePaths, cfg domain.InstanceConfig) error {
+	s.mu.RLock()
+	hooks := append([]PreStartHook(nil), s.preStart...)
+	s.mu.RUnlock()
+	for _, h := range hooks {
+		if err := h(ctx, id, paths, cfg); err != nil {
+			return domain.Wrap(domain.CodeInternal, "prepare start", err)
+		}
+	}
+	return nil
 }
 
 // RegisterEnricher adds a StatusEnricher run on every composed InstanceStatus.
@@ -265,6 +291,9 @@ func (s *Service) Start(ctx context.Context, id string) (*domain.InstanceStatus,
 	if err := renderLaunch(paths, id, r.Config); err != nil {
 		return nil, domain.Wrap(domain.CodeInternal, "write launch.json", err)
 	}
+	if err := s.runPreStart(ctx, id, paths, r.Config); err != nil {
+		return nil, err
+	}
 	if err := rotateConsoleLog(paths); err != nil {
 		s.log.Warn("rotate console.log failed", "instance", id, "err", err)
 	}
@@ -299,6 +328,9 @@ func (s *Service) Restart(ctx context.Context, id string) (*domain.InstanceStatu
 	paths := s.Paths(id)
 	if err := renderLaunch(paths, id, r.Config); err != nil {
 		return nil, domain.Wrap(domain.CodeInternal, "write launch.json", err)
+	}
+	if err := s.runPreStart(ctx, id, paths, r.Config); err != nil {
+		return nil, err
 	}
 	if err := s.sup.Restart(ctx, id); err != nil {
 		return nil, err

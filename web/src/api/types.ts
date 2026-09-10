@@ -56,3 +56,8 @@ export const ROLE_LEVEL: Record<Role, number> = { viewer: 1, operator: 2, admin:
 export function roleAtLeast(role: Role | undefined, min: Role): boolean {
   return !!role && ROLE_LEVEL[role] >= ROLE_LEVEL[min]
 }
+export type AgentInfo = Schemas['AgentInfo']
+export type AgentStatus = Schemas['AgentStatus']
+export type AgentPlayer = Schemas['AgentPlayer']
+export type AgentCommandRequest = Schemas['AgentCommandRequest']
+export type AgentCommandResult = Schemas['AgentCommandResult']

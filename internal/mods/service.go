@@ -43,6 +43,9 @@ type InstanceAccessor interface {
 // Service implements api.ModService: BepInEx, installed mods and the config
 // editor for one instance.
 type Service struct {
+	// agent provides the Valheim UI Agent package installed together with
+	// BepInEx (nil disables that step).
+	agent    AgentBundle
 	db       *sql.DB
 	regs     *Registries
 	inst     InstanceAccessor
@@ -97,6 +100,16 @@ func (s *Service) Overview(ctx context.Context, instanceID string) (*domain.Mods
 	}, nil
 }
 
+// AgentBundle provides the manager's own server plugin package (see
+// internal/agent.Bundle): Fetch returns a local path to valheim-ui-agent.zip.
+type AgentBundle interface {
+	Fetch(ctx context.Context) (string, error)
+	Version() string
+}
+
+// SetAgentBundle enables installing the agent plugin with BepInEx.
+func (s *Service) SetAgentBundle(b AgentBundle) { s.agent = b }
+
 // ---------------------------------------------------------------- bepinex
 
 func (s *Service) installBepInEx(ctx context.Context, log *jobs.Logger, instanceID string) error {
@@ -123,7 +136,108 @@ func (s *Service) installBepInEx(ctx context.Context, log *jobs.Logger, instance
 		return err
 	}
 	log.Printf("BepInEx %s installed", version)
+	if s.agent != nil {
+		// The agent rides along with the loader so every modded server gets
+		// the live map, players and admin commands without a second step.
+		if err := s.installAgent(ctx, log, instanceID); err != nil {
+			log.Printf("warning: Valheim UI Agent was not installed: %v (install it later from the Mods tab)", err)
+		}
+	}
 	return nil
+}
+
+// installAgent fetches the bundled agent package and installs it as the
+// managed mod jonasthim-valheimui_agent (source "bundled"), replacing any
+// previous version's files.
+func (s *Service) installAgent(ctx context.Context, log *jobs.Logger, instanceID string) error {
+	paths := s.inst.Paths(instanceID)
+	zipPath, err := s.agent.Fetch(ctx)
+	if err != nil {
+		return err
+	}
+	_, _, version, deps, err := manualZipIdentity(zipPath)
+	if err != nil {
+		return err
+	}
+	owner, name := domain.AgentModOwner, domain.AgentModName
+	existing, err := s.getModByFullName(ctx, instanceID, owner, name)
+	if err != nil {
+		return err
+	}
+	log.Printf("installing Valheim UI Agent %s", version)
+	files, err := extractPackage(zipPath, paths.Server, owner, name)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	if existing != nil {
+		if stale := filesToRemove(existing.Files, files); len(stale) > 0 {
+			if err := removeManagedFiles(paths.Server, stale); err != nil {
+				return err
+			}
+		}
+		if !existing.Enabled {
+			if files, err = setFilesEnabled(paths.Server, files, false); err != nil {
+				return err
+			}
+		}
+		row := *existing
+		row.Source = domain.ModSourceBundled
+		row.Version = version
+		row.Files = files
+		row.Deps = deps
+		row.UpdatedAt = &now
+		if err := s.saveModRow(ctx, row); err != nil {
+			return err
+		}
+	} else {
+		row := modRow{
+			InstanceID: instanceID, Source: domain.ModSourceBundled,
+			Owner: owner, Name: name, Version: version, Enabled: true,
+			Files: files, Deps: deps, InstalledAt: now,
+		}
+		if _, err := s.insertModRow(ctx, row); err != nil {
+			return err
+		}
+	}
+	log.Printf("Valheim UI Agent %s installed", version)
+	return nil
+}
+
+// EnqueueAgentInstall installs or updates the agent plugin on its own (for
+// instances that had BepInEx before the agent existed, or after a manager
+// upgrade shipped a newer plugin). The instance must be stopped: the game
+// keeps plugin assemblies open while it runs.
+func (s *Service) EnqueueAgentInstall(ctx context.Context, instanceID string, stopIfRunning bool, requestedBy string) (*domain.Job, error) {
+	if s.agent == nil {
+		return nil, domain.E(domain.CodeConflict, "no agent package is available in this build")
+	}
+	inst, err := s.inst.Get(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	if !bepinexInstalled(inst.Paths) {
+		return nil, domain.E(domain.CodeBepInExMissing, "bepinex is not installed")
+	}
+	running := inst.Status.State == domain.StateRunning || inst.Status.State == domain.StateStarting
+	if running && !stopIfRunning {
+		return nil, domain.Ef(domain.CodeInstanceRunning, "instance %q must be stopped first, or pass stop_if_running", instanceID)
+	}
+	return s.runner.Enqueue(ctx, jobs.Spec{
+		Type: domain.JobAgentInstall, InstanceID: instanceID, Title: "Install/update Valheim UI Agent",
+		RequestedBy: requestedBy, Exclusive: true,
+	}, func(ctx context.Context, log *jobs.Logger) error {
+		err := withStoppedInstance(ctx, s.inst, instanceID, log, func(ctx context.Context) error {
+			return s.installAgent(ctx, log, instanceID)
+		})
+		if err == nil {
+			err = s.finishModJob(ctx, instanceID)
+		}
+		if pubErr := s.inst.PublishStatus(ctx, instanceID); pubErr != nil {
+			s.log.Warn("publish status after agent install", "instance", instanceID, "err", pubErr)
+		}
+		return err
+	})
 }
 
 func (s *Service) EnqueueBepInExInstall(ctx context.Context, instanceID string, stopIfRunning bool, requestedBy string) (*domain.Job, error) {

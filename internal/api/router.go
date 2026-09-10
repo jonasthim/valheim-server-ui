@@ -79,6 +79,7 @@ type Deps struct {
 	Thunderstore ThunderstoreService // WP-08
 	Steam        SteamService        // WP-04/05
 	SelfUpdate   SelfUpdateService   // WP-30
+	Agent        AgentService        // server plugin (optional)
 	// Metrics is optional; when nil the system endpoint omits host usage.
 	Metrics HostMetricsSource
 }
@@ -112,6 +113,7 @@ func NewRouter(d *Deps, spa http.Handler) http.Handler {
 		registerBackupRoutes(api, d)
 		registerScheduleRoutes(api, d)
 		registerModRoutes(api, d)
+		registerAgentRoutes(api, d)
 		registerThunderstoreRoutes(api, d)
 		registerJobRoutes(api, d)
 		registerEventRoutes(api, d)

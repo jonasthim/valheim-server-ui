@@ -115,6 +115,7 @@ type ModService interface {
 	EnqueueInstall(ctx context.Context, instanceID, registry, owner, name, version, requestedBy string) (*domain.Job, error)
 	EnqueueUpload(ctx context.Context, instanceID, filename string, r io.Reader, requestedBy string) (*domain.Job, error)
 	EnqueueBepInExInstall(ctx context.Context, instanceID string, stopIfRunning bool, requestedBy string) (*domain.Job, error)
+	EnqueueAgentInstall(ctx context.Context, instanceID string, stopIfRunning bool, requestedBy string) (*domain.Job, error)
 	SetBepInExEnabled(ctx context.Context, instanceID string, enabled bool) (*domain.ModsOverview, error)
 	SetEnabled(ctx context.Context, instanceID string, modID int64, enabled bool) (*domain.Mod, error)
 	EnqueueUninstall(ctx context.Context, instanceID string, modID int64, requestedBy string) (*domain.Job, error)
@@ -156,4 +157,12 @@ func RequestedBy(r *http.Request) string {
 		return u.Username
 	}
 	return ""
+}
+
+// AgentService is the Valheim UI Agent integration (internal/agent).
+type AgentService interface {
+	// Info reports the agent's install/connection state and last snapshot;
+	// includeHidden keeps positions of players hiding on the map.
+	Info(ctx context.Context, instanceID string, includeHidden bool) (*domain.AgentInfo, error)
+	Command(ctx context.Context, instanceID string, req domain.AgentCommandRequest) (*domain.AgentCommandResult, error)
 }

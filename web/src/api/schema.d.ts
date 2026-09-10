@@ -1913,6 +1913,131 @@ export interface paths {
         };
         trace?: never;
     };
+    "/instances/{instanceId}/agent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Valheim UI Agent status for this instance (install state, connection, last world snapshot)
+         * @description The agent is the manager's own server-side BepInEx plugin, installed together
+         *     with BepInEx. Positions of players who hide their map position are omitted
+         *     for viewers and included for operators and admins.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentInfo"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/agent/commands": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Run an admin command through the agent (save, kick, ban, unban, broadcast) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AgentCommandRequest"];
+                };
+            };
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentCommandResult"];
+                    };
+                };
+                /** @description Agent not installed or instance not running */
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/agent/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Install or update the agent plugin (instance must be stopped; BepInEx required) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["StopIfRunning"];
+                };
+            };
+            responses: {
+                202: components["responses"]["JobResponse"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/mods/{modId}": {
         parameters: {
             query?: never;
@@ -2456,6 +2581,7 @@ export interface paths {
          *     - `instance.status`: InstanceStatus (with instance_id)
          *     - `instance.log`: { instance_id, line }
          *     - `instance.players`: { instance_id, online: OnlinePlayer[] }
+         *     - `agent.status`: { instance_id, agent: AgentInfo } (hidden players' positions omitted)
          *     - `job.updated`: Job
          *     - `job.log`: { job_id, line }
          *     - `update.available`: UpdateInfo
@@ -2817,6 +2943,8 @@ export interface components {
             update_available?: boolean;
             bepinex_installed?: boolean;
             bepinex_enabled?: boolean;
+            /** @description The manager can currently reach the Valheim UI Agent plugin in this server */
+            agent_connected?: boolean;
             active_job?: components["schemas"]["Job"];
             /** @description Game process CPU */
             cpu_percent?: number;
@@ -2965,7 +3093,7 @@ export interface components {
             id: number;
             instance_id: string;
             /** @enum {string} */
-            source: "thunderstore" | "hexium" | "manual";
+            source: "thunderstore" | "hexium" | "manual" | "bundled";
             owner: string;
             name: string;
             version: string;
@@ -3067,8 +3195,82 @@ export interface components {
             /** Format: date-time */
             index_updated_at: string;
         };
+        Vec3: {
+            x: number;
+            y: number;
+            z: number;
+        };
+        AgentPlayer: {
+            /** Format: int64 */
+            uid: number;
+            name: string;
+            /** @description Platform id (Steam id or PlayFab id) */
+            host: string;
+            character_id?: string;
+            /** @description The player shares their position on the map */
+            visible: boolean;
+            position?: components["schemas"]["Vec3"];
+        };
+        AgentWorld: {
+            name: string;
+            seed_name?: string;
+            seed: number;
+            day: number;
+            /** @description 0 at midnight */
+            day_fraction: number;
+            is_night: boolean;
+            /** @description Environment name (Clear */
+            weather?: string;
+            /** @description World time in seconds */
+            time_seconds: number;
+        };
+        AgentStatus: {
+            agent_version: string;
+            game_version?: string;
+            uptime_seconds: number;
+            /** @description The world is loaded and the server accepts players */
+            ready: boolean;
+            /** Format: date-time */
+            captured_at: string;
+            world: components["schemas"]["AgentWorld"];
+            global_keys: string[];
+            players: components["schemas"]["AgentPlayer"][];
+        };
+        AgentInfo: {
+            /** @description The plugin is present in BepInEx/plugins */
+            installed: boolean;
+            installed_version?: string;
+            /** @description The plugin version this manager build ships */
+            bundled_version?: string;
+            update_available: boolean;
+            /** @description BepInEx (and with it the agent) is enabled for this instance */
+            enabled: boolean;
+            /** @description The manager reached the agent on its last poll */
+            connected: boolean;
+            /** Format: date-time */
+            last_seen?: string;
+            last_error?: string;
+            status?: components["schemas"]["AgentStatus"];
+        };
+        AgentCommandRequest: {
+            /** @enum {string} */
+            command: "save" | "kick" | "ban" | "unban" | "broadcast";
+            /** @description Player name or platform id (kick */
+            target?: string;
+            /** @description Text shown to every player (broadcast) */
+            message?: string;
+            /**
+             * @description Where the broadcast appears on screen
+             * @enum {string}
+             */
+            style?: "center" | "topleft";
+        };
+        AgentCommandResult: {
+            ok: boolean;
+            message: string;
+        };
         /** @enum {string} */
-        JobType: "install" | "update" | "backup" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade";
+        JobType: "install" | "update" | "backup" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "agent_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade";
         /** @enum {string} */
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";
         Job: {

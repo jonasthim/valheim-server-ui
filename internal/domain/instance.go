@@ -306,8 +306,10 @@ type InstanceStatus struct {
 	InstalledBuildID string        `json:"installed_buildid,omitempty"`
 	UpdateAvailable  bool          `json:"update_available"`
 	BepInExInstalled bool          `json:"bepinex_installed"`
-	BepInExEnabled   bool          `json:"bepinex_enabled"`
-	ActiveJob        *Job          `json:"active_job,omitempty"`
+	// AgentConnected is true while the manager can reach the agent plugin.
+	AgentConnected bool `json:"agent_connected"`
+	BepInExEnabled bool `json:"bepinex_enabled"`
+	ActiveJob      *Job `json:"active_job,omitempty"`
 	// Live resource usage of the game process (set by the metrics enricher
 	// while running). CPUPercent is percent of one core, like top.
 	CPUPercent  *float64 `json:"cpu_percent,omitempty"`

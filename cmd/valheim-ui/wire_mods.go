@@ -31,7 +31,7 @@ const thunderstoreHTTPTimeout = 2 * time.Minute
 // service (WP-02) and job runner (WP-04) exist, passing them as inst/runner.
 //
 
-func wireMods(ctx context.Context, deps *api.Deps, inst *instance.Service, runner *jobs.Runner) error {
+func wireMods(ctx context.Context, deps *api.Deps, inst *instance.Service, runner *jobs.Runner, agentBundle mods.AgentBundle) error {
 	refreshInterval := func() time.Duration {
 		hours := defaultThunderstoreRefreshHours
 		if deps.Settings != nil {
@@ -57,7 +57,11 @@ func wireMods(ctx context.Context, deps *api.Deps, inst *instance.Service, runne
 	regs := mods.NewRegistries(thunderstore, hexium)
 	regs.RunAll(ctx)
 
-	deps.Mods = mods.NewService(deps.DB, regs, inst, runner, cacheDir, deps.Log)
+	svc := mods.NewService(deps.DB, regs, inst, runner, cacheDir, deps.Log)
+	if agentBundle != nil {
+		svc.SetAgentBundle(agentBundle)
+	}
+	deps.Mods = svc
 	deps.Thunderstore = mods.NewThunderstoreService(regs, runner)
 	return nil
 }
