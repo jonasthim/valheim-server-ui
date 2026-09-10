@@ -19,6 +19,13 @@ namespace ValheimUI.Agent
             return Encode(width, height, rgb, 3, 2);
         }
 
+        /// <summary>8-bit RGBA (colour type 6), four bytes per pixel.</summary>
+        public static byte[] EncodeRgba(int width, int height, byte[] rgba)
+        {
+            if (rgba.Length != width * height * 4) throw new ArgumentException("rgba buffer size mismatch");
+            return Encode(width, height, rgba, 4, 6);
+        }
+
         /// <summary>8-bit greyscale (colour type 0), one byte per pixel.</summary>
         public static byte[] EncodeGray(int width, int height, byte[] gray)
         {
@@ -35,21 +42,24 @@ namespace ValheimUI.Agent
 
         private static byte[] Encode(int width, int height, byte[] pixels, int channels, byte colourType)
         {
-            var raw = new byte[(width * channels + 1) * height];
+            // Rows are streamed into the deflater with their filter byte and
+            // the Adler-32 kept incrementally, so no filtered copy of the
+            // whole image is made (64 MB for a 4096² RGBA layer image).
             int stride = width * channels;
-            for (int y = 0; y < height; y++)
-            {
-                int dst = y * (stride + 1);
-                raw[dst] = 0; // filter: none
-                Buffer.BlockCopy(pixels, y * stride, raw, dst + 1, stride);
-            }
-
+            uint adlerA = 1, adlerB = 0;
+            var filter = new byte[1];
             byte[] deflated;
             using (var ms = new MemoryStream())
             {
                 using (var ds = new DeflateStream(ms, CompressionMode.Compress, true))
                 {
-                    ds.Write(raw, 0, raw.Length);
+                    for (int y = 0; y < height; y++)
+                    {
+                        ds.Write(filter, 0, 1); // filter: none
+                        Adler32Update(ref adlerA, ref adlerB, filter, 0, 1);
+                        ds.Write(pixels, y * stride, stride);
+                        Adler32Update(ref adlerA, ref adlerB, pixels, y * stride, stride);
+                    }
                 }
                 deflated = ms.ToArray();
             }
@@ -73,7 +83,7 @@ namespace ValheimUI.Agent
                 idat[0] = 0x78;
                 idat[1] = 0x9C;
                 Buffer.BlockCopy(deflated, 0, idat, 2, deflated.Length);
-                WriteBE(idat, deflated.Length + 2, Adler32(raw));
+                WriteBE(idat, deflated.Length + 2, (adlerB << 16) | adlerA);
                 WriteChunk(outMs, "IDAT", idat);
 
                 WriteChunk(outMs, "IEND", new byte[0]);
@@ -120,6 +130,22 @@ namespace ValheimUI.Agent
         {
             for (int i = off; i < off + len; i++) crc = CrcTable[(crc ^ buf[i]) & 0xFF] ^ (crc >> 8);
             return crc;
+        }
+
+        private static void Adler32Update(ref uint a, ref uint b, byte[] data, int off, int len)
+        {
+            int i = off, end = off + len;
+            while (i < end)
+            {
+                int n = Math.Min(5552, end - i);
+                for (; n > 0; n--, i++)
+                {
+                    a += data[i];
+                    b += a;
+                }
+                a %= 65521;
+                b %= 65521;
+            }
         }
 
         private static uint Adler32(byte[] data)

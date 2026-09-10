@@ -1,18 +1,25 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Threading;
 using UnityEngine;
 
 namespace ValheimUI.Agent
 {
     /// <summary>
-    /// Renders the world map from the seed: samples WorldGenerator's biome and
-    /// height on a grid covering the whole world and colours it like the
-    /// in-game map, without fog. Sampling runs on the main thread in small
-    /// per-frame slices (WorldGenerator is only guaranteed there); PNG
-    /// encoding runs on a worker thread. The result is cached on disk per
-    /// seed and size so a restart serves it instantly.
+    /// Samples the world once per world into raw map layers: for every cell of
+    /// a grid covering the whole world square, the biome, the height with the
+    /// game's terrain mask (GetBiomeHeight) and the forest factor. The manager
+    /// draws the map from these layers in the in-game style at any zoom; the
+    /// plugin itself does no styling. Sampling runs on the main thread in
+    /// small per-frame slices (WorldGenerator is only guaranteed there); PNG
+    /// encoding runs on a worker thread. The result is cached on disk per seed
+    /// and size so a restart serves it instantly.
+    ///
+    /// Layer image: 8-bit RGBA PNG. R = terrain mask (high nibble, 0-15) and
+    /// biome code (low nibble); G:B = height as (h + 200) * 32, big endian;
+    /// A = forest factor * 100. Mirrored by the manager's mapstyle package.
     /// </summary>
     internal sealed class MapRenderer
     {
@@ -23,16 +30,31 @@ namespace ValheimUI.Agent
         public const float WorldRadius = 10500f;
         private const float PlayableRadius = 10000f;
         private const float SeaLevel = 30f;
+        public const int LayersVersion = 1;
+
+        private const float HeightOffset = 200f;
+        private const float HeightScale = 32f;
+        private const float ForestScale = 100f;
+        private const byte BiomeOffWorld = 15;
+        /// <summary>Forest factor written when GetForestFactor is unavailable: no trees.</summary>
+        private const float NoForest = 2.55f;
+
+        private delegate float BiomeHeightFn(Heightmap.Biome biome, float wx, float wy, out Color mask);
+        private delegate float BiomeHeightPreFn(Heightmap.Biome biome, float wx, float wy, out Color mask, bool preGeneration);
 
         private readonly object _lock = new object();
         private volatile State _state = State.Idle;
         private byte[] _png;
-        private byte[] _rgb;
+        private byte[] _rgba;
         private int _size;
         private int _seed;
         private int _nextRow;
         private string _cachePath;
         private string _error = "";
+
+        private WorldGenerator _boundGen;
+        private BiomeHeightFn _biomeHeight;
+        private Func<Vector3, float> _forest;
 
         public State Current => _state;
         public int Size => _size;
@@ -45,7 +67,7 @@ namespace ValheimUI.Agent
             lock (_lock) return _png;
         }
 
-        /// <summary>Starts a render (or loads the cached image). Main thread.</summary>
+        /// <summary>Starts a render (or loads the cached layers). Main thread.</summary>
         public void Begin(int seed, int size, string cacheDir, bool force)
         {
             size = Mathf.Clamp(size, 256, 4096);
@@ -54,9 +76,18 @@ namespace ValheimUI.Agent
                 if (_state == State.Rendering || _state == State.Encoding) return;
                 _seed = seed;
                 _size = size;
-                _cachePath = Path.Combine(cacheDir, "map-" + seed.ToString() + "-" + size + ".png");
+                _cachePath = Path.Combine(cacheDir, "layers-" + seed.ToString() + "-" + size + ".png");
                 _error = "";
                 _png = null;
+                // The styled image older agents cached is no longer produced.
+                try
+                {
+                    var legacy = Path.Combine(cacheDir, "map-" + seed.ToString() + "-" + size + ".png");
+                    if (File.Exists(legacy)) File.Delete(legacy);
+                }
+                catch (Exception)
+                {
+                }
                 if (!force && File.Exists(_cachePath))
                 {
                     try
@@ -70,7 +101,7 @@ namespace ValheimUI.Agent
                         _error = "cache read failed: " + e.Message;
                     }
                 }
-                _rgb = new byte[size * size * 3];
+                _rgba = new byte[size * size * 4];
                 _nextRow = 0;
                 _state = State.Rendering;
             }
@@ -82,28 +113,95 @@ namespace ValheimUI.Agent
             if (_state != State.Rendering) return;
             var gen = WorldGenerator.instance;
             if (gen == null) return;
+            if (gen != _boundGen) Bind(gen);
             var sw = Stopwatch.StartNew();
             while (_nextRow < _size && sw.Elapsed.TotalMilliseconds < budgetMs)
             {
-                RenderRow(gen, _nextRow);
+                try
+                {
+                    RenderRow(gen, _nextRow);
+                }
+                catch (Exception e)
+                {
+                    // A game update changed one of the optional calls under us:
+                    // drop to the next fallback and redo the row.
+                    if (_biomeHeight != null)
+                    {
+                        _biomeHeight = null;
+                        AgentPlugin.Log?.LogWarning("map layers: GetBiomeHeight failed, using GetHeight without the terrain mask: " + e.Message);
+                        continue;
+                    }
+                    if (_forest != null)
+                    {
+                        _forest = null;
+                        AgentPlugin.Log?.LogWarning("map layers: GetForestFactor failed, forest layer left empty: " + e.Message);
+                        continue;
+                    }
+                    _error = "sampling failed: " + e.Message;
+                    _state = State.Failed;
+                    _rgba = null;
+                    return;
+                }
                 _nextRow++;
             }
             if (_nextRow >= _size)
             {
                 _state = State.Encoding;
-                var rgb = _rgb;
+                var rgba = _rgba;
                 var size = _size;
                 var path = _cachePath;
-                _rgb = null;
-                ThreadPool.QueueUserWorkItem(_ => Encode(size, rgb, path));
+                _rgba = null;
+                ThreadPool.QueueUserWorkItem(_ => Encode(size, rgba, path));
             }
         }
 
-        private void Encode(int size, byte[] rgb, string path)
+        /// <summary>
+        /// Binds the optional WorldGenerator members once per generator
+        /// instance. GetBiomeHeight (with the terrain mask) and the static
+        /// GetForestFactor are resolved by reflection into delegates, so the
+        /// plugin does not pin the exact signature at compile time yet pays no
+        /// reflection cost per pixel. Missing members degrade to GetHeight
+        /// (no mask) and "no forest".
+        /// </summary>
+        private void Bind(WorldGenerator gen)
+        {
+            _boundGen = gen;
+            _biomeHeight = null;
+            _forest = null;
+            try
+            {
+                var t = typeof(WorldGenerator);
+                var byRefColor = typeof(Color).MakeByRefType();
+                var m5 = t.GetMethod("GetBiomeHeight", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null,
+                    new[] { typeof(Heightmap.Biome), typeof(float), typeof(float), byRefColor, typeof(bool) }, null);
+                if (m5 != null)
+                {
+                    var d = (BiomeHeightPreFn)Delegate.CreateDelegate(typeof(BiomeHeightPreFn), gen, m5);
+                    _biomeHeight = (Heightmap.Biome b, float x, float y, out Color mk) => d(b, x, y, out mk, false);
+                }
+                else
+                {
+                    var m4 = t.GetMethod("GetBiomeHeight", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null,
+                        new[] { typeof(Heightmap.Biome), typeof(float), typeof(float), byRefColor }, null);
+                    if (m4 != null) _biomeHeight = (BiomeHeightFn)Delegate.CreateDelegate(typeof(BiomeHeightFn), gen, m4);
+                }
+                var fm = t.GetMethod("GetForestFactor", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null,
+                    new[] { typeof(Vector3) }, null);
+                if (fm != null) _forest = (Func<Vector3, float>)Delegate.CreateDelegate(typeof(Func<Vector3, float>), fm);
+            }
+            catch (Exception e)
+            {
+                AgentPlugin.Log?.LogWarning("map layers: binding WorldGenerator members failed: " + e.Message);
+            }
+            if (_biomeHeight == null) AgentPlugin.Log?.LogWarning("map layers: GetBiomeHeight not found; the terrain mask (lava, mist) will be empty");
+            if (_forest == null) AgentPlugin.Log?.LogWarning("map layers: GetForestFactor not found; the forest layer will be empty");
+        }
+
+        private void Encode(int size, byte[] rgba, string path)
         {
             try
             {
-                var png = global::ValheimUI.Agent.Png.EncodeRgb(size, size, rgb);
+                var png = global::ValheimUI.Agent.Png.EncodeRgba(size, size, rgba);
                 try
                 {
                     Directory.CreateDirectory(Path.GetDirectoryName(path));
@@ -133,71 +231,63 @@ namespace ValheimUI.Agent
             int size = _size;
             float step = 2f * WorldRadius / size;
             float wz = WorldRadius - (py + 0.5f) * step; // north (+z) at the top
-            float prevH = SeaLevel;
-            int row = py * size * 3;
+            int row = py * size * 4;
             for (int px = 0; px < size; px++)
             {
                 float wx = -WorldRadius + (px + 0.5f) * step;
                 float dist = Mathf.Sqrt(wx * wx + wz * wz);
-                byte r, g, b;
+                byte code;
+                float h, forest, mask;
                 if (dist > WorldRadius)
                 {
-                    r = 18; g = 22; b = 30;
+                    code = BiomeOffWorld;
+                    h = SeaLevel - 50f;
+                    forest = 0f;
+                    mask = 0f;
                 }
                 else
                 {
                     var biome = gen.GetBiome(wx, wz);
-                    float h = gen.GetHeight(wx, wz);
-                    Colour(biome, h, h - prevH, out r, out g, out b);
-                    if (dist > PlayableRadius)
+                    code = BiomeCode(biome);
+                    if (_biomeHeight != null)
                     {
-                        float f = 1f - Mathf.Clamp01((dist - PlayableRadius) / (WorldRadius - PlayableRadius)) * 0.7f;
-                        r = (byte)(r * f); g = (byte)(g * f); b = (byte)(b * f);
+                        Color mk;
+                        h = _biomeHeight(biome, wx, wz, out mk);
+                        mask = mk.a;
                     }
-                    prevH = h;
+                    else
+                    {
+                        h = gen.GetHeight(wx, wz);
+                        mask = 0f;
+                    }
+                    forest = _forest != null ? _forest(new Vector3(wx, 0f, wz)) : NoForest;
                 }
-                int i = row + px * 3;
-                _rgb[i] = r; _rgb[i + 1] = g; _rgb[i + 2] = b;
+                int m = Mathf.Clamp(Mathf.RoundToInt(mask * 15f), 0, 15);
+                int h16 = Mathf.Clamp(Mathf.RoundToInt((h + HeightOffset) * HeightScale), 0, 65535);
+                int f = Mathf.Clamp(Mathf.RoundToInt(forest * ForestScale), 0, 255);
+                int i = row + px * 4;
+                _rgba[i] = (byte)((m << 4) | code);
+                _rgba[i + 1] = (byte)(h16 >> 8);
+                _rgba[i + 2] = (byte)(h16 & 0xFF);
+                _rgba[i + 3] = (byte)f;
             }
         }
 
-        private static void Colour(Heightmap.Biome biome, float h, float slope, out byte r, out byte g, out byte b)
+        private static byte BiomeCode(Heightmap.Biome biome)
         {
-            if (h < SeaLevel)
-            {
-                float depth = Mathf.Clamp01((SeaLevel - h) / 60f);
-                Lerp(70, 130, 190, 24, 52, 105, depth, out r, out g, out b);
-                return;
-            }
-            int br, bg, bb;
             switch (biome)
             {
-                case Heightmap.Biome.Meadows: br = 92; bg = 146; bb = 62; break;
-                case Heightmap.Biome.BlackForest: br = 44; bg = 86; bb = 44; break;
-                case Heightmap.Biome.Swamp: br = 96; bg = 82; bb = 56; break;
-                case Heightmap.Biome.Mountain:
-                    if (h > 120) { br = 220; bg = 224; bb = 232; } else { br = 150; bg = 152; bb = 160; }
-                    break;
-                case Heightmap.Biome.Plains: br = 194; bg = 172; bb = 92; break;
-                case Heightmap.Biome.Mistlands: br = 112; bg = 100; bb = 122; break;
-                case Heightmap.Biome.AshLands: br = 142; bg = 62; bb = 42; break;
-                case Heightmap.Biome.DeepNorth: br = 208; bg = 220; bb = 236; break;
-                case Heightmap.Biome.Ocean: br = 60; bg = 110; bb = 170; break;
-                default: br = 84; bg = 84; bb = 84; break;
+                case Heightmap.Biome.Meadows: return 1;
+                case Heightmap.Biome.BlackForest: return 2;
+                case Heightmap.Biome.Swamp: return 3;
+                case Heightmap.Biome.Mountain: return 4;
+                case Heightmap.Biome.Plains: return 5;
+                case Heightmap.Biome.Mistlands: return 6;
+                case Heightmap.Biome.AshLands: return 7;
+                case Heightmap.Biome.DeepNorth: return 8;
+                case Heightmap.Biome.Ocean: return 9;
+                default: return 0;
             }
-            // Shore band, then brighten with altitude and a light east-west hillshade.
-            if (h < SeaLevel + 1.5f) { br = 200; bg = 190; bb = 150; }
-            float f = 0.78f + 0.45f * Mathf.Clamp01((h - SeaLevel) / 220f) + Mathf.Clamp(slope * 0.03f, -0.22f, 0.22f);
-            r = (byte)Mathf.Clamp(br * f, 0, 255);
-            g = (byte)Mathf.Clamp(bg * f, 0, 255);
-            b = (byte)Mathf.Clamp(bb * f, 0, 255);
-        }
-
-        private static void Lerp(int r0, int g0, int b0, int r1, int g1, int b1, float t, out byte r, out byte g, out byte b)
-        {
-            r = (byte)(r0 + (r1 - r0) * t);
-            g = (byte)(g0 + (g1 - g0) * t);
-            b = (byte)(b0 + (b1 - b0) * t);
         }
 
         public string InfoJson()
@@ -211,6 +301,8 @@ namespace ValheimUI.Agent
             w.Prop("world_radius", (double)WorldRadius);
             w.Prop("playable_radius", (double)PlayableRadius);
             w.Prop("sea_level", (double)SeaLevel);
+            w.Prop("layers", true);
+            w.Prop("layers_version", LayersVersion);
             w.Prop("error", _error);
             w.EndObject();
             return w.ToString();

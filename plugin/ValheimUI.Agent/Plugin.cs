@@ -69,7 +69,7 @@ namespace ValheimUI.Agent
             _bind = Config.Bind("Server", "BindAddress", "127.0.0.1", "Address to listen on. Keep it on loopback; the manager runs on the same host.");
             _token = Config.Bind("Server", "Token", "", "Bearer token the manager must present. Written by Valheim Server UI before each start; requests are refused while empty.");
             _intervalMs = Config.Bind("Server", "SnapshotIntervalMs", 500, "How often the world state is captured for GET /v1/status.");
-            _mapResolution = Config.Bind("Map", "Resolution", 1024, "Side length in pixels of the rendered world map (256-4096). Higher is sharper and slower to render once per world.");
+            _mapResolution = Config.Bind("Map", "Resolution", 2048, "Side length in cells of the sampled world map layers (256-4096). 2048 matches the game's own map; 4096 gives the sharpest coastlines at deep zoom and takes four times longer to sample once per world.");
             _mapBudgetMs = Config.Bind("Map", "RenderBudgetMs", 4, "Milliseconds per server frame spent rendering the map. Lower values render slower but never stall the game.");
             _mapAutoRender = Config.Bind("Map", "AutoRender", true, "Render the map shortly after the world has loaded instead of on first request.");
             _cacheDir = System.IO.Path.Combine(Paths.CachePath, "valheimui-agent");

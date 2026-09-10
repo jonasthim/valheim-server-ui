@@ -131,16 +131,23 @@ namespace ValheimUI.Agent
                     Bytes(ctx, 200, "image/png", mask);
                     return;
                 }
-                if (req.HttpMethod == "GET" && path == "/v1/map")
+                if (req.HttpMethod == "GET" && path == "/v1/map/layers")
                 {
                     var png = _mapPng();
                     if (png == null)
                     {
-                        // Not rendered yet: the info body carries state and progress.
+                        // Not sampled yet: the info body carries state and progress.
                         Json(ctx, 202, _mapInfo());
                         return;
                     }
                     Bytes(ctx, 200, "image/png", png);
+                    return;
+                }
+                if (req.HttpMethod == "GET" && path == "/v1/map")
+                {
+                    // Agents before 1.10 served a styled image here; the manager
+                    // now draws the map from /v1/map/layers.
+                    Json(ctx, 410, "{\"ok\":false,\"error\":\"this agent exports map layers; update Valheim Server UI to 1.10 or newer\"}");
                     return;
                 }
                 if (req.HttpMethod == "POST" && path == "/v1/map/render")
