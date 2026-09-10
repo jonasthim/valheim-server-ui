@@ -44,6 +44,40 @@ jobs:
       - run: go test -count=1 ./internal/launcher/ ./internal/supervisor/ ./internal/metrics/ ./internal/config/ ./internal/domain/ ./internal/steam/ ./internal/logs/
         env: { CGO_ENABLED: "0" }
 
+  # The server-side agent plugin (plugin/). Game assemblies come from the
+  # dedicated server via anonymous SteamCMD and are cached for a week; the
+  # BepInEx API comes from its NuGet feed. Released as valheim-ui-agent.zip,
+  # which the manager installs alongside BepInEx.
+  plugin:
+    runs-on: ubuntu-latest
+    needs: [version]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: 8.0.x }
+      - id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: plugin/lib/valheim
+          key: valheim-managed-${{ steps.week.outputs.week }}
+      - name: SteamCMD runtime (32-bit libraries)
+        run: |
+          if [ ! -f plugin/lib/valheim/assembly_valheim.dll ]; then
+            sudo apt-get update -qq || true
+            sudo apt-get install -y -qq lib32gcc-s1 lib32stdc++6
+          fi
+      - name: Build and package
+        env:
+          RELEASE_TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${RELEASE_TAG#v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || version=0.0.0
+          ./plugin/build.sh "$version"
+      - uses: actions/upload-artifact@v4
+        with: { name: agent-plugin, path: plugin/dist/valheim-ui-agent.zip }
+
   frontend:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: web } }
@@ -149,7 +183,7 @@ jobs:
 
   release:
     if: needs.version.outputs.publish == 'true'
-    needs: [version, backend, windows, frontend, contract, e2e]
+    needs: [version, backend, windows, plugin, frontend, contract, e2e]
     runs-on: ubuntu-latest
     permissions: { contents: write }
     env:
@@ -160,6 +194,8 @@ jobs:
         with: { go-version-file: go.mod, cache: true }
       - uses: actions/download-artifact@v4
         with: { name: web-dist, path: web/dist }
+      - uses: actions/download-artifact@v4
+        with: { name: agent-plugin, path: dist }
       - run: make build-go VERSION=$RELEASE_TAG COMMIT=${{ github.sha }}
       - run: make build-go-windows VERSION=$RELEASE_TAG COMMIT=${{ github.sha }}
       - run: make deploy-sync-check
@@ -174,7 +210,7 @@ jobs:
           # The raw binary's digest is listed too: `unitctl apply-upgrade`
           # re-verifies a staged binary against it before installing it as root.
           cp bin/valheim-ui dist/valheim-ui
-          ( cd dist && sha256sum valheim-ui_linux_amd64.tar.gz valheim-ui_windows_amd64.zip deploy.tar.gz install.sh install.ps1 valheim-ui > SHA256SUMS && rm valheim-ui )
+          ( cd dist && sha256sum valheim-ui_linux_amd64.tar.gz valheim-ui_windows_amd64.zip valheim-ui-agent.zip deploy.tar.gz install.sh install.ps1 valheim-ui > SHA256SUMS && rm valheim-ui )
           cat dist/SHA256SUMS
       # Keep the built assets as a workflow artifact too, so a failed publish
       # (e.g. the token lacking release permissions) never loses the build.
@@ -219,10 +255,11 @@ jobs:
             ```
 
             Running instances upgrade from the dashboard (Settings → Application → Upgrade).
-            Assets: `valheim-ui_linux_amd64.tar.gz` and `valheim-ui_windows_amd64.zip` (binaries), `install.sh`, `install.ps1`, `deploy.tar.gz`, `SHA256SUMS`.
+            Assets: `valheim-ui_linux_amd64.tar.gz` and `valheim-ui_windows_amd64.zip` (binaries), `valheim-ui-agent.zip` (server plugin, installed by the UI with BepInEx), `install.sh`, `install.ps1`, `deploy.tar.gz`, `SHA256SUMS`.
           files: |
             dist/valheim-ui_linux_amd64.tar.gz
             dist/valheim-ui_windows_amd64.zip
+            dist/valheim-ui-agent.zip
             dist/deploy.tar.gz
             dist/install.sh
             dist/install.ps1

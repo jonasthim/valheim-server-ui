@@ -1,0 +1,8 @@
+{
+  "name": "ValheimUI_Agent",
+  "author": "jonasthim",
+  "version_number": "__VERSION__",
+  "website_url": "https://github.com/jonasthim/valheim-server-ui",
+  "description": "Server-side control and telemetry plugin for Valheim Server UI: live players, world state and admin commands over a loopback API.",
+  "dependencies": ["denikson-BepInExPack_Valheim-5.4.2333"]
+}
