@@ -72,7 +72,16 @@ var jobHandle windows.Handle
 func spawnAndForward(argv0 string, argv []string, envv []string) error {
 	// The Ctrl+C generated for the game reaches every process on the shared
 	// console, this proxy included; it must survive it to report the exit.
-	signal.Ignore(os.Interrupt)
+	// A registered handler is what keeps a Go process alive on Windows
+	// (os/signal: "If Notify is called for os.Interrupt, ^C ... will not
+	// exit"); signal.Ignore alone still lets the default handler terminate
+	// the process with STATUS_CONTROL_C_EXIT.
+	interrupts := make(chan os.Signal, 4)
+	signal.Notify(interrupts, os.Interrupt)
+	go func() {
+		for range interrupts {
+		}
+	}()
 	// A service has no console; without one GenerateConsoleCtrlEvent has
 	// nothing to deliver to. The call fails harmlessly when a console exists.
 	_ = allocConsole()

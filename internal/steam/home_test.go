@@ -1,3 +1,7 @@
+//go:build !windows
+
+// HOME pinning and the script-based runner are unix-only concerns.
+
 package steam
 
 import (

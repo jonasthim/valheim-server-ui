@@ -128,6 +128,9 @@ func TestParseLatestBuildID_NotFound(t *testing.T) {
 }
 
 func TestInstallOrUpdate_Success(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("executes a shell-script steamcmd through the real runner")
+	}
 	exe := writeFakeSteamCMD(t, `echo "Success! App '896660' fully installed"`)
 	c := New(exe, nil)
 	var out strings.Builder
@@ -140,6 +143,9 @@ func TestInstallOrUpdate_Success(t *testing.T) {
 }
 
 func TestInstallOrUpdate_AlreadyUpToDate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("executes a shell-script steamcmd through the real runner")
+	}
 	exe := writeFakeSteamCMD(t, `echo "already up to date"`)
 	c := New(exe, nil)
 	if err := c.InstallOrUpdate(context.Background(), t.TempDir(), io.Discard); err != nil {
