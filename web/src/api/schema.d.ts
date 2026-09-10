@@ -3435,6 +3435,10 @@ export interface components {
         };
         InstanceMap: {
             connected: boolean;
+            /** @description False when the running agent predates the map API (update it from the Mods tab) */
+            map_supported: boolean;
+            /** @description Version of the agent running in the server */
+            agent_version?: string;
             /** @description GET map.png serves an image now */
             image_ready: boolean;
             /** @description The image comes from an earlier run and could not be confirmed against the current world */

@@ -156,3 +156,43 @@ func TestMap_FetchCacheAndOffline(t *testing.T) {
 		t.Fatal("unexpected path")
 	}
 }
+
+func TestMap_OldAgentWithoutMapEndpoints(t *testing.T) {
+	paths := testPaths(t)
+	installPlugin(t, paths, "1.5.0")
+	cfg, err := EnsureConfig(paths, 2456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer "+cfg.Token {
+			_, _ = w.Write([]byte(strings.Replace(sampleStatus, `"agent_version":"1.5.0"`, `"agent_version":"1.5.0"`, 1)))
+		}
+	})
+	// Everything under /v1/map is unknown to a 1.5.0 agent.
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning},
+	}}
+	s := NewService(fi, &fakeBus{}, slog.New(slog.NewTextHandler(io.Discard, nil)), fixedVersion("1.6.1"))
+	s.http = srv.Client()
+	s.baseURL = func(int) string { return srv.URL }
+	ctx := context.Background()
+	s.tick(ctx)
+
+	m, err := s.Map(ctx, "main", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.Connected || m.MapSupported || m.AgentVersion != "1.5.0" || m.ImageReady {
+		t.Fatalf("old agent: %+v", m)
+	}
+	_, err = s.RenderMap(ctx, "main", domain.MapRenderRequest{})
+	if err == nil || !strings.Contains(err.Error(), "no map support") {
+		t.Fatalf("expected the update hint, got %v", err)
+	}
+}

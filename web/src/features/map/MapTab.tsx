@@ -5,6 +5,7 @@ import { useMemo, useState } from 'react'
 import { Alert, Badge, Button, Chip, Group, Loader, Progress, Skeleton, Stack, Text } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { IconAlertTriangle, IconMapOff, IconRefresh } from '@tabler/icons-react'
+import { Link } from 'react-router-dom'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatusPill } from '../../ui'
@@ -121,10 +122,17 @@ export function MapTab({ id }: { id: string }) {
                 ? 'Install the Valheim UI Agent (Mods tab) to get a map of this world.'
                 : !data.connected
                   ? 'No map yet. Start the server with the agent; it renders the map a few seconds after the world loads.'
-                  : info?.state === 'failed'
-                    ? `The render failed: ${info.error || 'unknown error'}`
-                    : 'Waiting for the server to start the render…'}
+                  : !data.map_supported
+                    ? `The agent running in this server (v${data.agent_version || '?'}) predates the map. Update it on the Mods tab; the server restarts and the map renders a minute or two later.`
+                    : info?.state === 'failed'
+                      ? `The render failed: ${info.error || 'unknown error'}`
+                      : 'Waiting for the server to start the render…'}
             </Text>
+            {data.connected && !data.map_supported && (
+              <Button size="xs" variant="light" component={Link} to={`/instances/${id}/mods`}>
+                Open the Mods tab
+              </Button>
+            )}
           </>
         )}
       </Stack>
@@ -149,7 +157,7 @@ export function MapTab({ id }: { id: string }) {
                 {info.size} px · seed {info.seed}
               </Badge>
             )}
-            {hasRole('operator') && data.connected && (
+            {hasRole('operator') && data.connected && data.map_supported && (
               <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} loading={render.isPending} disabled={rendering} onClick={confirmRerender}>
                 Re-render
               </Button>

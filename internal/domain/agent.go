@@ -149,6 +149,10 @@ type MapObjects struct {
 // tab needs besides the image itself.
 type InstanceMap struct {
 	Connected bool `json:"connected"`
+	// MapSupported is false when the running agent predates the map API
+	// (its /v1/map/info answers 404); AgentVersion says which one it is.
+	MapSupported bool   `json:"map_supported"`
+	AgentVersion string `json:"agent_version,omitempty"`
 	// ImageReady is true when GET /instances/{id}/map.png serves an image now
 	// (from the instance cache or the running agent).
 	ImageReady bool `json:"image_ready"`

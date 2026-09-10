@@ -1841,9 +1841,11 @@ components:
 
     InstanceMap:
       type: object
-      required: [connected, image_ready, stale, objects, locations, players]
+      required: [connected, map_supported, image_ready, stale, objects, locations, players]
       properties:
         connected: { type: boolean }
+        map_supported: { type: boolean, description: False when the running agent predates the map API (update it from the Mods tab) }
+        agent_version: { type: string, description: Version of the agent running in the server }
         image_ready: { type: boolean, description: GET map.png serves an image now }
         stale: { type: boolean, description: The image comes from an earlier run and could not be confirmed against the current world }
         info: { $ref: '#/components/schemas/MapInfo' }

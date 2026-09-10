@@ -58,10 +58,18 @@ func newestCachedMap(dir string) string {
 }
 
 type mapState struct {
-	objects   *domain.MapObjects
-	objectsAt time.Time
-	info      *domain.MapInfo
-	infoAt    time.Time
+	objects     *domain.MapObjects
+	objectsAt   time.Time
+	info        *domain.MapInfo
+	infoAt      time.Time
+	unsupported bool // the agent answered 404 to /v1/map/info
+}
+
+// isNotFound reports whether err is the agent answering 404 (an older
+// plugin without the map endpoints).
+func isNotFound(err error) bool {
+	var se *statusError
+	return asStatusError(err, &se) && se.code == 404
 }
 
 // Map assembles the Map tab's data: connection, image availability, render
@@ -73,7 +81,7 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 		return nil, err
 	}
 	paths := s.inst.Paths(id)
-	out := &domain.InstanceMap{Objects: []domain.MapObject{}, Locations: []domain.MapLocation{}, Players: []domain.AgentPlayer{}}
+	out := &domain.InstanceMap{MapSupported: true, Objects: []domain.MapObject{}, Locations: []domain.MapLocation{}, Players: []domain.AgentPlayer{}}
 
 	s.mu.Lock()
 	x := s.states[id]
@@ -83,6 +91,7 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 		if x.status != nil {
 			w := x.status.World
 			out.World = &w
+			out.AgentVersion = x.status.AgentVersion
 			for _, p := range x.status.Players {
 				if !p.Visible && !includeHidden {
 					p.Position = nil
@@ -108,13 +117,17 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 			needObjects := ms.objects == nil || now.Sub(ms.objectsAt) > objectsTTL
 			s.mu.Unlock()
 			if needInfo {
-				if info, err := c.MapInfo(ctx); err == nil {
-					s.mu.Lock()
-					ms.info, ms.infoAt = info, now
-					s.mu.Unlock()
+				info, err := c.MapInfo(ctx)
+				s.mu.Lock()
+				switch {
+				case err == nil:
+					ms.info, ms.infoAt, ms.unsupported = info, now, false
+				case isNotFound(err):
+					ms.info, ms.infoAt, ms.unsupported = nil, now, true
 				}
+				s.mu.Unlock()
 			}
-			if needObjects {
+			if needObjects && !ms.unsupported {
 				if objs, err := c.MapObjects(ctx); err == nil {
 					s.mu.Lock()
 					ms.objects, ms.objectsAt = objs, now
@@ -125,6 +138,9 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 	}
 
 	s.mu.Lock()
+	if ms.unsupported {
+		out.MapSupported = false
+	}
 	if ms.info != nil {
 		info := *ms.info
 		out.Info = &info
@@ -252,7 +268,10 @@ func (s *Service) RenderMap(ctx context.Context, id string, req domain.MapRender
 	}
 	info, err := c.RenderMap(ctx, req.Size, req.Force)
 	if err != nil {
-		return nil, domain.Wrap(domain.CodeUpstreamError, "agent render", err)
+		if isNotFound(err) {
+			return nil, domain.E(domain.CodeConflict, "the agent running in this server has no map support yet; update it from the Mods tab (the server restarts) and try again")
+		}
+		return nil, domain.Ef(domain.CodeUpstreamError, "the agent refused the render: %v", err)
 	}
 	if req.Force {
 		// The old image is no longer wanted.
