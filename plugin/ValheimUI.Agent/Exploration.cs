@@ -34,6 +34,7 @@ namespace ValheimUI.Agent
         private int _pngVersion = -1;
         private bool _encoding;
         private DateTime _updatedAt = DateTime.MinValue;
+        private DateTime _lastEncodeStarted = DateTime.MinValue;
         private readonly Dictionary<ZDOID, int> _importedTables = new Dictionary<ZDOID, int>();
 
         public int Version { get { lock (_lock) return _version; } }
@@ -170,6 +171,18 @@ namespace ValheimUI.Agent
                 if (_importedTables.TryGetValue(table, out seen) && seen == key) return;
                 _importedTables[table] = key;
             }
+            ImportMapData(data);
+        }
+
+        /// <summary>
+        /// Merges Minimap map data (the format both cartography tables and
+        /// character files carry): a gzip'd ZPackage with version, texture
+        /// size and one bool per 12 m pixel. Returns the number of newly
+        /// revealed cells, or -1 when the data could not be parsed.
+        /// </summary>
+        public int ImportMapData(byte[] data)
+        {
+            if (data == null || data.Length < 8) return -1;
             byte[] raw;
             try
             {
@@ -190,7 +203,7 @@ namespace ValheimUI.Agent
                 var pkg = new ZPackage(raw);
                 int version = pkg.ReadInt();
                 int textureSize = pkg.ReadInt();
-                if (version < 1 || textureSize < 64 || textureSize > 8192) return;
+                if (version < 1 || textureSize < 64 || textureSize > 8192) return -1;
                 float pixelSize = 12f * (2048f / textureSize); // Minimap.m_pixelSize at its default texture size
                 float half = textureSize / 2f;
                 float step = 2f * MapRenderer.WorldRadius / Size;
@@ -215,9 +228,118 @@ namespace ValheimUI.Agent
                         _updatedAt = DateTime.UtcNow;
                     }
                 }
+                return added;
             }
             catch (Exception)
             {
+                return -1;
+            }
+        }
+
+        /// <summary>
+        /// Imports the map a player explored from their character file (.fch,
+        /// the PlayerProfile save): the file wraps a ZPackage the game's own
+        /// PlayerProfile parser reads, which yields per-world map data. Only
+        /// this world's (worldUID) data is merged. Returns a message for the
+        /// UI and the number of new cells (-1 on failure).
+        /// </summary>
+        public int ImportCharacterFile(byte[] file, long worldUID, out string message)
+        {
+            message = "";
+            byte[] mapData;
+            string playerName;
+            var err = ProfileMapData(file, worldUID, out mapData, out playerName);
+            if (err != null)
+            {
+                message = err;
+                return -1;
+            }
+            int added = ImportMapData(mapData);
+            if (added < 0)
+            {
+                message = "the character's map data for this world could not be read";
+                return -1;
+            }
+            MaybeSave(true);
+            message = (string.IsNullOrEmpty(playerName) ? "character" : playerName) + ": " + added + " new cells revealed";
+            return added;
+        }
+
+        private static string ProfileMapData(byte[] file, long worldUID, out byte[] mapData, out string playerName)
+        {
+            mapData = null;
+            playerName = "";
+            ZPackage inner;
+            try
+            {
+                var outer = new ZPackage(file);
+                int size = outer.ReadInt();
+                if (size <= 0 || size > file.Length) return "not a Valheim character file";
+                inner = new ZPackage(outer.ReadBytes(size));
+            }
+            catch (Exception)
+            {
+                return "not a Valheim character file";
+            }
+
+            // Preferred: the game's own parser, found by reflection since its
+            // name is private and has changed between versions.
+            try
+            {
+                var profile = new PlayerProfile();
+                var flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+                foreach (var name in new[] { "LoadPlayerData", "Load" })
+                {
+                    var m = typeof(PlayerProfile).GetMethod(name, flags, null, new[] { typeof(ZPackage) }, null);
+                    if (m == null) continue;
+                    inner.SetPos(0);
+                    var ok = m.Invoke(profile, new object[] { inner });
+                    if (ok is bool && !(bool)ok) continue;
+                    playerName = profile.GetName() ?? "";
+                    var wpd = profile.GetWorldData(worldUID);
+                    if (wpd == null || wpd.m_mapData == null) return "this character has never visited this world";
+                    mapData = wpd.m_mapData;
+                    return null;
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            // Fallback: walk the profile ourselves (versions 29 and later).
+            try
+            {
+                inner.SetPos(0);
+                int version = inner.ReadInt();
+                if (version < 29) return "character file too old (version " + version + ")";
+                if (version >= 38)
+                {
+                    int statCount = inner.ReadInt();
+                    for (int i = 0; i < statCount; i++) { inner.ReadInt(); inner.ReadSingle(); }
+                }
+                else if (version >= 28)
+                {
+                    inner.ReadInt(); inner.ReadInt(); inner.ReadInt(); inner.ReadInt();
+                }
+                int worlds = inner.ReadInt();
+                for (int w = 0; w < worlds; w++)
+                {
+                    long uid = inner.ReadLong();
+                    inner.ReadBool(); inner.ReadVector3();
+                    inner.ReadBool(); inner.ReadVector3();
+                    if (version >= 30) { inner.ReadBool(); inner.ReadVector3(); }
+                    inner.ReadVector3();
+                    byte[] md = null;
+                    if (inner.ReadBool()) md = inner.ReadByteArray();
+                    if (uid == worldUID) mapData = md;
+                }
+                playerName = inner.ReadString();
+                if (mapData == null) return "this character has never visited this world";
+                return null;
+            }
+            catch (Exception)
+            {
+                return "the character file could not be parsed";
             }
         }
 
@@ -233,9 +355,12 @@ namespace ValheimUI.Agent
             lock (_lock)
             {
                 current = _png;
-                if (_pngVersion != _version && !_encoding)
+                // Re-encode at most every 3 s: exploration moves every frame
+                // while someone walks, the encode costs a few hundred ms.
+                if (_pngVersion != _version && !_encoding && (DateTime.UtcNow - _lastEncodeStarted).TotalSeconds >= 3)
                 {
                     _encoding = true;
+                    _lastEncodeStarted = DateTime.UtcNow;
                     kick = true;
                 }
             }

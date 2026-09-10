@@ -28,6 +28,7 @@ namespace ValheimUI.Agent
         public string WorldName = "";
         public string SeedName = "";
         public int Seed;
+        public long WorldUID;
         public int Day;
         public double DayFraction;
         public bool IsNight;
@@ -50,6 +51,7 @@ namespace ValheimUI.Agent
             w.Prop("name", WorldName);
             w.Prop("seed_name", SeedName);
             w.Prop("seed", Seed);
+            w.Prop("world_uid", WorldUID);
             w.Prop("day", Day);
             w.Prop("day_fraction", DayFraction);
             w.Prop("is_night", IsNight);
@@ -102,6 +104,7 @@ namespace ValheimUI.Agent
             s.Ready = true;
 
             s.WorldName = znet.GetWorldName() ?? "";
+            s.WorldUID = znet.GetWorldUID();
             var gen = WorldGenerator.instance;
             if (gen != null)
             {

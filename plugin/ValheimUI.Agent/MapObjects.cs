@@ -37,7 +37,7 @@ namespace ValheimUI.Agent
         };
 
         private const int MaxObjects = 5000;
-        private readonly TimeSpan _refreshEvery = TimeSpan.FromSeconds(30);
+        private readonly TimeSpan _refreshEvery = TimeSpan.FromSeconds(15);
         private readonly Dictionary<int, Kind> _kindByHash = new Dictionary<int, Kind>();
         private DateTime _lastCompleted = DateTime.MinValue;
         private volatile string _json = "{\"objects\":[],\"locations\":[],\"updated_at\":null}";
