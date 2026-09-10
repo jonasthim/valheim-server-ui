@@ -49,3 +49,11 @@ export function entryKey(section: string, key: string): string {
 export function isClientSideSetting(entry: ConfigEntry): boolean {
   return /\[not synced with server\]/i.test(entry.description ?? '')
 }
+
+/** KeyboardShortcut settings store a "+"-separated key combo (e.g. "O + LeftAlt")
+ * and their acceptable-values list is a huge KeyCode enum with duplicate names
+ * (Unity aliases LeftMeta/LeftCommand to one value). Render them as free text,
+ * not a dropdown. */
+export function isKeybindEntry(entry: ConfigEntry): boolean {
+  return (entry.type ?? '').toLowerCase().includes('keyboardshortcut')
+}

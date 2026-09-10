@@ -1,3 +1,4 @@
+export { ErrorBoundary } from './ErrorBoundary'
 export { PageHeader } from './PageHeader'
 export { StatTile } from './StatTile'
 export { StatusDot, StatusPill } from './StatusPill'
