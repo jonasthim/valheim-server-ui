@@ -23,18 +23,25 @@ namespace ValheimUI.Agent
         private readonly Func<long, string> _events;
         private readonly Action<PendingCommand> _enqueue;
         private readonly Func<string> _token;
+        private readonly Func<string> _mapInfo;
+        private readonly Func<byte[]> _mapPng;
+        private readonly Func<string> _mapObjects;
 
         private HttpListener _listener;
         private Thread _thread;
         private volatile bool _running;
 
-        public HttpApi(ManualLogSource log, Func<string> status, Func<long, string> events, Action<PendingCommand> enqueue, Func<string> token)
+        public HttpApi(ManualLogSource log, Func<string> status, Func<long, string> events, Action<PendingCommand> enqueue, Func<string> token,
+            Func<string> mapInfo, Func<byte[]> mapPng, Func<string> mapObjects)
         {
             _log = log;
             _status = status;
             _events = events;
             _enqueue = enqueue;
             _token = token;
+            _mapInfo = mapInfo;
+            _mapPng = mapPng;
+            _mapObjects = mapObjects;
         }
 
         public void Start(string bind, int port)
@@ -91,6 +98,44 @@ namespace ValheimUI.Agent
                     long since = 0;
                     long.TryParse(req.QueryString["since"] ?? "0", out since);
                     Json(ctx, 200, _events(since));
+                    return;
+                }
+                if (req.HttpMethod == "GET" && path == "/v1/map/info")
+                {
+                    Json(ctx, 200, _mapInfo());
+                    return;
+                }
+                if (req.HttpMethod == "GET" && path == "/v1/map/objects")
+                {
+                    Json(ctx, 200, _mapObjects());
+                    return;
+                }
+                if (req.HttpMethod == "GET" && path == "/v1/map")
+                {
+                    var png = _mapPng();
+                    if (png == null)
+                    {
+                        // Not rendered yet: the info body carries state and progress.
+                        Json(ctx, 202, _mapInfo());
+                        return;
+                    }
+                    Bytes(ctx, 200, "image/png", png);
+                    return;
+                }
+                if (req.HttpMethod == "POST" && path == "/v1/map/render")
+                {
+                    var cmd = new PendingCommand { Name = "map.render", Args = new Dictionary<string, string>(), Body = "" };
+                    foreach (var key in req.QueryString.AllKeys)
+                    {
+                        if (key != null) cmd.Args[key] = req.QueryString[key] ?? "";
+                    }
+                    _enqueue(cmd);
+                    if (!cmd.Done.Wait(CommandTimeoutMs))
+                    {
+                        Json(ctx, 504, "{\"ok\":false,\"error\":\"the server did not process the request in time\"}");
+                        return;
+                    }
+                    Json(ctx, 202, _mapInfo());
                     return;
                 }
                 if (req.HttpMethod == "POST" && path.StartsWith("/v1/commands/", StringComparison.Ordinal))
@@ -165,10 +210,14 @@ namespace ValheimUI.Agent
 
         private static void Json(HttpListenerContext ctx, int status, string body)
         {
-            var bytes = Encoding.UTF8.GetBytes(body);
+            Bytes(ctx, status, "application/json; charset=utf-8", Encoding.UTF8.GetBytes(body));
+        }
+
+        private static void Bytes(HttpListenerContext ctx, int status, string contentType, byte[] bytes)
+        {
             var res = ctx.Response;
             res.StatusCode = status;
-            res.ContentType = "application/json; charset=utf-8";
+            res.ContentType = contentType;
             res.ContentLength64 = bytes.Length;
             res.Headers["Cache-Control"] = "no-store";
             res.OutputStream.Write(bytes, 0, bytes.Length);

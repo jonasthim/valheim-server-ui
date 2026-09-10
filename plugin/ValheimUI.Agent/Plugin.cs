@@ -28,6 +28,15 @@ namespace ValheimUI.Agent
         private ConfigEntry<string> _bind;
         private ConfigEntry<string> _token;
         private ConfigEntry<int> _intervalMs;
+        private ConfigEntry<int> _mapResolution;
+        private ConfigEntry<int> _mapBudgetMs;
+        private ConfigEntry<bool> _mapAutoRender;
+
+        private readonly MapRenderer _map = new MapRenderer();
+        private readonly MapObjects _objects = new MapObjects();
+        private float _worldReadyAt = -1f;
+        private int _worldSeed;
+        private string _cacheDir = "";
 
         private HttpApi _api;
         private readonly ConcurrentQueue<PendingCommand> _commands = new ConcurrentQueue<PendingCommand>();
@@ -47,6 +56,10 @@ namespace ValheimUI.Agent
             _bind = Config.Bind("Server", "BindAddress", "127.0.0.1", "Address to listen on. Keep it on loopback; the manager runs on the same host.");
             _token = Config.Bind("Server", "Token", "", "Bearer token the manager must present. Written by Valheim Server UI before each start; requests are refused while empty.");
             _intervalMs = Config.Bind("Server", "SnapshotIntervalMs", 500, "How often the world state is captured for GET /v1/status.");
+            _mapResolution = Config.Bind("Map", "Resolution", 1024, "Side length in pixels of the rendered world map (256-4096). Higher is sharper and slower to render once per world.");
+            _mapBudgetMs = Config.Bind("Map", "RenderBudgetMs", 4, "Milliseconds per server frame spent rendering the map. Lower values render slower but never stall the game.");
+            _mapAutoRender = Config.Bind("Map", "AutoRender", true, "Render the map shortly after the world has loaded instead of on first request.");
+            _cacheDir = System.IO.Path.Combine(Paths.CachePath, "valheimui-agent");
 
             if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null)
             {
@@ -60,7 +73,10 @@ namespace ValheimUI.Agent
                 () => _statusJson,
                 EventsSince,
                 c => _commands.Enqueue(c),
-                () => _token.Value);
+                () => _token.Value,
+                () => _map.InfoJson(),
+                () => _map.Png(),
+                () => _objects.Json);
             try
             {
                 _api.Start(_bind.Value, port);
@@ -93,6 +109,11 @@ namespace ValheimUI.Agent
                 {
                     var snap = GameState.Capture();
                     if (snap.Ready && _gameVersion.Length == 0) _gameVersion = GameState.GameVersion();
+                    if (snap.Ready && _worldReadyAt < 0f)
+                    {
+                        _worldReadyAt = now;
+                        _worldSeed = snap.Seed;
+                    }
                     _statusJson = snap.ToJson(BuildInfo.Version, _gameVersion, now - _startedAt);
                     DiffPeers(snap);
                 }
@@ -102,8 +123,38 @@ namespace ValheimUI.Agent
                 }
             }
 
+            if (_worldReadyAt >= 0f)
+            {
+                // Map: start automatically a little after the world loaded (so
+                // the first minutes go to players), then render in slices.
+                if (_mapAutoRender.Value && _map.Current == MapRenderer.State.Idle && now - _worldReadyAt > 15f)
+                {
+                    _map.Begin(_worldSeed, _mapResolution.Value, _cacheDir, false);
+                }
+                _map.Step(Math.Max(1, _mapBudgetMs.Value));
+                _objects.Step();
+            }
+
             while (_commands.TryDequeue(out var cmd))
             {
+                if (cmd.Name == "map.render")
+                {
+                    try
+                    {
+                        int size = _mapResolution.Value;
+                        if (cmd.Args != null && cmd.Args.TryGetValue("size", out var s) && int.TryParse(s, out var n)) size = n;
+                        bool force = cmd.Args != null && cmd.Args.TryGetValue("force", out var f) && f == "true";
+                        if (_worldReadyAt < 0f) cmd.Result = new CommandResult { Ok = false, Message = "world not loaded" };
+                        else
+                        {
+                            _map.Begin(_worldSeed, size, _cacheDir, force);
+                            cmd.Result = new CommandResult { Ok = true, Message = _map.Current.ToString() };
+                        }
+                    }
+                    catch (Exception e) { cmd.Result = new CommandResult { Ok = false, Message = e.Message }; }
+                    finally { cmd.Done.Set(); }
+                    continue;
+                }
                 try { cmd.Result = Commands.Execute(cmd); }
                 catch (Exception e) { cmd.Result = new CommandResult { Ok = false, Message = e.Message }; }
                 finally { cmd.Done.Set(); }

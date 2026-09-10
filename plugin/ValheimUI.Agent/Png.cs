@@ -1,0 +1,125 @@
+using System;
+using System.IO;
+using System.IO.Compression;
+
+namespace ValheimUI.Agent
+{
+    /// <summary>
+    /// Minimal PNG encoder (8-bit RGB, no filtering) so the map can be
+    /// produced without Unity's texture APIs, which are unavailable or
+    /// unreliable in a headless server. Pure .NET: safe on any thread.
+    /// </summary>
+    internal static class Png
+    {
+        private static readonly uint[] CrcTable = BuildCrcTable();
+
+        public static byte[] EncodeRgb(int width, int height, byte[] rgb)
+        {
+            if (rgb.Length != width * height * 3) throw new ArgumentException("rgb buffer size mismatch");
+            var raw = new byte[(width * 3 + 1) * height];
+            int stride = width * 3;
+            for (int y = 0; y < height; y++)
+            {
+                int dst = y * (stride + 1);
+                raw[dst] = 0; // filter: none
+                Buffer.BlockCopy(rgb, y * stride, raw, dst + 1, stride);
+            }
+
+            byte[] deflated;
+            using (var ms = new MemoryStream())
+            {
+                using (var ds = new DeflateStream(ms, CompressionMode.Compress, true))
+                {
+                    ds.Write(raw, 0, raw.Length);
+                }
+                deflated = ms.ToArray();
+            }
+
+            using (var outMs = new MemoryStream(deflated.Length + 1024))
+            {
+                outMs.Write(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }, 0, 8);
+
+                var ihdr = new byte[13];
+                WriteBE(ihdr, 0, (uint)width);
+                WriteBE(ihdr, 4, (uint)height);
+                ihdr[8] = 8;  // bit depth
+                ihdr[9] = 2;  // colour type: truecolour
+                ihdr[10] = 0; // compression
+                ihdr[11] = 0; // filter
+                ihdr[12] = 0; // interlace
+                WriteChunk(outMs, "IHDR", ihdr);
+
+                // zlib wrapper around the raw deflate stream.
+                var idat = new byte[deflated.Length + 6];
+                idat[0] = 0x78;
+                idat[1] = 0x9C;
+                Buffer.BlockCopy(deflated, 0, idat, 2, deflated.Length);
+                WriteBE(idat, deflated.Length + 2, Adler32(raw));
+                WriteChunk(outMs, "IDAT", idat);
+
+                WriteChunk(outMs, "IEND", new byte[0]);
+                return outMs.ToArray();
+            }
+        }
+
+        private static void WriteChunk(Stream s, string type, byte[] data)
+        {
+            var len = new byte[4];
+            WriteBE(len, 0, (uint)data.Length);
+            s.Write(len, 0, 4);
+            var typeBytes = new byte[] { (byte)type[0], (byte)type[1], (byte)type[2], (byte)type[3] };
+            s.Write(typeBytes, 0, 4);
+            s.Write(data, 0, data.Length);
+            uint crc = Crc32(typeBytes, 0, 4, 0xFFFFFFFF);
+            crc = Crc32(data, 0, data.Length, crc) ^ 0xFFFFFFFF;
+            var crcBytes = new byte[4];
+            WriteBE(crcBytes, 0, crc);
+            s.Write(crcBytes, 0, 4);
+        }
+
+        private static void WriteBE(byte[] b, int off, uint v)
+        {
+            b[off] = (byte)(v >> 24);
+            b[off + 1] = (byte)(v >> 16);
+            b[off + 2] = (byte)(v >> 8);
+            b[off + 3] = (byte)v;
+        }
+
+        private static uint[] BuildCrcTable()
+        {
+            var table = new uint[256];
+            for (uint n = 0; n < 256; n++)
+            {
+                uint c = n;
+                for (int k = 0; k < 8; k++) c = (c & 1) != 0 ? 0xEDB88320 ^ (c >> 1) : c >> 1;
+                table[n] = c;
+            }
+            return table;
+        }
+
+        private static uint Crc32(byte[] buf, int off, int len, uint crc)
+        {
+            for (int i = off; i < off + len; i++) crc = CrcTable[(crc ^ buf[i]) & 0xFF] ^ (crc >> 8);
+            return crc;
+        }
+
+        private static uint Adler32(byte[] data)
+        {
+            uint a = 1, b = 0;
+            int i = 0;
+            while (i < data.Length)
+            {
+                int n = Math.Min(5552, data.Length - i);
+                for (int k = 0; k < n; k++)
+                {
+                    a += data[i + k];
+                    b += a;
+                }
+                a %= 65521;
+                b %= 65521;
+                i += n;
+            }
+            return (b << 16) | a;
+        }
+    }
+}
