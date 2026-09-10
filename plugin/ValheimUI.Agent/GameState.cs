@@ -101,24 +101,23 @@ namespace ValheimUI.Agent
             }
             s.Ready = true;
 
-            var world = ZNet.m_world;
-            if (world != null)
+            s.WorldName = znet.GetWorldName() ?? "";
+            var gen = WorldGenerator.instance;
+            if (gen != null)
             {
-                s.WorldName = world.m_name ?? "";
-                s.SeedName = world.m_seedName ?? "";
-                s.Seed = world.m_seed;
+                s.Seed = gen.GetSeed();
             }
+            s.TimeSeconds = znet.GetTimeSeconds();
 
             var env = EnvMan.instance;
             if (env != null)
             {
-                s.Day = env.GetCurrentDay();
+                s.Day = env.GetDay(s.TimeSeconds);
                 s.DayFraction = env.GetDayFraction();
-                s.IsNight = env.IsNight();
+                s.IsNight = EnvMan.IsNight();
                 var cur = env.GetCurrentEnvironment();
                 if (cur != null) s.Weather = cur.m_name ?? "";
             }
-            s.TimeSeconds = znet.GetTimeSeconds();
 
             var zs = ZoneSystem.instance;
             if (zs != null)
