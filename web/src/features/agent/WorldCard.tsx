@@ -22,6 +22,10 @@ export function WorldCard({ id }: { id: string }) {
 
   const canOperate = hasRole('operator')
   const st = info.connected ? info.status : undefined
+  // The agent serializes empty world-state slices as JSON null; guard the
+  // array reads so a world with no global keys (or no players) still renders.
+  const globalKeys = st?.global_keys ?? []
+  const players = st?.players ?? []
 
   return (
     <SectionCard
@@ -74,33 +78,33 @@ export function WorldCard({ id }: { id: string }) {
             <StatTile label="Weather" value={st.world.weather || '—'} hint="current environment" />
             <StatTile
               label="Players"
-              value={st.players.length}
+              value={players.length}
               hint={
-                st.players.filter((p) => p.position).length < st.players.length
-                  ? `${st.players.length - st.players.filter((p) => p.position).length} hidden on map`
+                players.filter((p) => p.position).length < players.length
+                  ? `${players.length - players.filter((p) => p.position).length} hidden on map`
                   : 'positions known'
               }
-              accent={st.players.length > 0 ? 'var(--vh-moss)' : undefined}
+              accent={players.length > 0 ? 'var(--vh-moss)' : undefined}
             />
           </SimpleGrid>
           <div>
             <Text size="xs" c="dimmed" mb={4}>
-              World keys ({st.global_keys.length})
+              World keys ({globalKeys.length})
             </Text>
             <Group gap={6}>
-              {st.global_keys.length === 0 && (
+              {globalKeys.length === 0 && (
                 <Text size="sm" c="dimmed">
                   none yet
                 </Text>
               )}
-              {st.global_keys.slice(0, MAX_KEYS).map((k) => (
+              {globalKeys.slice(0, MAX_KEYS).map((k) => (
                 <Badge key={k} variant="light" color="straw" size="sm">
                   {k}
                 </Badge>
               ))}
-              {st.global_keys.length > MAX_KEYS && (
+              {globalKeys.length > MAX_KEYS && (
                 <Badge variant="outline" color="gray" size="sm">
-                  +{st.global_keys.length - MAX_KEYS} more
+                  +{globalKeys.length - MAX_KEYS} more
                 </Badge>
               )}
             </Group>
