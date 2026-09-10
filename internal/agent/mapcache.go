@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jonasthim/valheim-server-ui/internal/agent/mapstyle"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
@@ -338,7 +339,11 @@ func (s *Service) foggedPNG(ctx context.Context, id string, wait bool) (string, 
 	}
 	s.mu.Unlock()
 
-	if err := writeFoggedPNG(base, maskPath, out); err != nil {
+	seed, radius := 0, float32(0)
+	if info != nil {
+		seed, radius = info.Seed, float32(info.WorldRadius)
+	}
+	if err := writeFoggedPNG(base, maskPath, out, mapstyle.NewParchment(seed, nil), radius); err != nil {
 		if prev != "" {
 			return prev, info, nil
 		}

@@ -3,31 +3,37 @@ package agent
 import (
 	"fmt"
 	"image"
-	"image/color"
 	"image/png"
 	"io"
 	"os"
+
+	"github.com/jonasthim/valheim-server-ui/internal/agent/mapstyle"
 )
 
-// fogColor is what unexplored terrain is painted with in the served image.
-// It matches the UI's night tone so the fog reads as part of the map.
-var fogColor = color.NRGBA{R: 0x0b, G: 0x0e, B: 0x14, A: 0xff}
-
-// compositeFog paints the fog mask over the map image and returns the result.
-// The mask is the plugin's grey+alpha PNG (255 = unexplored) at any size; it
-// is sampled bilinearly over the image, so a 1024² mask on a 2048² map gives
-// soft edges instead of 2 px steps. The base is left untouched.
-func compositeFog(base, mask image.Image) *image.NRGBA {
+// compositeFog paints the fog of war over the map image the way the game
+// does: unexplored terrain becomes parchment, the boundary is a soft cloudy
+// edge rather than a smooth contour (the mask threshold is perturbed by slow
+// noise), and the explored side of the edge carries a faint shadow. The mask
+// is the plugin's grey+alpha PNG (255 = unexplored) at any size, sampled
+// bilinearly over the image. A fully unexplored mask cell always ends up
+// fully parchment (the noise can never expose it), and a fully explored one
+// keeps the map untouched. The base is left as is.
+func compositeFog(base, mask image.Image, fog *mapstyle.Parchment, worldRadius float32) *image.NRGBA {
 	b := base.Bounds()
 	w, h := b.Dx(), b.Dy()
 	out := image.NewNRGBA(image.Rect(0, 0, w, h))
-	fog := maskReader(mask)
+	maskAt := maskReader(mask)
 	mw, mh := mask.Bounds().Dx(), mask.Bounds().Dy()
 	if w == 0 || h == 0 || mw == 0 || mh == 0 {
 		return out
 	}
+	if fog == nil {
+		fog = mapstyle.NewParchment(0, nil)
+	}
+	if worldRadius <= 0 {
+		worldRadius = 10500
+	}
 
-	// Per-column sample positions, computed once.
 	type axis struct {
 		i0, i1 int
 		f      float32
@@ -36,26 +42,62 @@ func compositeFog(base, mask image.Image) *image.NRGBA {
 	for x := 0; x < w; x++ {
 		xs[x] = sampleAxis(x, w, mw)
 	}
+	mppX := 2 * worldRadius / float32(w)
+	mppZ := 2 * worldRadius / float32(h)
 
 	src := pixelReader(base)
-	fr, fg, fb := float32(fogColor.R), float32(fogColor.G), float32(fogColor.B)
 	for y := 0; y < h; y++ {
 		ya := sampleAxis(y, h, mh)
 		row0, row1 := ya.i0*mw, ya.i1*mw
+		wz := worldRadius - (float32(y)+0.5)*mppZ
 		for x := 0; x < w; x++ {
 			xa := xs[x]
-			top := float32(fog(row0+xa.i0))*(1-xa.f) + float32(fog(row0+xa.i1))*xa.f
-			bot := float32(fog(row1+xa.i0))*(1-xa.f) + float32(fog(row1+xa.i1))*xa.f
+			top := float32(maskAt(row0+xa.i0))*(1-xa.f) + float32(maskAt(row0+xa.i1))*xa.f
+			bot := float32(maskAt(row1+xa.i0))*(1-xa.f) + float32(maskAt(row1+xa.i1))*xa.f
 			a := (top*(1-ya.f) + bot*ya.f) / 255
+			wx := -worldRadius + (float32(x)+0.5)*mppX
 			r, g, bb := src(b.Min.X+x, b.Min.Y+y)
 			o := out.Pix[y*out.Stride+x*4:]
-			o[0] = uint8(float32(r)*(1-a) + fr*a + 0.5)
-			o[1] = uint8(float32(g)*(1-a) + fg*a + 0.5)
-			o[2] = uint8(float32(bb)*(1-a) + fb*a + 0.5)
+			if a <= 0 {
+				o[0], o[1], o[2], o[3] = r, g, bb, 0xff
+				continue
+			}
+			// Cloudy edge: the noise shifts where the boundary falls, never
+			// beyond the fully explored or fully unexplored extremes.
+			a2 := smoothstep(0.30, 0.70, a+0.30*fog.EdgeNoise(wx, wz))
+			// Shadow on the explored side of the edge.
+			sh := (1 - a2) * smoothstep(0.02, 0.45, a) * 0.28
+			pr, pg, pb := fog.At(wx, wz)
+			fr := float32(r) / 255 * (1 - sh)
+			fg := float32(g) / 255 * (1 - sh)
+			fb := float32(bb) / 255 * (1 - sh)
+			o[0] = toByte(fr + (pr-fr)*a2)
+			o[1] = toByte(fg + (pg-fg)*a2)
+			o[2] = toByte(fb + (pb-fb)*a2)
 			o[3] = 0xff
 		}
 	}
 	return out
+}
+
+func smoothstep(e0, e1, x float32) float32 {
+	t := (x - e0) / (e1 - e0)
+	if t < 0 {
+		t = 0
+	} else if t > 1 {
+		t = 1
+	}
+	return t * t * (3 - 2*t)
+}
+
+func toByte(f float32) uint8 {
+	if f <= 0 {
+		return 0
+	}
+	if f >= 1 {
+		return 255
+	}
+	return uint8(f*255 + 0.5)
 }
 
 // sampleAxis maps output index i of n to the two mask indices (of m) it lies
@@ -125,7 +167,7 @@ func pixelReader(m image.Image) func(x, y int) (r, g, b uint8) {
 
 // writeFoggedPNG composites basePath under maskPath into outPath, written
 // atomically so a concurrent reader never sees a partial file.
-func writeFoggedPNG(basePath, maskPath, outPath string) error {
+func writeFoggedPNG(basePath, maskPath, outPath string, fog *mapstyle.Parchment, worldRadius float32) error {
 	base, err := decodePNG(basePath)
 	if err != nil {
 		return fmt.Errorf("map image: %w", err)
@@ -134,7 +176,7 @@ func writeFoggedPNG(basePath, maskPath, outPath string) error {
 	if err != nil {
 		return fmt.Errorf("fog mask: %w", err)
 	}
-	img := compositeFog(base, mask)
+	img := compositeFog(base, mask, fog, worldRadius)
 	tmp := outPath + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640) //nolint:gosec // cache file in the instance dir
 	if err != nil {
