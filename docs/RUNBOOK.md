@@ -458,6 +458,10 @@ reloads the mask whenever its version changes.
 
 Exploration is saved per world next to the map cache
 (`BepInEx/cache/valheimui-agent/explored-<seed>-1024.bin`); delete that file to
-reset the fog. The *Fog of war* chip on the Map tab turns it off (for admins
-planning ahead) and shows the explored share of the whole square. Objects and
-boss locations under the fog stay hidden while it is on.
+reset the fog. The fog is painted into the map image on the manager, so
+viewers only ever receive explored terrain; the *Fog of war* chip on the Map
+tab shows the explored share and lets operators lift the fog for their own
+view. Objects and boss locations under the fog are left out of viewers'
+answers. The fogged image is cached as `cache/map/fogmap-<seed>-<size>.png`
+in the instance directory and rebuilt at most every 10 s; it is safe to
+delete.

@@ -781,11 +781,21 @@ status and publishes it in `AgentInfo.explored` on the `agent.status` event,
 so the Map tab swaps the mask as soon as the version changes without
 waiting for its own poll.
 
-The Map tab draws the fog as a fully opaque dark layer with the mask as CSS
-`mask-image` (default on): unexplored terrain is not visible at all, not
-dimmed. It hides objects and locations that lie under the fog, so boss altars
-are not revealed by the Bosses layer, except locations a shared boss pin
-has discovered. Shared pins are drawn regardless of the fog on their own
-layer; a boss pin that sits on a location is merged into that location's
-marker. Players are
+The fog is applied on the server, not in the browser
+(`internal/agent/fog.go`): `GET /instances/{id}/map.png` serves a composite
+of the cached map and the cached mask, with unexplored pixels painted a
+solid dark tone and the mask sampled bilinearly so edges are soft. The bare
+render is only served with `?fog=0`, which the handler restricts to
+operators, so a viewer cannot obtain unexplored terrain by any request. The
+composite is cached as `cache/map/fogmap-<seed>-<size>.png`, keyed on the
+map's and mask's identity, and rebuilt in the background at most every
+10 s while the mask keeps changing; the poll of `GET /instances/{id}/map`
+schedules the rebuild and reports `image_version`, which the browser keys
+the image URL on. The first request after a world load waits for the first
+mask rather than serving the bare map. The same principle covers the JSON:
+for viewers the handler strips objects and locations that lie under the
+fog, so the Map tab hides nothing itself; boss altars appear only once
+explored or discovered by a shared boss pin. Shared pins are drawn
+regardless of the fog on their own layer; a boss pin that sits on a
+location is merged into that location's marker. Players are
 always drawn. Agents before 1.7.0 report no fog; the toggle explains why.

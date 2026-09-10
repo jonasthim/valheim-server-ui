@@ -2087,15 +2087,22 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The rendered world map (biomes and terrain from the seed, no fog)
-         * @description `200 image/png` when an image is available (cached in the instance or fetched
-         *     from the running agent), `202` with MapInfo while the plugin is still
-         *     rendering, `409` when no map exists yet. Append `?v=<seed>-<size>` to bust
-         *     browser caches after a re-render.
+         * The rendered world map with the fog of war composited in on the server
+         * @description The image viewers get has unexplored terrain painted over on the server
+         *     (the map and the agent's fog mask are composited into one PNG), so the bare
+         *     world never leaves the manager. `fog=0` asks for the bare render and is
+         *     allowed for operators only (`403` otherwise). `200 image/png` when an image
+         *     is available (cached in the instance or fetched from the running agent),
+         *     `202` with MapInfo while the plugin is still rendering or encoding its first
+         *     fog mask, `409` when no map exists yet. Append `?v=<InstanceMap.image_version>`
+         *     to bust browser caches: it changes on every render and fog rebuild.
          */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description `0` returns the bare map without fog (operator role required) */
+                    fog?: "1" | "0";
+                };
                 header?: never;
                 path: {
                     instanceId: components["parameters"]["instanceId"];
@@ -2143,7 +2150,8 @@ export interface paths {
         };
         /**
          * Fog-of-war mask for the map (grey+alpha PNG, opaque where unexplored)
-         * @description Same extent as map.png. Exploration is reconstructed by the agent from
+         * @description The mask the server composites into map.png, for tooling; the UI does not
+         *     need it. Same extent as map.png. Exploration is reconstructed by the agent from
          *     player positions it has seen (100 m reveal radius) plus the shared maps of
          *     cartography tables, and persisted per world. `202` with ExploredInfo while
          *     the first mask is being encoded. Append `?v=<mask_version>` from
@@ -3535,6 +3543,8 @@ export interface components {
             explored?: components["schemas"]["ExploredInfo"];
             /** @description GET map.png serves an image now */
             image_ready: boolean;
+            /** @description Changes whenever map.png would serve different bytes (new render or fog rebuild); append as ?v= */
+            image_version?: string;
             /** @description The image comes from an earlier run and could not be confirmed against the current world */
             stale: boolean;
             info?: components["schemas"]["MapInfo"];

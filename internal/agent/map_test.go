@@ -101,7 +101,7 @@ func TestMap_FetchCacheAndOffline(t *testing.T) {
 	if !m.Connected || m.ImageReady || m.Info == nil || m.Info.State != "rendering" || len(m.Objects) != 1 || len(m.Locations) != 1 || len(m.Players) != 2 {
 		t.Fatalf("map while rendering: %+v", m)
 	}
-	if _, info, err := s.MapPNG(ctx, "main"); err != ErrMapRendering || info == nil {
+	if _, info, err := s.MapPNG(ctx, "main", false); err != ErrMapRendering || info == nil {
 		t.Fatalf("expected ErrMapRendering with info, got %v %v", err, info)
 	}
 
@@ -110,7 +110,7 @@ func TestMap_FetchCacheAndOffline(t *testing.T) {
 	s.mu.Lock()
 	s.maps["main"].infoAt = s.now().Add(-time.Hour)
 	s.mu.Unlock()
-	p, info, err := s.MapPNG(ctx, "main")
+	p, info, err := s.MapPNG(ctx, "main", false)
 	if err != nil || info == nil || info.State != "ready" {
 		t.Fatalf("MapPNG ready: %v %v", err, info)
 	}
@@ -140,12 +140,12 @@ func TestMap_FetchCacheAndOffline(t *testing.T) {
 
 	// Agent gone: the newest cached image (write one) is served as stale.
 	state.Store("ready")
-	if _, _, err := s.MapPNG(ctx, "main"); err != nil {
+	if _, _, err := s.MapPNG(ctx, "main", false); err != nil {
 		t.Fatalf("refetch: %v", err)
 	}
 	srv.Close()
 	s.tick(ctx)
-	p, info, err = s.MapPNG(ctx, "main")
+	p, info, err = s.MapPNG(ctx, "main", false)
 	if err != nil || p != want || info != nil {
 		t.Fatalf("offline MapPNG: %s %v %v", p, info, err)
 	}

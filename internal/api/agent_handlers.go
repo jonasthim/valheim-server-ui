@@ -64,18 +64,42 @@ func getMapHandler(d *Deps) http.HandlerFunc {
 			return
 		}
 		u := UserFrom(r.Context())
-		includeHidden := u != nil && u.Role.AtLeast(domain.RoleOperator)
-		m, err := d.Agent.Map(r.Context(), id, includeHidden)
+		operator := u != nil && u.Role.AtLeast(domain.RoleOperator)
+		m, err := d.Agent.Map(r.Context(), id, operator)
 		if err != nil {
 			WriteError(w, err)
 			return
+		}
+		if !operator {
+			stripUnexplored(m)
 		}
 		WriteJSON(w, http.StatusOK, m)
 	}
 }
 
-// getMapImageHandler serves the rendered map. 200 image/png when available,
-// 202 with MapInfo while the plugin renders, 409 when nothing exists yet.
+// stripUnexplored removes what lies under the fog from a viewer's answer,
+// so the JSON does not reveal what the fogged image hides.
+func stripUnexplored(m *domain.InstanceMap) {
+	objs := m.Objects[:0]
+	for _, o := range m.Objects {
+		if o.Explored == nil || *o.Explored {
+			objs = append(objs, o)
+		}
+	}
+	m.Objects = objs
+	locs := m.Locations[:0]
+	for _, l := range m.Locations {
+		if l.Explored == nil || *l.Explored || (l.Discovered != nil && *l.Discovered) {
+			locs = append(locs, l)
+		}
+	}
+	m.Locations = locs
+}
+
+// getMapImageHandler serves the rendered map with the fog of war composited
+// in on the server. `?fog=0` asks for the bare render and is operators only.
+// 200 image/png when available, 202 with MapInfo while the plugin renders
+// or the first fog mask encodes, 409 when nothing exists yet.
 func getMapImageHandler(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := InstanceID(r)
@@ -83,7 +107,17 @@ func getMapImageHandler(d *Deps) http.HandlerFunc {
 			WriteError(w, err)
 			return
 		}
-		path, info, err := d.Agent.MapPNG(r.Context(), id)
+		fog := true
+		switch r.URL.Query().Get("fog") {
+		case "0", "false", "off":
+			u := UserFrom(r.Context())
+			if u == nil || !u.Role.AtLeast(domain.RoleOperator) {
+				WriteError(w, domain.E(domain.CodeForbidden, "the bare map without fog is for operators"))
+				return
+			}
+			fog = false
+		}
+		path, info, err := d.Agent.MapPNG(r.Context(), id, fog)
 		if err != nil {
 			if info != nil {
 				WriteJSON(w, http.StatusAccepted, info)
@@ -93,9 +127,9 @@ func getMapImageHandler(d *Deps) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", "image/png")
-		// The file name carries seed and size, so a new render is a new URL
-		// once the client appends them; keep the browser cache short anyway.
-		w.Header().Set("Cache-Control", "private, max-age=30")
+		// Clients key the URL on InstanceMap.image_version, which changes on
+		// every render and fog rebuild; keep the browser cache short anyway.
+		w.Header().Set("Cache-Control", "private, max-age=10")
 		http.ServeFile(w, r, path) //nolint:gosec // path is a file the agent service wrote into the instance's own cache dir
 	}
 }

@@ -191,9 +191,10 @@ tables.
 
 **Decision.** The agent tracks exploration itself: the positions it already
 sees reveal the game's 100 m radius, cartography tables are imported for
-history, the union is persisted per world, and the map applies it as a CSS
-mask. Objects and boss locations under the fog are hidden. An admin toggle
-turns the fog off.
+history, the union is persisted per world, and the manager composites it
+into the map image it serves, so unexplored terrain never reaches a
+browser. Objects and boss locations under the fog are stripped from
+viewers' answers. Operators may request the bare map.
 
 **Consequences.** Exploration before the agent existed is only known through
 tables players wrote to; positions of players who hide on the map still

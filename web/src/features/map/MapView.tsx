@@ -28,15 +28,12 @@ const MAX_ZOOM = 24
 
 export function MapView({
   imageUrl,
-  fogUrl,
   markers,
   overlay,
   onImageError,
   onImageLoad,
 }: {
   imageUrl: string | null
-  /** Fog mask (opaque where unexplored); null disables the fog layer. */
-  fogUrl?: string | null
   markers: Marker[]
   /** Rendered over the map (progress, empty states). */
   overlay?: ReactNode
@@ -117,13 +114,6 @@ export function MapView({
             draggable={false}
             onError={onImageError}
             onLoad={onImageLoad}
-          />
-        )}
-        {imageUrl && fogUrl && (
-          <div
-            className={classes.fog}
-            style={{ maskImage: `url("${fogUrl}")`, WebkitMaskImage: `url("${fogUrl}")` }}
-            aria-hidden
           />
         )}
         {markers.map((m) => (

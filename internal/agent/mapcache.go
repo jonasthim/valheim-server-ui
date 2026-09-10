@@ -68,6 +68,40 @@ type mapState struct {
 	exploredAt     time.Time
 	fogUnsupported bool // 404 on /v1/map/explored/info (agent before 1.7.0)
 	maskVersion    int  // exploration version of the cached mask file
+
+	fog fogState
+}
+
+// fogState is the fogged composite of the cached map and mask: the image
+// viewers get. It is rebuilt in the background at most every fogRebuildEvery
+// while the mask keeps changing, so a 4096 px map does not cost a second of
+// CPU every time someone walks a few metres.
+type fogState struct {
+	key      string // base and mask identity (paths and mtimes) it was built from
+	path     string
+	builtAt  time.Time
+	building bool
+}
+
+// fogRebuildEvery bounds how often the fogged image is recomposited.
+const fogRebuildEvery = 10 * time.Second
+
+func foggedFileName(seed, size int) string {
+	return fmt.Sprintf("fogmap-%d-%d.png", seed, size)
+}
+
+// foggedPathFor derives the composite's file name from a cached map's.
+func foggedPathFor(basePath string) string {
+	dir, name := filepath.Split(basePath)
+	return filepath.Join(dir, "fog"+name)
+}
+
+func fileKey(path string) string {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return path + "|missing"
+	}
+	return fmt.Sprintf("%s|%d|%d", path, fi.ModTime().UnixNano(), fi.Size())
 }
 
 // exploredTTL bounds how often the fog state is asked for.
@@ -196,17 +230,145 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 	// Without a live agent nothing confirms the cached image matches the
 	// world the server will load next (a world switch, a re-render).
 	out.Stale = out.ImageReady && (!connected || out.Info == nil || out.Info.State != "ready")
+
+	// Keep the fogged composite moving while the tab is open: the poll that
+	// built this answer is what schedules the next rebuild, and its version
+	// is what the browser keys the image on.
+	if out.ImageReady && out.FogSupported {
+		s.scheduleFog(id)
+	}
+	s.mu.Lock()
+	out.ImageVersion = s.imageVersionLocked(ms, dir, out.Info)
+	s.mu.Unlock()
 	return out, nil
+}
+
+// imageVersionLocked is a string that changes whenever GET map.png would
+// serve different bytes: the base map's identity plus the fog build time.
+func (s *Service) imageVersionLocked(ms *mapState, dir string, info *domain.MapInfo) string {
+	base := ""
+	if info != nil && info.Seed != 0 {
+		base = filepath.Join(dir, mapFileName(info.Seed, info.Size))
+		if _, err := os.Stat(base); err != nil {
+			base = ""
+		}
+	}
+	if base == "" {
+		base = newestCachedMap(dir)
+	}
+	if base == "" {
+		return ""
+	}
+	fi, err := os.Stat(base)
+	if err != nil {
+		return ""
+	}
+	return fmt.Sprintf("%d-%d", fi.ModTime().Unix(), ms.fog.builtAt.UnixMilli())
+}
+
+// scheduleFog rebuilds id's fogged composite in the background when the mask
+// or the map changed and the last build is old enough. Returns immediately.
+func (s *Service) scheduleFog(id string) {
+	s.mu.Lock()
+	ms := s.maps[id]
+	if ms == nil || ms.fog.building || s.now().Sub(ms.fog.builtAt) < fogRebuildEvery {
+		s.mu.Unlock()
+		return
+	}
+	ms.fog.building = true
+	s.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		if _, _, err := s.foggedPNG(ctx, id, true); err != nil && !errors.Is(err, ErrMapRendering) {
+			s.log.Debug("agent: fog rebuild", "instance", id, "err", err)
+		}
+		s.mu.Lock()
+		ms.fog.building = false
+		s.mu.Unlock()
+	}()
+}
+
+// foggedPNG returns the fogged composite for id, building it when the base
+// map or the mask changed. With wait it composites synchronously; otherwise
+// a previous composite is served while a fresh one is scheduled.
+func (s *Service) foggedPNG(ctx context.Context, id string, wait bool) (string, *domain.MapInfo, error) {
+	base, info, err := s.basePNG(ctx, id)
+	if err != nil {
+		return "", info, err
+	}
+	maskPath, _, merr := s.ExploredPNG(ctx, id)
+	if maskPath == "" {
+		s.mu.Lock()
+		ms := s.maps[id]
+		unsupported := ms != nil && ms.fogUnsupported
+		s.mu.Unlock()
+		if unsupported {
+			return base, info, nil // an agent without fog: nothing to hide
+		}
+		if errors.Is(merr, ErrMapRendering) || merr == nil {
+			return "", info, ErrMapRendering // first mask still encoding; never serve the bare map
+		}
+		return "", info, merr
+	}
+	key := fileKey(base) + "||" + fileKey(maskPath)
+	out := foggedPathFor(base)
+	s.mu.Lock()
+	ms := s.maps[id]
+	if ms == nil {
+		ms = &mapState{}
+		s.maps[id] = ms
+	}
+	if ms.fog.key == key && ms.fog.path != "" {
+		if _, err := os.Stat(ms.fog.path); err == nil {
+			s.mu.Unlock()
+			return ms.fog.path, info, nil
+		}
+	}
+	prev := ""
+	if ms.fog.path != "" {
+		if _, err := os.Stat(ms.fog.path); err == nil {
+			prev = ms.fog.path
+		}
+	}
+	if prev != "" && !wait {
+		s.mu.Unlock()
+		s.scheduleFog(id)
+		return prev, info, nil
+	}
+	s.mu.Unlock()
+
+	if err := writeFoggedPNG(base, maskPath, out); err != nil {
+		if prev != "" {
+			return prev, info, nil
+		}
+		return "", info, fmt.Errorf("agent: fog composite: %w", err)
+	}
+	s.mu.Lock()
+	ms.fog.key, ms.fog.path, ms.fog.builtAt = key, out, s.now()
+	s.mu.Unlock()
+	return out, info, nil
 }
 
 // ErrMapRendering is returned by MapPNG while the plugin is still rendering.
 var ErrMapRendering = errors.New("map is rendering")
 
-// MapPNG returns a local path to the map image for id, fetching it from the
-// agent into the instance cache when needed. While the plugin renders it
-// returns ErrMapRendering with the progress in info. With the agent away it
-// serves the newest cached image, if any.
-func (s *Service) MapPNG(ctx context.Context, id string) (path string, info *domain.MapInfo, err error) {
+// MapPNG returns a local path to the map image for id. With fog (what
+// every viewer gets) the image is the server-side composite of the map and
+// the fog mask, so unexplored terrain never leaves the server; without fog
+// it is the bare render, for operators. While the plugin renders or encodes
+// its first mask it returns ErrMapRendering with the progress in info. With
+// the agent away it serves the newest cached image, if any.
+func (s *Service) MapPNG(ctx context.Context, id string, fog bool) (path string, info *domain.MapInfo, err error) {
+	if !fog {
+		return s.basePNG(ctx, id)
+	}
+	return s.foggedPNG(ctx, id, false)
+}
+
+// basePNG is the bare rendered map, fetched from the agent into the
+// instance cache when needed.
+func (s *Service) basePNG(ctx context.Context, id string) (path string, info *domain.MapInfo, err error) {
 	in, err := s.inst.Get(ctx, id)
 	if err != nil {
 		return "", nil, err

@@ -200,6 +200,9 @@ type InstanceMap struct {
 	// ImageReady is true when GET /instances/{id}/map.png serves an image now
 	// (from the instance cache or the running agent).
 	ImageReady bool `json:"image_ready"`
+	// ImageVersion changes whenever map.png would serve different bytes (a
+	// new render or a fog rebuild); clients append it to the image URL.
+	ImageVersion string `json:"image_version,omitempty"`
 	// Stale is true when the served image was cached from an earlier run and
 	// the agent is not reachable to confirm it matches the current world.
 	Stale     bool          `json:"stale"`

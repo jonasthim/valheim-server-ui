@@ -11,7 +11,7 @@ import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatusPill } from '../../ui'
 import { useAgent } from '../agent'
 import { MapView, type Marker } from './MapView'
-import { fogImageUrl, mapImageUrl, useInstanceMap, useRenderMap, worldToFraction } from './useMap'
+import { mapImageUrl, useInstanceMap, useRenderMap, worldToFraction } from './useMap'
 
 type Layer = 'players' | 'portals' | 'ships' | 'carts' | 'tombstones' | 'beds' | 'locations' | 'pins'
 const LAYERS: { id: Layer; label: string }[] = [
@@ -75,7 +75,9 @@ export function MapTab({ id }: { id: string }) {
   const players = useMemo(() => livePlayers ?? data?.players ?? [], [livePlayers, data?.players])
   const hidden = players.filter((p) => !p.position).length
   const fogSupported = !!data?.fog_supported
-  const fogOn = fog && fogSupported
+  // The fog is composited on the server; only operators may lift it.
+  const canLiftFog = hasRole('operator')
+  const fogOn = (fog || !canLiftFog) && fogSupported
   // The agent stream carries the fog version every 2 s; the map poll is the fallback.
   const explored = agent.data?.explored ?? data?.explored
 
@@ -213,21 +215,22 @@ export function MapTab({ id }: { id: string }) {
             </Chip.Group>
             <Tooltip
               label={
-                fogSupported
-                  ? 'Only terrain players have explored (or shared on a cartography table) is shown'
-                  : 'The running agent has no exploration tracking; update it from the Mods tab'
+                !fogSupported
+                  ? 'The running agent has no exploration tracking; update it from the Mods tab'
+                  : canLiftFog
+                    ? 'Only terrain players have explored (or shared on a cartography table) is shown. Operators can lift the fog.'
+                    : 'Only terrain players have explored (or shared on a cartography table) is shown'
               }
             >
               <div>
-                <Chip checked={fogOn} onChange={setFog} size="xs" variant="filled" color="iron" disabled={!fogSupported}>
+                <Chip checked={fogOn} onChange={setFog} size="xs" variant="filled" color="iron" disabled={!fogSupported || !canLiftFog}>
                   Fog of war{explored ? ` · ${explored.percent.toFixed(1)}% explored` : ''}
                 </Chip>
               </div>
             </Tooltip>
           </Group>
           <MapView
-            imageUrl={data.image_ready ? mapImageUrl(id, info) : null}
-            fogUrl={fogOn ? fogImageUrl(id, explored) : null}
+            imageUrl={data.image_ready ? mapImageUrl(id, data.image_version, fogOn) : null}
             markers={markers}
             overlay={overlay}
             onImageError={() => setImageBroken(true)}

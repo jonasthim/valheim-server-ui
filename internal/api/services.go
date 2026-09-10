@@ -168,7 +168,7 @@ type AgentService interface {
 	// Map returns the Map tab data; MapPNG a local path to the image (or
 	// ErrMapRendering-style progress via info); RenderMap forces a render.
 	Map(ctx context.Context, instanceID string, includeHidden bool) (*domain.InstanceMap, error)
-	MapPNG(ctx context.Context, instanceID string) (path string, info *domain.MapInfo, err error)
+	MapPNG(ctx context.Context, instanceID string, fog bool) (path string, info *domain.MapInfo, err error)
 	ExploredPNG(ctx context.Context, instanceID string) (path string, info *domain.ExploredInfo, err error)
 	RenderMap(ctx context.Context, instanceID string, req domain.MapRenderRequest) (*domain.MapInfo, error)
 }

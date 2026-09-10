@@ -163,7 +163,11 @@ in the plugin config, mode 0600). The command set is fixed and mapped to public
 game APIs; there is no arbitrary console. Every command is audited with target
 and message. Positions of players who hide on the map are never sent to viewers
 or on the event stream. The plugin is built in CI from this repository and
-verified against the release's SHA256SUMS when fetched.
+verified against the release's SHA256SUMS when fetched. The fog of war is enforced on the server: `map.png` is a composite with
+unexplored terrain painted over, the bare render needs the operator role
+(`?fog=0`), and objects and locations under the fog are stripped from
+viewers' JSON, so a viewer cannot learn unexplored terrain from any
+endpoint.
 
 ## Accepted risks
 
