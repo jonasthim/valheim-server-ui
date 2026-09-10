@@ -433,3 +433,19 @@ carts, tombstones, beds and boss locations as toggleable layers.
   only, never stored).
 - A new world (different seed) gets a new image automatically; the old file is
   kept in the cache directory and can be deleted.
+
+### 14.2 Fog of war
+
+The map shows only explored terrain by default. The server has no exploration
+data of its own, so the agent builds it from two sources:
+
+- where players go while the agent runs (the game's 100 m reveal radius);
+- the shared map on **cartography tables**: everything a player has written to
+  a table becomes explored on the manager's map too. Ask players to write
+  their maps once after upgrading, and the fog matches what they know.
+
+Exploration is saved per world next to the map cache
+(`BepInEx/cache/valheimui-agent/explored-<seed>-1024.bin`); delete that file to
+reset the fog. The *Fog of war* chip on the Map tab turns it off (for admins
+planning ahead) and shows the explored share of the whole square. Objects and
+boss locations under the fog stay hidden while it is on.

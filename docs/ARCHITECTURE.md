@@ -738,3 +738,34 @@ mapping: `u = (x + R) / 2R`, `v = (R - z) / 2R` with `R = world_radius`,
 north up. The Map tab (`web/src/features/map`) pans and zooms the image with
 CSS transforms and places markers in image fractions, counter-scaled so they
 keep their screen size; player markers follow the `agent.status` stream.
+
+### 20.2 Fog of war
+
+Exploration is client state in Valheim; the server never holds it. The agent
+therefore reconstructs it (`plugin/ValheimUI.Agent/Exploration.cs`):
+
+- every player position the server sees (peer reference positions, sampled
+  with the status snapshot) reveals a disc of the game's own explore radius
+  (100 m) on a 1024² grid over the same ±10 500 m square as the map image;
+- the shared map of every cartography table in the world is imported: the
+  table's `data` ZDO field is a gzip'd `ZPackage` (version, texture size, one
+  bool per 12 m map pixel, then pins, which are ignored). This brings in what
+  players explored before the agent existed, as long as someone wrote their
+  map to a table. A table is re-read when its data changes;
+- the union is persisted per world at
+  `BepInEx/cache/valheimui-agent/explored-<seed>-1024.bin` (once a minute
+  when changed, and on shutdown).
+
+`GET /v1/map/explored` serves the fog as a grey+alpha PNG (255 = unexplored,
+both channels, so browsers masking by alpha or by luminance agree),
+re-encoded on a worker thread when the exploration version changes;
+`/v1/map/explored/info` reports version, mask version and the explored
+share. Objects and locations carry `explored`.
+
+The manager caches the mask per instance (`cache/map/explored-<seed>.png`),
+refetching when the agent's mask version moves
+(`GET /instances/{id}/map/explored.png`, `InstanceMap.explored`,
+`fog_supported`). The Map tab draws the fog as a dark layer with the mask as
+CSS `mask-image` (default on), and hides objects and locations that lie
+under it, so boss altars are not revealed by the Bosses layer. Players are
+always drawn. Agents before 1.7.0 report no fog; the toggle explains why.

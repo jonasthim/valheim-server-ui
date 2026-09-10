@@ -2,7 +2,7 @@
 // the objects the server knows about (portals, ships, carts, tombstones, beds,
 // boss locations), each as a toggleable layer.
 import { useMemo, useState } from 'react'
-import { Alert, Badge, Button, Chip, Group, Loader, Progress, Skeleton, Stack, Text } from '@mantine/core'
+import { Alert, Badge, Button, Chip, Group, Loader, Progress, Skeleton, Stack, Text, Tooltip } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { IconAlertTriangle, IconMapOff, IconRefresh } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
@@ -11,7 +11,7 @@ import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatusPill } from '../../ui'
 import { useAgent } from '../agent'
 import { MapView, type Marker } from './MapView'
-import { mapImageUrl, useInstanceMap, useRenderMap, worldToFraction } from './useMap'
+import { fogImageUrl, mapImageUrl, useInstanceMap, useRenderMap, worldToFraction } from './useMap'
 
 type Layer = 'players' | 'portals' | 'ships' | 'carts' | 'tombstones' | 'beds' | 'locations'
 const LAYERS: { id: Layer; label: string }[] = [
@@ -45,6 +45,7 @@ export function MapTab({ id }: { id: string }) {
   const agent = useAgent(id)
   const render = useRenderMap(id)
   const [layers, setLayers] = useState<string[]>(DEFAULT_LAYERS)
+  const [fog, setFog] = useState(true)
   const [imageBroken, setImageBroken] = useState(false)
 
   const data = map.data
@@ -56,6 +57,8 @@ export function MapTab({ id }: { id: string }) {
   const livePlayers = agent.data?.status?.players
   const players = useMemo(() => livePlayers ?? data?.players ?? [], [livePlayers, data?.players])
   const hidden = players.filter((p) => !p.position).length
+  const fogSupported = !!data?.fog_supported
+  const fogOn = fog && fogSupported
 
   const markers = useMemo<Marker[]>(() => {
     const out: Marker[] = []
@@ -71,17 +74,19 @@ export function MapTab({ id }: { id: string }) {
     ;(data?.objects ?? []).forEach((o, i) => {
       const layer = typeToLayer[o.type]
       if (!layer || !on.has(layer)) return
+      if (fogOn && o.explored === false) return
       const { u, v } = worldToFraction(o.x, o.z, radius)
       out.push({ key: `o-${o.type}-${i}`, u, v, kind: o.type, label: o.label, detail: o.text || undefined })
     })
     if (on.has('locations')) {
       ;(data?.locations ?? []).forEach((l, i) => {
+        if (fogOn && l.explored === false) return
         const { u, v } = worldToFraction(l.x, l.z, radius)
         out.push({ key: `l-${i}`, u, v, kind: 'location', label: LOCATION_LABELS[l.name] ?? l.name })
       })
     }
     return out
-  }, [layers, players, data?.objects, data?.locations, radius])
+  }, [layers, players, data?.objects, data?.locations, radius, fogOn])
 
   function confirmRerender() {
     modals.openConfirmModal({
@@ -166,17 +171,33 @@ export function MapTab({ id }: { id: string }) {
         }
       >
         <Stack gap="sm">
-          <Chip.Group multiple value={layers} onChange={setLayers}>
-            <Group gap={6}>
-              {LAYERS.map((l) => (
-                <Chip key={l.id} value={l.id} size="xs" variant="light">
-                  {l.label}
+          <Group gap={6} justify="space-between" wrap="wrap">
+            <Chip.Group multiple value={layers} onChange={setLayers}>
+              <Group gap={6}>
+                {LAYERS.map((l) => (
+                  <Chip key={l.id} value={l.id} size="xs" variant="light">
+                    {l.label}
+                  </Chip>
+                ))}
+              </Group>
+            </Chip.Group>
+            <Tooltip
+              label={
+                fogSupported
+                  ? 'Only terrain players have explored (or shared on a cartography table) is shown'
+                  : 'The running agent has no exploration tracking; update it from the Mods tab'
+              }
+            >
+              <div>
+                <Chip checked={fogOn} onChange={setFog} size="xs" variant="filled" color="iron" disabled={!fogSupported}>
+                  Fog of war{data.explored ? ` · ${data.explored.percent.toFixed(1)}% explored` : ''}
                 </Chip>
-              ))}
-            </Group>
-          </Chip.Group>
+              </div>
+            </Tooltip>
+          </Group>
           <MapView
             imageUrl={data.image_ready ? mapImageUrl(id, info) : null}
+            fogUrl={fogOn ? fogImageUrl(id, data.explored) : null}
             markers={markers}
             overlay={overlay}
             onImageError={() => setImageBroken(true)}

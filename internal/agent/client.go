@@ -210,3 +210,44 @@ func (c *Client) RenderMap(ctx context.Context, size int, force bool) (*domain.M
 
 // maxMapBytes bounds a map image (4096² PNG stays far below this).
 const maxMapBytes = 64 << 20
+
+// ExploredInfo fetches the fog-of-war state.
+func (c *Client) ExploredInfo(ctx context.Context) (*domain.ExploredInfo, error) {
+	var info domain.ExploredInfo
+	if err := c.do(ctx, http.MethodGet, "/v1/map/explored/info", nil, "", &info); err != nil {
+		return nil, err
+	}
+	return &info, nil
+}
+
+// ExploredPNG fetches the fog mask. (nil, info, nil) means the plugin is
+// still encoding the first mask.
+func (c *Client) ExploredPNG(ctx context.Context) ([]byte, *domain.ExploredInfo, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base+"/v1/map/explored", nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("agent: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("agent: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMapBytes))
+	if err != nil {
+		return nil, nil, fmt.Errorf("agent: read mask: %w", err)
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		if len(data) < 8 || string(data[1:4]) != "PNG" {
+			return nil, nil, &statusError{code: resp.StatusCode, body: "mask response is not a PNG"}
+		}
+		return data, nil, nil
+	case http.StatusAccepted:
+		var info domain.ExploredInfo
+		_ = json.Unmarshal(data, &info)
+		return nil, &info, nil
+	default:
+		return nil, nil, &statusError{code: resp.StatusCode, body: strings.TrimSpace(string(data))}
+	}
+}

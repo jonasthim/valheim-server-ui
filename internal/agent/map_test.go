@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -194,5 +195,85 @@ func TestMap_OldAgentWithoutMapEndpoints(t *testing.T) {
 	_, err = s.RenderMap(ctx, "main", domain.MapRenderRequest{})
 	if err == nil || !strings.Contains(err.Error(), "no map support") {
 		t.Fatalf("expected the update hint, got %v", err)
+	}
+}
+
+func TestExploredPNG_FetchesWhenVersionChanges(t *testing.T) {
+	paths := testPaths(t)
+	installPlugin(t, paths, "1.7.0")
+	cfg, err := EnsureConfig(paths, 2456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var maskVersion atomic.Int32
+	maskVersion.Store(3)
+	var fetches atomic.Int32
+	mux := http.NewServeMux()
+	auth := func(r *http.Request) bool { return r.Header.Get("Authorization") == "Bearer "+cfg.Token }
+	mux.HandleFunc("/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		if auth(r) {
+			_, _ = w.Write([]byte(sampleStatus))
+		}
+	})
+	mux.HandleFunc("/v1/map/info", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"state":"ready","progress":1,"seed":42,"size":512,"world_radius":10500,"playable_radius":10000,"sea_level":30}`))
+	})
+	mux.HandleFunc("/v1/map/objects", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"objects":[{"type":"portal","label":"Portal","x":1,"y":31,"z":2,"text":"a","explored":false}],"locations":[],"updated_at":"2026-09-10T12:00:00Z"}`))
+	})
+	mux.HandleFunc("/v1/map/explored/info", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"version":` + fmt.Sprint(maskVersion.Load()) + `,"size":1024,"explored_cells":5000,"total_cells":1048576,"percent":0.48,"mask_version":` + fmt.Sprint(maskVersion.Load()) + `}`))
+	})
+	mux.HandleFunc("/v1/map/explored", func(w http.ResponseWriter, r *http.Request) {
+		fetches.Add(1)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(append(append([]byte{}, tinyPNG...), byte(maskVersion.Load())))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning},
+	}}
+	s := NewService(fi, &fakeBus{}, slog.New(slog.NewTextHandler(io.Discard, nil)), fixedVersion("1.7.0"))
+	s.http = srv.Client()
+	s.baseURL = func(int) string { return srv.URL }
+	ctx := context.Background()
+	s.tick(ctx)
+
+	m, err := s.Map(ctx, "main", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !m.FogSupported || m.Explored == nil || m.Explored.Percent != 0.48 || m.Objects[0].Explored == nil || *m.Objects[0].Explored {
+		t.Fatalf("fog state: %+v obj=%+v", m.Explored, m.Objects[0])
+	}
+
+	p1, info, err := s.ExploredPNG(ctx, "main")
+	if err != nil || info == nil || info.MaskVersion != 3 {
+		t.Fatalf("first mask: %v %v", err, info)
+	}
+	if _, _, err := s.ExploredPNG(ctx, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if fetches.Load() != 1 {
+		t.Fatalf("same version must be served from the cache, fetches=%d", fetches.Load())
+	}
+	maskVersion.Store(4)
+	p2, _, err := s.ExploredPNG(ctx, "main")
+	if err != nil || fetches.Load() != 2 || p2 != p1 {
+		t.Fatalf("new version must be refetched into the same file: %v fetches=%d %s", err, fetches.Load(), p2)
+	}
+	b, _ := os.ReadFile(p2)
+	if b[len(b)-1] != 4 {
+		t.Fatal("cached file not updated to the new mask")
+	}
+
+	// Agent gone: last mask still served.
+	srv.Close()
+	s.tick(ctx)
+	if p, _, err := s.ExploredPNG(ctx, "main"); err != nil || p != p1 {
+		t.Fatalf("offline mask: %s %v", p, err)
 	}
 }

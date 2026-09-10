@@ -842,6 +842,28 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/MapInfo' }
         '409': { description: 'No map yet', $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/map/explored.png:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [agent]
+      summary: Fog-of-war mask for the map (grey+alpha PNG, opaque where unexplored)
+      description: |
+        Same extent as map.png. Exploration is reconstructed by the agent from
+        player positions it has seen (100 m reveal radius) plus the shared maps of
+        cartography tables, and persisted per world. `202` with ExploredInfo while
+        the first mask is being encoded. Append `?v=<mask_version>` from
+        InstanceMap.explored to refresh after changes.
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '202':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExploredInfo' }
+        '409': { description: 'No exploration data yet', $ref: '#/components/responses/Error' }
   /instances/{instanceId}/map/render:
     parameters: [{ $ref: '#/components/parameters/instanceId' }]
     post:
@@ -1829,6 +1851,7 @@ components:
         y: { type: number }
         z: { type: number }
         text: { type: string, description: Portal tag or owner name }
+        explored: { type: boolean, description: False when under the fog; absent from agents without fog support }
 
     MapLocation:
       type: object
@@ -1838,14 +1861,29 @@ components:
         x: { type: number }
         y: { type: number }
         z: { type: number }
+        explored: { type: boolean }
+
+    ExploredInfo:
+      type: object
+      required: [version, size, explored_cells, total_cells, percent, mask_version]
+      properties:
+        version: { type: integer, description: Increments whenever new terrain is revealed }
+        size: { type: integer, description: Grid side length of the mask }
+        explored_cells: { type: integer }
+        total_cells: { type: integer }
+        percent: { type: number, description: Share of the whole square that is explored }
+        updated_at: { type: string, format: date-time }
+        mask_version: { type: integer, description: Exploration version the current mask image reflects }
 
     InstanceMap:
       type: object
-      required: [connected, map_supported, image_ready, stale, objects, locations, players]
+      required: [connected, map_supported, fog_supported, image_ready, stale, objects, locations, players]
       properties:
         connected: { type: boolean }
         map_supported: { type: boolean, description: False when the running agent predates the map API (update it from the Mods tab) }
         agent_version: { type: string, description: Version of the agent running in the server }
+        fog_supported: { type: boolean, description: False when the running agent has no exploration tracking (before 1.7.0) }
+        explored: { $ref: '#/components/schemas/ExploredInfo' }
         image_ready: { type: boolean, description: GET map.png serves an image now }
         stale: { type: boolean, description: The image comes from an earlier run and could not be confirmed against the current world }
         info: { $ref: '#/components/schemas/MapInfo' }

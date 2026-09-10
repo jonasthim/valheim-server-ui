@@ -3,7 +3,7 @@
 // the agent.status SSE event (see features/agent/useAgent).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { API_BASE, api } from '../../api/client'
-import type { InstanceMap, MapInfo, MapRenderRequest } from '../../api/types'
+import type { ExploredInfo, InstanceMap, MapInfo, MapRenderRequest } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
 
 export function mapKey(id: string) {
@@ -38,6 +38,12 @@ export function useRenderMap(id: string) {
 export function mapImageUrl(id: string, info: MapInfo | undefined): string {
   const v = info ? `${info.seed}-${info.size}-${info.state}` : 'cached'
   return `${API_BASE}/instances/${encodeURIComponent(id)}/map.png?v=${encodeURIComponent(v)}`
+}
+
+/** Fog mask URL, versioned by the exploration version the mask reflects. */
+export function fogImageUrl(id: string, explored: ExploredInfo | undefined): string {
+  const v = explored ? String(explored.mask_version) : 'cached'
+  return `${API_BASE}/instances/${encodeURIComponent(id)}/map/explored.png?v=${encodeURIComponent(v)}`
 }
 
 /** World coordinates to image fractions (0..1), north up. */

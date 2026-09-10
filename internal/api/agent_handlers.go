@@ -26,8 +26,34 @@ func registerAgentRoutes(r chi.Router, d *Deps) {
 		Get("/instances/{instanceId}/map", getMapHandler(d))
 	r.With(RequireRole(domain.RoleViewer), guard).
 		Get("/instances/{instanceId}/map.png", getMapImageHandler(d))
+	r.With(RequireRole(domain.RoleViewer), guard).
+		Get("/instances/{instanceId}/map/explored.png", getExploredImageHandler(d))
 	r.With(RequireRole(domain.RoleOperator), guard).
 		Post("/instances/{instanceId}/map/render", renderMapHandler(d))
+}
+
+// getExploredImageHandler serves the fog mask (grey+alpha PNG, opaque where
+// unexplored). 202 with ExploredInfo while the plugin encodes its first mask.
+func getExploredImageHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		path, info, err := d.Agent.ExploredPNG(r.Context(), id)
+		if err != nil {
+			if info != nil {
+				WriteJSON(w, http.StatusAccepted, info)
+				return
+			}
+			WriteError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "private, max-age=10")
+		http.ServeFile(w, r, path) //nolint:gosec // path is a file the agent service wrote into the instance's own cache dir
+	}
 }
 
 func getMapHandler(d *Deps) http.HandlerFunc {

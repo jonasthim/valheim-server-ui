@@ -2132,6 +2132,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/map/explored.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Fog-of-war mask for the map (grey+alpha PNG, opaque where unexplored)
+         * @description Same extent as map.png. Exploration is reconstructed by the agent from
+         *     player positions it has seen (100 m reveal radius) plus the shared maps of
+         *     cartography tables, and persisted per world. `202` with ExploredInfo while
+         *     the first mask is being encoded. Append `?v=<mask_version>` from
+         *     InstanceMap.explored to refresh after changes.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                    };
+                };
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ExploredInfo"];
+                    };
+                };
+                /** @description No exploration data yet */
+                409: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/map/render": {
         parameters: {
             query?: never;
@@ -3425,6 +3481,8 @@ export interface components {
             z: number;
             /** @description Portal tag or owner name */
             text?: string;
+            /** @description False when under the fog; absent from agents without fog support */
+            explored?: boolean;
         };
         MapLocation: {
             /** @description Location prefab name (StartTemple */
@@ -3432,6 +3490,21 @@ export interface components {
             x: number;
             y: number;
             z: number;
+            explored?: boolean;
+        };
+        ExploredInfo: {
+            /** @description Increments whenever new terrain is revealed */
+            version: number;
+            /** @description Grid side length of the mask */
+            size: number;
+            explored_cells: number;
+            total_cells: number;
+            /** @description Share of the whole square that is explored */
+            percent: number;
+            /** Format: date-time */
+            updated_at?: string;
+            /** @description Exploration version the current mask image reflects */
+            mask_version: number;
         };
         InstanceMap: {
             connected: boolean;
@@ -3439,6 +3512,9 @@ export interface components {
             map_supported: boolean;
             /** @description Version of the agent running in the server */
             agent_version?: string;
+            /** @description False when the running agent has no exploration tracking (before 1.7.0) */
+            fog_supported: boolean;
+            explored?: components["schemas"]["ExploredInfo"];
             /** @description GET map.png serves an image now */
             image_ready: boolean;
             /** @description The image comes from an earlier run and could not be confirmed against the current world */

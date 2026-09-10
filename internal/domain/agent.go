@@ -128,14 +128,30 @@ type MapObject struct {
 	Y     float64 `json:"y"`
 	Z     float64 `json:"z"`
 	Text  string  `json:"text,omitempty"` // portal tag, owner name
+	// Explored is false when the object lies under the fog; nil from agents
+	// that predate fog (treat as explored).
+	Explored *bool `json:"explored,omitempty"`
 }
 
 // MapLocation is one of the game's own map icons (boss altars, start temple).
 type MapLocation struct {
-	Name string  `json:"name"`
-	X    float64 `json:"x"`
-	Y    float64 `json:"y"`
-	Z    float64 `json:"z"`
+	Name     string  `json:"name"`
+	X        float64 `json:"x"`
+	Y        float64 `json:"y"`
+	Z        float64 `json:"z"`
+	Explored *bool   `json:"explored,omitempty"`
+}
+
+// ExploredInfo is the plugin's fog-of-war state (GET /v1/map/explored/info).
+type ExploredInfo struct {
+	Version       int        `json:"version"`
+	Size          int        `json:"size"`
+	ExploredCells int        `json:"explored_cells"`
+	TotalCells    int        `json:"total_cells"`
+	Percent       float64    `json:"percent"`
+	UpdatedAt     *time.Time `json:"updated_at,omitempty"`
+	// MaskVersion is the exploration version the served mask image reflects.
+	MaskVersion int `json:"mask_version"`
 }
 
 // MapObjects is GET /v1/map/objects.
@@ -153,6 +169,10 @@ type InstanceMap struct {
 	// (its /v1/map/info answers 404); AgentVersion says which one it is.
 	MapSupported bool   `json:"map_supported"`
 	AgentVersion string `json:"agent_version,omitempty"`
+	// FogSupported is false when the agent has no exploration tracking
+	// (agents before 1.7.0); Explored carries the fog state otherwise.
+	FogSupported bool          `json:"fog_supported"`
+	Explored     *ExploredInfo `json:"explored,omitempty"`
 	// ImageReady is true when GET /instances/{id}/map.png serves an image now
 	// (from the instance cache or the running agent).
 	ImageReady bool `json:"image_ready"`

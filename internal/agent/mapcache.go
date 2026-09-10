@@ -63,7 +63,15 @@ type mapState struct {
 	info        *domain.MapInfo
 	infoAt      time.Time
 	unsupported bool // the agent answered 404 to /v1/map/info
+
+	explored       *domain.ExploredInfo
+	exploredAt     time.Time
+	fogUnsupported bool // 404 on /v1/map/explored/info (agent before 1.7.0)
+	maskVersion    int  // exploration version of the cached mask file
 }
+
+// exploredTTL bounds how often the fog state is asked for.
+const exploredTTL = 5 * time.Second
 
 // isNotFound reports whether err is the agent answering 404 (an older
 // plugin without the map endpoints).
@@ -127,6 +135,20 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 				}
 				s.mu.Unlock()
 			}
+			s.mu.Lock()
+			needExplored := !ms.fogUnsupported && (ms.explored == nil || now.Sub(ms.exploredAt) > exploredTTL)
+			s.mu.Unlock()
+			if needExplored && !ms.unsupported {
+				ei, err := c.ExploredInfo(ctx)
+				s.mu.Lock()
+				switch {
+				case err == nil:
+					ms.explored, ms.exploredAt, ms.fogUnsupported = ei, now, false
+				case isNotFound(err):
+					ms.explored, ms.exploredAt, ms.fogUnsupported = nil, now, true
+				}
+				s.mu.Unlock()
+			}
 			if needObjects && !ms.unsupported {
 				if objs, err := c.MapObjects(ctx); err == nil {
 					s.mu.Lock()
@@ -140,6 +162,11 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 	s.mu.Lock()
 	if ms.unsupported {
 		out.MapSupported = false
+	}
+	out.FogSupported = !ms.fogUnsupported && !ms.unsupported
+	if ms.explored != nil {
+		ei := *ms.explored
+		out.Explored = &ei
 	}
 	if ms.info != nil {
 		info := *ms.info
@@ -283,4 +310,99 @@ func (s *Service) RenderMap(ctx context.Context, id string, req domain.MapRender
 	}
 	s.mu.Unlock()
 	return info, nil
+}
+
+func exploredFileName(seed int) string { return fmt.Sprintf("explored-%d.png", seed) }
+
+// ExploredPNG returns a local path to the fog mask for id, refreshing the
+// instance cache when the agent reports a newer exploration version. While
+// the plugin encodes its first mask it returns ErrMapRendering with the fog
+// info. With the agent away the last cached mask is served.
+func (s *Service) ExploredPNG(ctx context.Context, id string) (path string, info *domain.ExploredInfo, err error) {
+	in, err := s.inst.Get(ctx, id)
+	if err != nil {
+		return "", nil, err
+	}
+	paths := s.inst.Paths(id)
+	dir := MapCacheDir(paths)
+
+	s.mu.Lock()
+	x := s.states[id]
+	connected := x != nil && x.connected
+	ms := s.maps[id]
+	if ms == nil {
+		ms = &mapState{}
+		s.maps[id] = ms
+	}
+	seed := 0
+	if ms.info != nil {
+		seed = ms.info.Seed
+	}
+	cachedVersion := ms.maskVersion
+	s.mu.Unlock()
+
+	if connected && !ms.fogUnsupported {
+		c, cerr := s.client(paths, in.Config.Port)
+		if cerr == nil {
+			ei, ierr := c.ExploredInfo(ctx)
+			if ierr != nil && isNotFound(ierr) {
+				s.mu.Lock()
+				ms.fogUnsupported = true
+				s.mu.Unlock()
+			} else if ierr == nil {
+				s.mu.Lock()
+				ms.explored, ms.exploredAt = ei, s.now()
+				s.mu.Unlock()
+				cached := filepath.Join(dir, exploredFileName(seed))
+				if ei.MaskVersion == cachedVersion && cachedVersion != 0 {
+					if _, err := os.Stat(cached); err == nil {
+						return cached, ei, nil
+					}
+				}
+				png, pinfo, perr := c.ExploredPNG(ctx)
+				if perr == nil && png == nil {
+					if pinfo == nil {
+						pinfo = ei
+					}
+					if _, err := os.Stat(cached); err == nil {
+						return cached, ei, nil // serve the previous mask while the new one encodes
+					}
+					return "", pinfo, ErrMapRendering
+				}
+				if perr == nil {
+					if err := os.MkdirAll(dir, 0o750); err != nil {
+						return "", ei, fmt.Errorf("agent: map cache dir: %w", err)
+					}
+					tmp := cached + ".tmp"
+					if err := os.WriteFile(tmp, png, 0o640); err != nil { //nolint:gosec // cache file
+						return "", ei, fmt.Errorf("agent: write mask: %w", err)
+					}
+					if err := os.Rename(tmp, cached); err != nil {
+						_ = os.Remove(tmp)
+						return "", ei, fmt.Errorf("agent: install mask: %w", err)
+					}
+					s.mu.Lock()
+					ms.maskVersion = ei.MaskVersion
+					s.mu.Unlock()
+					return cached, ei, nil
+				}
+			}
+		}
+	}
+	// Offline (or unsupported): the newest cached mask, if any.
+	entries, _ := os.ReadDir(dir)
+	var newest string
+	var newestMod time.Time
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), "explored-") || !strings.HasSuffix(e.Name(), ".png") {
+			continue
+		}
+		if fi, err := e.Info(); err == nil && fi.ModTime().After(newestMod) {
+			newest, newestMod = filepath.Join(dir, e.Name()), fi.ModTime()
+		}
+	}
+	if newest != "" {
+		return newest, nil, nil
+	}
+	return "", nil, domain.E(domain.CodeConflict, "no exploration data yet")
 }

@@ -26,6 +26,13 @@ namespace ValheimUI.Agent
             return Encode(width, height, gray, 1, 0);
         }
 
+        /// <summary>8-bit greyscale with alpha (colour type 4), two bytes per pixel.</summary>
+        public static byte[] EncodeGrayAlpha(int width, int height, byte[] grayAlpha)
+        {
+            if (grayAlpha.Length != width * height * 2) throw new ArgumentException("gray+alpha buffer size mismatch");
+            return Encode(width, height, grayAlpha, 2, 4);
+        }
+
         private static byte[] Encode(int width, int height, byte[] pixels, int channels, byte colourType)
         {
             var raw = new byte[(width * channels + 1) * height];

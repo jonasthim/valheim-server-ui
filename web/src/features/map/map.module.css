@@ -107,3 +107,16 @@
   right: 8px;
   top: 8px;
 }
+
+.fog {
+  position: absolute;
+  inset: 0;
+  background: #0b0e14;
+  opacity: 0.94;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-mode: alpha;
+  pointer-events: none;
+}

@@ -179,5 +179,25 @@ map mod, no client-side data, no extra port.
 **Consequences.** One-time CPU cost per world (minutes at 1024 px, bounded per
 frame); the palette approximates the in-game map rather than reproducing its
 textures. Object scanning walks the ZDO table every 30 s via a reflected
-accessor, capped at 5 000 objects. Exploration fog is intentionally not
-reproduced: the map shows the whole world.
+accessor, capped at 5 000 objects. Exploration fog is reconstructed
+server-side (ADR-024) rather than read from clients.
+
+## ADR-024 Fog of war is reconstructed on the server
+
+**Context.** Players expect the map to show only what has been explored;
+revealing the whole world spoils the game. The server has no exploration
+data: it lives in each character file and, when shared, in cartography
+tables.
+
+**Decision.** The agent tracks exploration itself: the positions it already
+sees reveal the game's 100 m radius, cartography tables are imported for
+history, the union is persisted per world, and the map applies it as a CSS
+mask. Objects and boss locations under the fog are hidden. An admin toggle
+turns the fog off.
+
+**Consequences.** Exploration before the agent existed is only known through
+tables players wrote to; positions of players who hide on the map still
+reveal terrain (the server sees them), which matches the game's own rule
+that exploration is not secret. The table format is parsed best effort and
+skipped on error, so a game update can degrade history without breaking the
+map.

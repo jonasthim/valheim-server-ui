@@ -31,7 +31,7 @@ server into a Docker puzzle.
 | **Backups & worlds** | One-click or scheduled world backups, retention policy, restore with an automatic safety backup, world upload/download, switch the active world. |
 | **Mods** | Install BepInEx, browse and install from Thunderstore with dependency resolution, upload zips or DLLs, enable/disable/update/uninstall, and edit plugin `.cfg` files with typed inputs. |
 | **Live world (agent)** | Our own server plugin, installed with BepInEx: day, in-game clock, weather, world keys and players with positions straight from the running server, plus save-now, kick and an in-game broadcast to all players. Nothing to install for players. |
-| **Live map** | The whole world rendered from the seed on the server (no fog), with players moving live, portals and their tags, ships, carts, tombstones, beds and boss locations as layers. Pan, zoom, re-render at up to 4096 px. |
+| **Live map** | The world rendered from the seed on the server with fog of war built from where players have been and from cartography tables, players moving live, portals and their tags, ships, carts, tombstones, beds and boss locations as layers. Pan, zoom, re-render at up to 4096 px. |
 | **Schedules** | Cron-based restarts, backups and Steam update checks with a "only when nobody is online" switch. |
 | **Updates** | Detects new Valheim builds on Steam and updates with an optional pre-update backup. |
 | **Self-upgrade** | The manager polls GitHub releases, shows what's new, and upgrades itself from the UI with a verified download, atomic swap and rollback. On Linux game servers keep running while it restarts; on Windows they are stopped cleanly and autostarted again. |

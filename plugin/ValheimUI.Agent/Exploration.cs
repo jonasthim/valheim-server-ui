@@ -222,7 +222,7 @@ namespace ValheimUI.Agent
         }
 
         /// <summary>
-        /// The fog mask as a greyscale PNG: 255 where unexplored (fog drawn),
+        /// The fog mask as a grey+alpha PNG: 255 where unexplored (fog drawn),
         /// 0 where explored. Encoded on a worker thread per version; the
         /// previous version is served meanwhile.
         /// </summary>
@@ -252,9 +252,16 @@ namespace ValheimUI.Agent
                 {
                     try
                     {
-                        var gray = new byte[snapshot.Length];
-                        for (int i = 0; i < snapshot.Length; i++) gray[i] = snapshot[i] != 0 ? (byte)0 : (byte)255;
-                        var png = Png.EncodeGray(Size, Size, gray);
+                        // Luminance and alpha both carry the mask (255 = fog), so
+                        // browsers masking by alpha or by luminance agree.
+                        var ga = new byte[snapshot.Length * 2];
+                        for (int i = 0; i < snapshot.Length; i++)
+                        {
+                            byte v = snapshot[i] != 0 ? (byte)0 : (byte)255;
+                            ga[i * 2] = v;
+                            ga[i * 2 + 1] = v;
+                        }
+                        var png = Png.EncodeGrayAlpha(Size, Size, ga);
                         lock (_lock)
                         {
                             _png = png;
