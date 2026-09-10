@@ -52,6 +52,21 @@ export function tileUrl(id: string, z: number, x: number, y: number, fog: boolea
   return fog ? base : `${base}?fog=0&`
 }
 
+/** Fog mask URL (alpha 255 = unexplored), versioned by the mask version. */
+export function fogMaskUrl(id: string, maskVersion: number | undefined): string {
+  return `${API_BASE}/instances/${encodeURIComponent(id)}/map/explored.png?v=${maskVersion ?? 0}`
+}
+
+/** Fogged water mask URL for the shimmer overlay. */
+export function waterMaskUrl(id: string, version: string | undefined): string {
+  return `${API_BASE}/instances/${encodeURIComponent(id)}/map/water.png?v=${encodeURIComponent(version || 'cached')}`
+}
+
+/** The seamless cloud texture. */
+export function cloudsUrl(id: string): string {
+  return `${API_BASE}/instances/${encodeURIComponent(id)}/map/clouds.png`
+}
+
 /** World coordinates to image fractions (0..1), north up. */
 export function worldToFraction(x: number, z: number, radius: number): { u: number; v: number } {
   const r = radius > 0 ? radius : 10500

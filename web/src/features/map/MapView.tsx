@@ -33,6 +33,19 @@ export type TileSource = {
   url: (z: number, x: number, y: number) => string
 }
 
+/** Animated overlays drawn on top of the tiles (all masked so nothing hidden shows). */
+export type Overlays = {
+  /** Seamless cloud texture URL. */
+  clouds: string
+  /** Fog mask URL (alpha 255 = unexplored); clouds drift only there. */
+  fogMask: string | null
+  /** Water mask URL (luminance 255 = explored water); the shimmer stays there. */
+  water: string | null
+}
+
+/** A ping to animate at a world fraction. */
+export type Ping = { key: string; u: number; v: number; name: string }
+
 type Transform = { k: number; tx: number; ty: number }
 
 const MIN_ZOOM = 1
@@ -54,6 +67,8 @@ export function MapView({
   imageUrl,
   tiles,
   markers,
+  overlays,
+  pings = [],
   overlay,
   onImageError,
   onImageLoad,
@@ -62,6 +77,9 @@ export function MapView({
   imageUrl: string | null
   tiles?: TileSource | null
   markers: Marker[]
+  /** Drifting clouds and water shimmer; omit to draw a still map. */
+  overlays?: Overlays | null
+  pings?: Ping[]
   /** Rendered over the map (progress, empty states). */
   overlay?: ReactNode
   onImageError?: () => void
@@ -158,6 +176,24 @@ export function MapView({
             <img className={classes.image} src={imageUrl} alt="World map" draggable={false} onError={onImageError} onLoad={onImageLoad} />
           )
         )}
+        {overlays?.fogMask && (
+          <>
+            <div className={classes.clouds} style={{ backgroundImage: `url("${overlays.clouds}")`, maskImage: `url("${overlays.fogMask}")`, WebkitMaskImage: `url("${overlays.fogMask}")` }} aria-hidden />
+            <div className={`${classes.clouds} ${classes.cloudsFar}`} style={{ backgroundImage: `url("${overlays.clouds}")`, maskImage: `url("${overlays.fogMask}")`, WebkitMaskImage: `url("${overlays.fogMask}")` }} aria-hidden />
+          </>
+        )}
+        {overlays?.water && (
+          <div className={classes.water} style={{ backgroundImage: `url("${overlays.clouds}")`, maskImage: `url("${overlays.water}")`, WebkitMaskImage: `url("${overlays.water}")` }} aria-hidden />
+        )}
+        {pings.map((p) => (
+          <div key={p.key} className={classes.markerAnchor} style={{ left: `${p.u * 100}%`, top: `${p.v * 100}%` }}>
+            <div className={classes.pingWrap} style={markerScale}>
+              <span className={classes.ping} />
+              <span className={`${classes.ping} ${classes.pingLate}`} />
+              {p.name && <span className={classes.pingName}>{p.name}</span>}
+            </div>
+          </div>
+        ))}
         {markers.map((m) => (
           <div key={m.key} className={`${classes.markerAnchor} ${m.kind === 'player' ? classes.glide : ''}`} style={{ left: `${m.u * 100}%`, top: `${m.v * 100}%` }}>
             <Tooltip label={m.detail ? `${m.label} · ${m.detail}` : m.label} withArrow openDelay={150}>

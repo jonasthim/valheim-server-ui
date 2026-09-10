@@ -74,6 +74,15 @@ type AgentStatus struct {
 	World         AgentWorld    `json:"world"`
 	GlobalKeys    []string      `json:"global_keys"`
 	Players       []AgentPlayer `json:"players"`
+	// Pings are the map pings of the last few seconds (agents 1.10+).
+	Pings []AgentPing `json:"pings"`
+}
+
+// AgentPing is a map ping a player sent in game.
+type AgentPing struct {
+	Name     string    `json:"name"`
+	Position Vec3      `json:"position"`
+	At       time.Time `json:"at"`
 }
 
 // AgentInfo is what the API reports for one instance.

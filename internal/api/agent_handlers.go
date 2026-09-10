@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/jonasthim/valheim-server-ui/internal/agent/mapstyle"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
@@ -31,6 +32,10 @@ func registerAgentRoutes(r chi.Router, d *Deps) {
 		Get("/instances/{instanceId}/map/explored.png", getExploredImageHandler(d))
 	r.With(RequireRole(domain.RoleViewer), guard).
 		Get("/instances/{instanceId}/map/tiles/{z}/{x}/{y}.png", getTileHandler(d))
+	r.With(RequireRole(domain.RoleViewer), guard).
+		Get("/instances/{instanceId}/map/water.png", getWaterMaskHandler(d))
+	r.With(RequireRole(domain.RoleViewer)).
+		Get("/instances/{instanceId}/map/clouds.png", getCloudsHandler())
 	r.With(RequireRole(domain.RoleOperator), guard).
 		Post("/instances/{instanceId}/map/render", renderMapHandler(d))
 }
@@ -138,6 +143,43 @@ func getTileHandler(d *Deps) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(data) //nolint:gosec // PNG bytes the service rendered, served as image/png
+	}
+}
+
+// getWaterMaskHandler serves the fogged water mask (grey PNG, 255 where the
+// map shows explored water) the UI confines its water shimmer to.
+func getWaterMaskHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		data, etag, err := d.Agent.WaterMaskPNG(r.Context(), id)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if etag != "" && r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "private, max-age=10")
+		w.Header().Set("ETag", etag)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data) //nolint:gosec // PNG bytes the service rendered
+	}
+}
+
+// getCloudsHandler serves the seamless cloud texture the UI drifts over the
+// unexplored parchment. Same for every instance; cacheable for a day.
+func getCloudsHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(mapstyle.CloudsPNG()) //nolint:gosec // generated PNG bytes
 	}
 }
 

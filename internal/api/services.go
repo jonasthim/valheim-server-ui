@@ -172,6 +172,8 @@ type AgentService interface {
 	// TilePNG renders or serves tile z/x/y of the deep-zoom pyramid; etag
 	// identifies the exact bytes.
 	TilePNG(ctx context.Context, instanceID string, z, x, y int, fog bool) (png []byte, etag string, info *domain.MapInfo, err error)
+	// WaterMaskPNG is the fogged water mask the UI animates water under.
+	WaterMaskPNG(ctx context.Context, instanceID string) (png []byte, etag string, err error)
 	ExploredPNG(ctx context.Context, instanceID string) (path string, info *domain.ExploredInfo, err error)
 	RenderMap(ctx context.Context, instanceID string, req domain.MapRenderRequest) (*domain.MapInfo, error)
 }

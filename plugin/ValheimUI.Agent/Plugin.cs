@@ -36,10 +36,13 @@ namespace ValheimUI.Agent
         private readonly MapRenderer _map = new MapRenderer();
         private readonly Exploration _explored = new Exploration();
         private readonly Discoveries _discoveries = new Discoveries();
+        private readonly Pings _pings = new Pings();
         private readonly MapObjects _objects;
 
         /// <summary>For the Harmony patch that records Vegvisir discoveries.</summary>
         internal static Discoveries Discoveries { get; private set; }
+        /// <summary>For the Harmony patch that records map pings.</summary>
+        internal static Pings Pings { get; private set; }
         internal static BepInEx.Logging.ManualLogSource Log { get; private set; }
         private float _worldReadyAt = -1f;
         private int _worldSeed;
@@ -61,6 +64,7 @@ namespace ValheimUI.Agent
         {
             _objects = new MapObjects(_explored, _discoveries);
             Discoveries = _discoveries;
+            Pings = _pings;
         }
 
         private void Awake()
@@ -152,7 +156,7 @@ namespace ValheimUI.Agent
                         _explored.MaybeEncode();
                         _discoveries.MaybeSave(false);
                     }
-                    _statusJson = snap.ToJson(BuildInfo.Version, _gameVersion, now - _startedAt);
+                    _statusJson = snap.ToJson(BuildInfo.Version, _gameVersion, now - _startedAt, _pings.Snapshot());
                     DiffPeers(snap);
                 }
                 catch (Exception e)

@@ -75,6 +75,9 @@ func normalizeStatus(st *domain.AgentStatus) {
 	if st.Players == nil {
 		st.Players = []domain.AgentPlayer{}
 	}
+	if st.Pings == nil {
+		st.Pings = []domain.AgentPing{}
+	}
 }
 
 // Events returns the agent's events after seq and the newest sequence number.

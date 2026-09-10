@@ -284,13 +284,19 @@ func fingerprint(st *domain.AgentStatus) string {
 		}
 		ps = append(ps, e)
 	}
+	var lastPing int64
+	if n := len(st.Pings); n > 0 {
+		lastPing = st.Pings[n-1].At.UnixMilli()
+	}
 	b, _ := json.Marshal(struct {
 		Ready bool
 		Day   int
 		W     string
 		Keys  int
 		P     []p
-	}{st.Ready, st.World.Day, st.World.Weather, len(st.GlobalKeys), ps})
+		Pings int
+		Ping  int64
+	}{st.Ready, st.World.Day, st.World.Weather, len(st.GlobalKeys), ps, len(st.Pings), lastPing})
 	return string(b)
 }
 

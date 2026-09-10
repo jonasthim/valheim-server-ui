@@ -327,7 +327,7 @@ func TestService_StatusArraysNeverNull(t *testing.T) {
 	}
 	for name, v := range map[string]any{"info": info, "event": bus.events[0].Data} {
 		raw, _ := json.Marshal(v)
-		if !strings.Contains(string(raw), `"global_keys":[]`) || !strings.Contains(string(raw), `"players":[]`) {
+		if !strings.Contains(string(raw), `"global_keys":[]`) || !strings.Contains(string(raw), `"players":[]`) || !strings.Contains(string(raw), `"pings":[]`) {
 			t.Fatalf("%s must carry empty arrays, got %s", name, raw)
 		}
 	}

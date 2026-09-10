@@ -2220,6 +2220,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/map/water.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Fogged water mask (grey PNG, 255 where the map shows explored water)
+         * @description Same extent as map.png; 1024 px. The UI confines its animated water shimmer to it. Zero under the fog, so it reveals nothing the fogged map does not.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                    };
+                };
+                /** @description No layers yet */
+                409: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/map/clouds.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /** Seamless cloud texture (grey+alpha PNG) the UI drifts over the unexplored parchment */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/map/explored.png": {
         parameters: {
             query?: never;
@@ -3517,6 +3600,15 @@ export interface components {
             world: components["schemas"]["AgentWorld"];
             global_keys: string[];
             players: components["schemas"]["AgentPlayer"][];
+            /** @description Map pings of the last few seconds (empty from agents before 1.10) */
+            pings: components["schemas"]["AgentPing"][];
+        };
+        /** @description A map ping a player sent in game */
+        AgentPing: {
+            name: string;
+            position: components["schemas"]["Vec3"];
+            /** Format: date-time */
+            at: string;
         };
         AgentInfo: {
             /** @description The plugin is present in BepInEx/plugins */

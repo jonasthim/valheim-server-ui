@@ -38,7 +38,7 @@ namespace ValheimUI.Agent
         public List<PlayerSnapshot> Players = new List<PlayerSnapshot>();
         public DateTime CapturedAt;
 
-        public string ToJson(string agentVersion, string gameVersion, double uptimeSeconds)
+        public string ToJson(string agentVersion, string gameVersion, double uptimeSeconds, List<Ping> pings = null)
         {
             var w = new JsonWriter();
             w.BeginObject();
@@ -79,6 +79,24 @@ namespace ValheimUI.Agent
                     w.EndObject();
                 }
                 w.EndObject();
+            }
+            w.EndArray();
+            // Map pings of the last few seconds (Chat "ChatMessage" of type Ping).
+            w.Name("pings").BeginArray();
+            if (pings != null)
+            {
+                foreach (var p in pings)
+                {
+                    w.BeginObject();
+                    w.Prop("name", p.Name ?? "");
+                    w.Name("position").BeginObject();
+                    w.Prop("x", (double)p.Pos.x);
+                    w.Prop("y", (double)p.Pos.y);
+                    w.Prop("z", (double)p.Pos.z);
+                    w.EndObject();
+                    w.Prop("at", p.At.ToUniversalTime().ToString("o"));
+                    w.EndObject();
+                }
             }
             w.EndArray();
             w.EndObject();

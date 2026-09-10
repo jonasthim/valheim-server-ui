@@ -112,3 +112,103 @@
   right: 8px;
   top: 8px;
 }
+
+/* Drifting clouds over the unexplored parchment (masked by the fog mask). */
+.clouds {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+  background-size: 12.5% 12.5%;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-mode: alpha;
+  mix-blend-mode: multiply;
+  opacity: 0.16;
+  animation: drift 140s linear infinite;
+  pointer-events: none;
+  will-change: background-position;
+}
+.cloudsFar {
+  background-size: 22% 22%;
+  opacity: 0.1;
+  animation: drift 230s linear infinite reverse;
+}
+/* Faint shimmer over explored water (masked by the water mask's luminance). */
+.water {
+  position: absolute;
+  inset: 0;
+  background-repeat: repeat;
+  background-size: 5% 5%;
+  mask-size: 100% 100%;
+  -webkit-mask-size: 100% 100%;
+  mask-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-mode: luminance;
+  mix-blend-mode: screen;
+  opacity: 0.11;
+  animation: drift 45s linear infinite;
+  pointer-events: none;
+  will-change: background-position;
+}
+@keyframes drift {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 640px 360px;
+  }
+}
+/* A map ping: two expanding rings and the sender's name, as in the game. */
+.pingWrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: grid;
+  place-items: center;
+  transform-origin: 50% 50%;
+  pointer-events: none;
+}
+.ping {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #efe6cc;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6), inset 0 0 4px rgba(0, 0, 0, 0.4);
+  animation: pingRing 2.6s ease-out infinite;
+}
+.pingLate {
+  animation-delay: 0.9s;
+}
+.pingName {
+  position: absolute;
+  top: 16px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #efe6cc;
+  text-shadow: -1px 0 #1a120a, 1px 0 #1a120a, 0 -1px #1a120a, 0 1px #1a120a, 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+@keyframes pingRing {
+  0% {
+    transform: scale(0.4);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(3.2);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .clouds,
+  .water {
+    animation: none;
+  }
+  .ping {
+    animation-iteration-count: 1;
+  }
+}

@@ -44,6 +44,8 @@ type tileSource struct {
 	maskKey   string
 	warmed    string // cache key base already pre-warmed
 	writes    int
+	water     []byte // fogged water mask PNG for waterKey
+	waterKey  string
 }
 
 // TileDir is where an instance's tiles are cached.
@@ -140,6 +142,47 @@ func (s *Service) TilePNG(ctx context.Context, id string, z, x, y int, fog bool)
 		return nil, "", info, fmt.Errorf("agent: encode fogged tile: %w", err)
 	}
 	return buf.Bytes(), fmt.Sprintf(`"%s-m%d"`, etag, maskVersion), info, nil
+}
+
+// WaterMaskPNG is a 1024² grey image, 255 where the map shows explored
+// water, for the UI's water shimmer. Cached per layers and mask file.
+func (s *Service) WaterMaskPNG(ctx context.Context, id string) (data []byte, etag string, err error) {
+	layersPath, info, err := s.layersPath(ctx, id)
+	if err != nil {
+		return nil, "", err
+	}
+	s.mu.Lock()
+	ms := s.maps[id]
+	if ms == nil {
+		ms = &mapState{}
+		s.maps[id] = ms
+	}
+	s.mu.Unlock()
+	layers, params, err := s.tileLayers(ms, layersPath, info)
+	if err != nil {
+		return nil, "", err
+	}
+	mask, maskVersion, err := s.tileMask(ctx, id, ms)
+	if err != nil && !errors.Is(err, ErrMapRendering) {
+		return nil, "", err
+	}
+	key := fmt.Sprintf("%s|m%d|%v", fileKey(layersPath), maskVersion, mask != nil)
+	s.mu.Lock()
+	if ms.tiles.waterKey == key && ms.tiles.water != nil {
+		d := ms.tiles.water
+		s.mu.Unlock()
+		return d, `"` + key + `"`, nil
+	}
+	s.mu.Unlock()
+	img := mapstyle.WaterMask(layers, params, mask, 1024)
+	var buf bytes.Buffer
+	if err := (&png.Encoder{CompressionLevel: png.DefaultCompression}).Encode(&buf, img); err != nil {
+		return nil, "", fmt.Errorf("agent: encode water mask: %w", err)
+	}
+	s.mu.Lock()
+	ms.tiles.water, ms.tiles.waterKey = buf.Bytes(), key
+	s.mu.Unlock()
+	return buf.Bytes(), `"` + key + `"`, nil
 }
 
 // TilesFor describes the pyramid for InstanceMap.tiles, or nil when the

@@ -891,6 +891,30 @@ paths:
         '304': { description: 'Not modified (If-None-Match matched the ETag)' }
         '404': { description: 'No such tile', $ref: '#/components/responses/Error' }
         '409': { description: 'Agent without layers', $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/map/water.png:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [agent]
+      summary: Fogged water mask (grey PNG, 255 where the map shows explored water)
+      description: Same extent as map.png; 1024 px. The UI confines its animated water shimmer to it. Zero under the fog, so it reveals nothing the fogged map does not.
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        '409': { description: 'No layers yet', $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/map/clouds.png:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [agent]
+      summary: Seamless cloud texture (grey+alpha PNG) the UI drifts over the unexplored parchment
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            image/png:
+              schema: { type: string, format: binary }
   /instances/{instanceId}/map/explored.png:
     parameters: [{ $ref: '#/components/parameters/instanceId' }]
     get:
@@ -1844,7 +1868,7 @@ components:
 
     AgentStatus:
       type: object
-      required: [agent_version, uptime_seconds, ready, captured_at, world, global_keys, players]
+      required: [agent_version, uptime_seconds, ready, captured_at, world, global_keys, players, pings]
       properties:
         agent_version: { type: string }
         game_version: { type: string }
@@ -1854,6 +1878,16 @@ components:
         world: { $ref: '#/components/schemas/AgentWorld' }
         global_keys: { type: array, items: { type: string } }
         players: { type: array, items: { $ref: '#/components/schemas/AgentPlayer' } }
+        pings: { type: array, items: { $ref: '#/components/schemas/AgentPing' }, description: Map pings of the last few seconds (empty from agents before 1.10) }
+
+    AgentPing:
+      type: object
+      description: A map ping a player sent in game
+      required: [name, position, at]
+      properties:
+        name: { type: string }
+        position: { $ref: '#/components/schemas/Vec3' }
+        at: { type: string, format: date-time }
 
     AgentInfo:
       type: object
