@@ -2,9 +2,11 @@ import {
   ActionIcon,
   AppShell,
   Avatar,
+  Center,
   Badge,
   Burger,
   Group,
+  Loader,
   Menu,
   NavLink,
   ScrollArea,
@@ -15,6 +17,7 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from '@mantine/core'
+import { Suspense } from 'react'
 import { useDisclosure } from '@mantine/hooks'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -203,7 +206,9 @@ export function Shell() {
       <AppShell.Main className={classes.main}>
         <div className={classes.content}>
           <JobDrawerHost>
-            <Outlet />
+            <Suspense fallback={<Center h="50vh"><Loader /></Center>}>
+              <Outlet />
+            </Suspense>
           </JobDrawerHost>
         </div>
       </AppShell.Main>

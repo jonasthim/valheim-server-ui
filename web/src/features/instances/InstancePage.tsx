@@ -1,4 +1,5 @@
-import { Stack, Tabs } from '@mantine/core'
+import { lazy, Suspense } from 'react'
+import { Center, Loader, Stack, Tabs } from '@mantine/core'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   IconAdjustments,
@@ -12,14 +13,16 @@ import {
 } from '@tabler/icons-react'
 import { useInstance } from './useInstance'
 import { INSTANCE_TABS, type InstanceTab } from './tabs'
-import { OverviewTab } from './OverviewTab'
-import { ConsoleTab } from './ConsoleTab'
-import { ConfigTab } from './ConfigTab'
-import { PlayersTab } from './PlayersTab'
-import { WorldsTab } from './WorldsTab'
-import { BackupsTab } from './BackupsTab'
-import { ModsTab } from './ModsTab'
-import { SchedulesTab } from './SchedulesTab'
+// Tab panels are code-split; keepMounted={false} means each loads on first
+// visit, behind the Suspense boundary around the panels below.
+const OverviewTab = lazy(() => import('./OverviewTab').then((m) => ({ default: m.OverviewTab })))
+const ConsoleTab = lazy(() => import('./ConsoleTab').then((m) => ({ default: m.ConsoleTab })))
+const ConfigTab = lazy(() => import('./ConfigTab').then((m) => ({ default: m.ConfigTab })))
+const PlayersTab = lazy(() => import('./PlayersTab').then((m) => ({ default: m.PlayersTab })))
+const WorldsTab = lazy(() => import('./WorldsTab').then((m) => ({ default: m.WorldsTab })))
+const BackupsTab = lazy(() => import('./BackupsTab').then((m) => ({ default: m.BackupsTab })))
+const ModsTab = lazy(() => import('./ModsTab').then((m) => ({ default: m.ModsTab })))
+const SchedulesTab = lazy(() => import('./SchedulesTab').then((m) => ({ default: m.SchedulesTab })))
 import { PageHeader, StatusPill } from '../../ui'
 import { stateColor, stateLabel } from './instanceHelpers'
 
@@ -71,14 +74,16 @@ export function InstancePage() {
             })}
           </Tabs.List>
         </div>
-        <Tabs.Panel value="overview" pt="md"><OverviewTab id={id} /></Tabs.Panel>
-        <Tabs.Panel value="console" pt="md"><ConsoleTab key={id} id={id} /></Tabs.Panel>
-        <Tabs.Panel value="config" pt="md"><ConfigTab id={id} /></Tabs.Panel>
-        <Tabs.Panel value="players" pt="md"><PlayersTab id={id} /></Tabs.Panel>
-        <Tabs.Panel value="worlds" pt="md"><WorldsTab id={id} /></Tabs.Panel>
-        <Tabs.Panel value="backups" pt="md"><BackupsTab id={id} /></Tabs.Panel>
-        <Tabs.Panel value="mods" pt="md"><ModsTab id={id} /></Tabs.Panel>
-        <Tabs.Panel value="schedules" pt="md"><SchedulesTab id={id} /></Tabs.Panel>
+        <Suspense fallback={<Center py="xl"><Loader /></Center>}>
+          <Tabs.Panel value="overview" pt="md"><OverviewTab id={id} /></Tabs.Panel>
+          <Tabs.Panel value="console" pt="md"><ConsoleTab key={id} id={id} /></Tabs.Panel>
+          <Tabs.Panel value="config" pt="md"><ConfigTab id={id} /></Tabs.Panel>
+          <Tabs.Panel value="players" pt="md"><PlayersTab id={id} /></Tabs.Panel>
+          <Tabs.Panel value="worlds" pt="md"><WorldsTab id={id} /></Tabs.Panel>
+          <Tabs.Panel value="backups" pt="md"><BackupsTab id={id} /></Tabs.Panel>
+          <Tabs.Panel value="mods" pt="md"><ModsTab id={id} /></Tabs.Panel>
+          <Tabs.Panel value="schedules" pt="md"><SchedulesTab id={id} /></Tabs.Panel>
+        </Suspense>
       </Tabs>
     </Stack>
   )
