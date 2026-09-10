@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using UnityEngine;
 
 namespace ValheimUI.Agent
@@ -7,8 +8,9 @@ namespace ValheimUI.Agent
     /// <summary>
     /// Points of interest read from the server's ZDO store: portals with their
     /// tags, ships, carts, tombstones, claimed beds, and the boss locations the
-    /// game itself marks on the map. Refreshed one prefab per frame so a large
-    /// world never stalls the server; the JSON is rebuilt when a pass completes.
+    /// game itself marks on the map. One pass over the ZDO table every 30 s,
+    /// bucketing by prefab hash, so the cost is one dictionary walk regardless
+    /// of how many kinds are tracked.
     /// </summary>
     internal sealed class MapObjects
     {
@@ -34,67 +36,73 @@ namespace ValheimUI.Agent
             new Kind { Type = "bed", Prefab = "piece_bed02", Label = "Dragon bed", TextKey = "ownerName" },
         };
 
+        private const int MaxObjects = 5000;
         private readonly TimeSpan _refreshEvery = TimeSpan.FromSeconds(30);
-        private readonly List<ZDO> _buffer = new List<ZDO>(256);
-        private readonly System.Text.StringBuilder _pending = new System.Text.StringBuilder(4096);
-        private int _kindIndex = -1;
-        private bool _firstEntry = true;
+        private readonly Dictionary<int, Kind> _kindByHash = new Dictionary<int, Kind>();
         private DateTime _lastCompleted = DateTime.MinValue;
         private volatile string _json = "{\"objects\":[],\"locations\":[],\"updated_at\":null}";
+        private bool _lookupResolved;
+        private FieldInfo _objectsField;
+        private MethodInfo _objectsMethod;
 
         public string Json => _json;
 
-        /// <summary>Advances the scan by one prefab. Main thread.</summary>
+        public MapObjects()
+        {
+            foreach (var k in Kinds) _kindByHash[k.Prefab.GetStableHashCode()] = k;
+        }
+
+        /// <summary>Refreshes the object list when due. Main thread.</summary>
         public void Step()
         {
             var zdoman = ZDOMan.instance;
             if (zdoman == null) return;
-            if (_kindIndex < 0)
+            if (DateTime.UtcNow - _lastCompleted < _refreshEvery) return;
+            _lastCompleted = DateTime.UtcNow;
+
+            var sb = new System.Text.StringBuilder(8192);
+            sb.Append("{\"objects\":[");
+            int count = 0;
+            try
             {
-                if (DateTime.UtcNow - _lastCompleted < _refreshEvery) return;
-                _kindIndex = 0;
-                _pending.Length = 0;
-                _pending.Append("{\"objects\":[");
-                _firstEntry = true;
-            }
-            if (_kindIndex < Kinds.Length)
-            {
-                var kind = Kinds[_kindIndex];
-                _buffer.Clear();
-                try
+                var table = ObjectsById(zdoman);
+                if (table != null)
                 {
-                    zdoman.GetAllZDOsWithPrefab(kind.Prefab, _buffer);
-                }
-                catch (Exception)
-                {
-                    _buffer.Clear();
-                }
-                foreach (var zdo in _buffer)
-                {
-                    if (zdo == null) continue;
-                    var pos = zdo.GetPosition();
-                    string text = "";
-                    if (kind.TextKey != null)
+                    foreach (var kv in table)
                     {
-                        try { text = zdo.GetString(kind.TextKey, "") ?? ""; } catch (Exception) { text = ""; }
+                        var zdo = kv.Value;
+                        if (zdo == null) continue;
+                        Kind kind;
+                        if (!_kindByHash.TryGetValue(zdo.GetPrefab(), out kind)) continue;
+                        var pos = zdo.GetPosition();
+                        string text = "";
+                        if (kind.TextKey != null)
+                        {
+                            try { text = zdo.GetString(kind.TextKey, "") ?? ""; } catch (Exception) { text = ""; }
+                        }
+                        if (count > 0) sb.Append(',');
+                        sb.Append("{\"type\":").Append(JsonWriter.Quote(kind.Type))
+                            .Append(",\"label\":").Append(JsonWriter.Quote(kind.Label))
+                            .Append(",\"x\":").Append(F(pos.x))
+                            .Append(",\"y\":").Append(F(pos.y))
+                            .Append(",\"z\":").Append(F(pos.z))
+                            .Append(",\"text\":").Append(JsonWriter.Quote(text))
+                            .Append('}');
+                        if (++count >= MaxObjects) break;
                     }
-                    if (!_firstEntry) _pending.Append(',');
-                    _firstEntry = false;
-                    _pending.Append("{\"type\":").Append(JsonWriter.Quote(kind.Type))
-                        .Append(",\"label\":").Append(JsonWriter.Quote(kind.Label))
-                        .Append(",\"x\":").Append(F(pos.x))
-                        .Append(",\"y\":").Append(F(pos.y))
-                        .Append(",\"z\":").Append(F(pos.z))
-                        .Append(",\"text\":").Append(JsonWriter.Quote(text))
-                        .Append('}');
                 }
-                _kindIndex++;
+            }
+            catch (InvalidOperationException)
+            {
+                // The table changed under us; try again next time.
+                _lastCompleted = DateTime.UtcNow - _refreshEvery + TimeSpan.FromSeconds(2);
                 return;
             }
+            catch (Exception)
+            {
+            }
 
-            // Last step of a pass: the game's own location icons (boss altars,
-            // start temple, trader once found) and the timestamp.
-            _pending.Append("],\"locations\":[");
+            sb.Append("],\"locations\":[");
             try
             {
                 var icons = new Dictionary<Vector3, string>();
@@ -103,9 +111,9 @@ namespace ValheimUI.Agent
                 bool first = true;
                 foreach (var kv in icons)
                 {
-                    if (!first) _pending.Append(',');
+                    if (!first) sb.Append(',');
                     first = false;
-                    _pending.Append("{\"name\":").Append(JsonWriter.Quote(kv.Value))
+                    sb.Append("{\"name\":").Append(JsonWriter.Quote(kv.Value))
                         .Append(",\"x\":").Append(F(kv.Key.x))
                         .Append(",\"y\":").Append(F(kv.Key.y))
                         .Append(",\"z\":").Append(F(kv.Key.z))
@@ -115,10 +123,29 @@ namespace ValheimUI.Agent
             catch (Exception)
             {
             }
-            _pending.Append("],\"updated_at\":").Append(JsonWriter.Quote(DateTime.UtcNow.ToString("o"))).Append('}');
-            _json = _pending.ToString();
-            _lastCompleted = DateTime.UtcNow;
-            _kindIndex = -1;
+            sb.Append("],\"updated_at\":").Append(JsonWriter.Quote(DateTime.UtcNow.ToString("o"))).Append('}');
+            _json = sb.ToString();
+        }
+
+        /// <summary>
+        /// The ZDO table. Its accessor has moved between game versions (a
+        /// private m_objectsByID field, later a GetObjectsByID method), so it is
+        /// resolved by reflection once instead of pinning the plugin to one.
+        /// </summary>
+        private Dictionary<ZDOID, ZDO> ObjectsById(ZDOMan zdoman)
+        {
+            if (!_lookupResolved)
+            {
+                _lookupResolved = true;
+                var t = typeof(ZDOMan);
+                var flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+                _objectsMethod = t.GetMethod("GetObjectsByID", flags, null, Type.EmptyTypes, null);
+                _objectsField = t.GetField("m_objectsByID", flags);
+            }
+            object value = null;
+            if (_objectsMethod != null) value = _objectsMethod.Invoke(zdoman, null);
+            else if (_objectsField != null) value = _objectsField.GetValue(zdoman);
+            return value as Dictionary<ZDOID, ZDO>;
         }
 
         private static string F(float v)
