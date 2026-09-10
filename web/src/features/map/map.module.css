@@ -4,7 +4,8 @@
   aspect-ratio: 1 / 1;
   max-height: 78vh;
   overflow: hidden;
-  background: #12161e;
+  /* parchment, so the unexplored edge continues while tiles load */
+  background: #b9ad8c;
   border-radius: var(--mantine-radius-md);
   touch-action: none;
   cursor: grab;
@@ -28,87 +29,72 @@
   image-rendering: auto;
   pointer-events: none;
 }
+.tile {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  /* a hair of overlap hides sub-pixel seams between tiles while scaled */
+  outline: 0.5px solid transparent;
+  image-rendering: auto;
+}
 .markerAnchor {
   position: absolute;
   width: 0;
   height: 0;
 }
+/* Players glide between two status updates instead of jumping. */
+.glide {
+  transition: left 2s linear, top 2s linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .glide {
+    transition: none;
+  }
+}
 .marker {
   position: absolute;
   left: 0;
   top: 0;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.6);
+  display: grid;
+  place-items: center;
   transform-origin: 50% 50%;
   pointer-events: auto;
 }
-.player {
-  width: 14px;
-  height: 14px;
-  background: var(--vh-ember, #e0762b);
+.icon {
+  display: block;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.75));
 }
-.portal {
-  background: #7bb7ff;
-  border-radius: 3px;
+.marker[data-kind='player'] .icon {
+  filter: drop-shadow(0 0 2px rgba(255, 220, 140, 0.9)) drop-shadow(0 1px 1px rgba(0, 0, 0, 0.75));
 }
-.ship {
-  background: #3f8fd2;
-  border-radius: 2px 2px 6px 6px;
+/* The game's uppercase caption under boss and place icons. */
+.locationLabel {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 1px;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #efe6cc;
+  text-shadow: -1px 0 #1a120a, 1px 0 #1a120a, 0 -1px #1a120a, 0 1px #1a120a, 0 1px 3px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
 }
-.cart {
-  background: #a9773a;
-  border-radius: 2px;
-}
-.tombstone {
-  background: #9a9aa6;
-  border-radius: 6px 6px 2px 2px;
-}
-.bed {
-  background: #6aa84f;
-  border-radius: 2px;
-  width: 10px;
-  height: 10px;
-}
-/* Pins shared on cartography tables: a diamond in the game's pin colour. */
-.pin {
-  width: 11px;
-  height: 11px;
-  border-radius: 2px;
-  transform: rotate(45deg);
-  background: #e8e2d0;
-}
-.pin[data-pin='fire'] { background: #f07d3a; }
-.pin[data-pin='house'] { background: #d9c27a; }
-.pin[data-pin='mine'] { background: #b08a5a; }
-.pin[data-pin='cave'] { background: #8d8f9a; }
-.pin[data-pin='death'] { background: #6b6b75; }
-.pin[data-pin='bed'] { background: #6aa84f; }
-.pin[data-pin='portal'] { background: #7bb7ff; }
-.pin[data-pin='boss'] { background: #e04545; width: 13px; height: 13px; }
-.pin[data-pin='hildir'] { background: #d580ff; }
-.pin[data-checked='true'] { opacity: 0.55; }
-
-.location {
-  background: #f0d060;
-  width: 14px;
-  height: 14px;
-  clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
-  border: none;
-  box-shadow: none;
-  border-radius: 0;
-}
+/* Player names beside their portrait. */
 .caption {
   position: absolute;
-  left: 16px;
-  top: -3px;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 4px;
   white-space: nowrap;
   font-size: 12px;
   font-weight: 600;
-  color: #fff;
-  text-shadow: 0 0 3px #000, 0 0 3px #000, 0 1px 2px #000;
+  color: #efe6cc;
+  text-shadow: -1px 0 #1a120a, 1px 0 #1a120a, 0 -1px #1a120a, 0 1px #1a120a, 0 1px 3px rgba(0, 0, 0, 0.8);
   pointer-events: none;
 }
 .overlay {
@@ -126,4 +112,3 @@
   right: 8px;
   top: 8px;
 }
-

@@ -34,7 +34,6 @@ export function useRenderMap(id: string) {
   })
 }
 
-/** Image URL; the version suffix busts the browser cache after a re-render. */
 /**
  * Map image URL. The fog is composited on the server, so the same endpoint
  * serves the fogged image (everyone) or, with fog=0, the bare render
@@ -45,6 +44,12 @@ export function mapImageUrl(id: string, version: string | undefined, fog: boolea
   const v = version || 'cached'
   const q = `v=${encodeURIComponent(v)}${fog ? '' : '&fog=0'}`
   return `${API_BASE}/instances/${encodeURIComponent(id)}/map.png?${q}`
+}
+
+/** Tile URL of the deep-zoom pyramid (the caller appends ?v=<tiles.version>). */
+export function tileUrl(id: string, z: number, x: number, y: number, fog: boolean): string {
+  const base = `${API_BASE}/instances/${encodeURIComponent(id)}/map/tiles/${z}/${x}/${y}.png`
+  return fog ? base : `${base}?fog=0&`
 }
 
 /** World coordinates to image fractions (0..1), north up. */

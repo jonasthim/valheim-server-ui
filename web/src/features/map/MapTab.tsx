@@ -11,8 +11,9 @@ import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatusPill } from '../../ui'
 import { useAgent } from '../agent'
-import { MapView, type Marker } from './MapView'
-import { mapImageUrl, useInstanceMap, useRenderMap, worldToFraction } from './useMap'
+import type { MapIconName } from './MapIcons'
+import { MapView, type Marker, type TileSource } from './MapView'
+import { mapImageUrl, tileUrl, useInstanceMap, useRenderMap, worldToFraction } from './useMap'
 
 type Layer = 'players' | 'portals' | 'ships' | 'carts' | 'tombstones' | 'beds' | 'locations' | 'pins'
 const LAYERS: { id: Layer; label: string }[] = [
@@ -44,6 +45,20 @@ function newerExplored(a: ExploredInfo | undefined, b: ExploredInfo | undefined)
   if (!a) return b
   if (!b) return a
   return b.version > a.version ? b : a
+}
+
+const ICON_NAMES: ReadonlySet<string> = new Set<MapIconName>(['player', 'portal', 'ship', 'cart', 'tombstone', 'bed', 'temple', 'boss', 'trader', 'fire', 'house', 'mine', 'cave', 'death', 'hildir', 'other'])
+
+/** Maps an object type or pin type to a glyph. */
+function iconFor(kind: string): MapIconName {
+  return ICON_NAMES.has(kind) ? (kind as MapIconName) : 'other'
+}
+
+/** The glyph for one of the game's location icons. */
+function locationIcon(name: string): MapIconName {
+  if (name === 'StartTemple') return 'temple'
+  if (/Vendor|Hildir_camp|BogWitch/.test(name)) return 'trader'
+  return 'boss'
 }
 
 /** A boss pin this close to a boss location is the location itself (a Vegvisir marks the altar). */
@@ -88,6 +103,15 @@ export function MapTab({ id }: { id: string }) {
   // Two sources carry the fog state: the agent stream (every change, ~2 s)
   // and the map poll (5 s). Show whichever reflects the newer exploration.
   const explored = newerExplored(agent.data?.explored, data?.explored)
+  // The deep-zoom pyramid, when the agent exports layers.
+  const tilesInfo = data?.tiles
+  const tiles = useMemo<TileSource | null>(
+    () =>
+      tilesInfo && data?.image_ready
+        ? { tileSize: tilesInfo.tile_size, maxZoom: tilesInfo.max_zoom, version: tilesInfo.version, url: (z, x, y) => tileUrl(id, z, x, y, fogOn) }
+        : null,
+    [tilesInfo, data?.image_ready, id, fogOn],
+  )
 
   const markers = useMemo<Marker[]>(() => {
     const out: Marker[] = []
@@ -96,7 +120,7 @@ export function MapTab({ id }: { id: string }) {
       for (const p of players) {
         if (!p.position) continue
         const { u, v } = worldToFraction(p.position.x, p.position.z, radius)
-        out.push({ key: `p-${p.uid}`, u, v, kind: 'player', label: p.name, detail: p.visible ? undefined : 'hidden from other players', caption: p.name })
+        out.push({ key: `p-${p.uid}`, u, v, kind: 'player', icon: 'player', label: p.name, detail: p.visible ? undefined : 'hidden from other players', caption: p.name, labelStyle: 'name' })
       }
     }
     const typeToLayer: Record<string, Layer> = { portal: 'portals', ship: 'ships', cart: 'carts', tombstone: 'tombstones', bed: 'beds' }
@@ -105,7 +129,7 @@ export function MapTab({ id }: { id: string }) {
       if (!layer || !on.has(layer)) return
       if (fogOn && o.explored === false) return
       const { u, v } = worldToFraction(o.x, o.z, radius)
-      out.push({ key: `o-${o.type}-${i}`, u, v, kind: o.type, label: o.label, detail: o.text || undefined })
+      out.push({ key: `o-${o.type}-${i}`, u, v, kind: o.type, icon: iconFor(o.type), label: o.label, detail: o.text || undefined })
     })
     const locations = data?.locations ?? []
     if (on.has('locations')) {
@@ -113,7 +137,8 @@ export function MapTab({ id }: { id: string }) {
         // A location a player pinned from a Vegvisir is known even under the fog.
         if (fogOn && l.explored === false && !l.discovered) return
         const { u, v } = worldToFraction(l.x, l.z, radius)
-        out.push({ key: `l-${i}`, u, v, kind: 'location', label: LOCATION_LABELS[l.name] ?? l.name, detail: l.discovered ? 'discovered by a player' : undefined })
+        const label = LOCATION_LABELS[l.name] ?? l.name
+        out.push({ key: `l-${i}`, u, v, kind: 'location', icon: locationIcon(l.name), label, caption: label, labelStyle: 'location', detail: l.discovered ? 'discovered by a player' : undefined })
       })
     }
     if (on.has('pins')) {
@@ -122,7 +147,21 @@ export function MapTab({ id }: { id: string }) {
         if (p.type === 'boss' && on.has('locations') && locations.some((l) => Math.hypot(l.x - p.x, l.z - p.z) <= BOSS_PIN_MERGE_M)) return
         const { u, v } = worldToFraction(p.x, p.z, radius)
         const parts = [p.source === 'vegvisir' ? 'found at a Vegvisir' : '', p.author ? `by ${p.author}` : '', p.checked ? 'checked off' : ''].filter(Boolean)
-        out.push({ key: `pin-${i}`, u, v, kind: 'pin', pin: p.type, checked: p.checked, label: p.name || PIN_LABELS[p.type] || 'Pin', detail: parts.length ? parts.join(' · ') : undefined })
+        const label = p.name || PIN_LABELS[p.type] || 'Pin'
+        out.push({
+          key: `pin-${i}`,
+          u,
+          v,
+          kind: 'pin',
+          icon: iconFor(p.type),
+          pin: p.type,
+          checked: p.checked,
+          label,
+          // Boss pins carry the game's uppercase caption; other pins keep their name in the tooltip.
+          caption: p.type === 'boss' && p.name ? p.name : undefined,
+          labelStyle: 'location',
+          detail: parts.length ? parts.join(' · ') : undefined,
+        })
       })
     }
     return out
@@ -188,7 +227,7 @@ export function MapTab({ id }: { id: string }) {
     <Stack gap="md">
       <SectionCard
         title="World map"
-        description="Terrain from the world seed, players live from the server. Scroll to zoom, drag to pan."
+        description="The world drawn like the in-game map from the server's own sampling, players live. Scroll to zoom, drag to pan."
         actions={
           <Group gap="sm" wrap="wrap" justify="flex-end">
             <StatusPill color={data.connected ? 'moss' : 'gray'}>{data.connected ? 'live' : 'agent offline'}</StatusPill>
@@ -239,6 +278,7 @@ export function MapTab({ id }: { id: string }) {
           </Group>
           <MapView
             imageUrl={data.image_ready ? mapImageUrl(id, data.image_version, fogOn) : null}
+            tiles={tiles}
             markers={markers}
             overlay={overlay}
             onImageError={() => setImageBroken(true)}
@@ -257,6 +297,12 @@ export function MapTab({ id }: { id: string }) {
           {data.stale && !data.connected && (
             <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />}>
               This image was rendered during an earlier run. Start the server to confirm it still matches the world.
+            </Alert>
+          )}
+          {data.connected && data.map_supported && !data.layers_supported && (
+            <Alert color="yellow" variant="light" icon={<IconAlertTriangle size={16} />}>
+              The agent in this server (v{data.agent_version || '?'}) draws the map in the older flat style. Update it from the{' '}
+              <Link to={`/instances/${id}/mods`}>Mods tab</Link> (the server restarts) for the in-game look and deep zoom.
             </Alert>
           )}
         </Stack>
