@@ -13,7 +13,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -270,18 +269,6 @@ func (t *Tailer) logger() *slog.Logger {
 		return t.Logger
 	}
 	return slog.Default()
-}
-
-// fileIdentity distinguishes the file backing an open path across rotations.
-type fileIdentity struct {
-	dev, ino uint64
-}
-
-func identify(fi os.FileInfo) fileIdentity {
-	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
-		return fileIdentity{dev: st.Dev, ino: st.Ino}
-	}
-	return fileIdentity{}
 }
 
 // readLastLines returns up to n trailing lines of f (which must be

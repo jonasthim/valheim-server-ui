@@ -1,17 +1,13 @@
-// Package metrics samples host and per-process CPU and memory usage from
-// /proc (Linux only, no cgo, no dependencies). It enriches InstanceStatus for
-// running game servers and feeds the dashboard's host tiles.
+// Package metrics samples host and per-process CPU and memory usage: from
+// /proc on Linux, from the Win32 process and memory APIs on Windows (no cgo).
+// It enriches InstanceStatus for running game servers and feeds the
+// dashboard's host tiles.
 package metrics
 
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -28,8 +24,18 @@ const procTTL = 5 * time.Minute
 
 // clkTck is USER_HZ, the unit of the CPU time fields in /proc. It is 100 on
 // every mainstream Linux build; reading it needs cgo (sysconf), so it is
-// fixed here.
+// fixed here. The Windows reader converts its 100 ns process times to the
+// same 10 ms ticks.
 const clkTck = 100.0
+
+// reader is the platform source of raw counters (procfsReader, winReader).
+type reader interface {
+	cpu() (busy, total uint64, err error)
+	mem() (total, available int64, err error)
+	load() (float64, error)
+	procTicks(pid int) (uint64, error)
+	procRSS(pid int) (int64, error)
+}
 
 type cpuSample struct {
 	busy, total uint64
@@ -45,12 +51,12 @@ type procSample struct {
 	sampled bool
 }
 
-// Sampler reads /proc and remembers the previous reading per subject so it
-// can turn cumulative CPU time into a percentage. Safe for concurrent use.
+// Sampler reads the platform counters and remembers the previous reading
+// per subject so it can turn cumulative CPU time into a percentage. Safe for
+// concurrent use.
 type Sampler struct {
-	procRoot string
-	pageSize int64
-	now      func() time.Time
+	r   reader
+	now func() time.Time
 
 	mu       sync.Mutex
 	hostPrev *cpuSample
@@ -59,9 +65,9 @@ type Sampler struct {
 	procs    map[int]*procSample
 }
 
-// New returns a Sampler reading the real /proc.
+// New returns a Sampler reading the live system.
 func New() *Sampler {
-	return &Sampler{procRoot: "/proc", pageSize: int64(os.Getpagesize()), now: time.Now, procs: map[int]*procSample{}}
+	return &Sampler{r: newReader(), now: time.Now, procs: map[int]*procSample{}}
 }
 
 // Host returns CPU utilisation across all cores (0-100), the 1-minute load
@@ -75,7 +81,7 @@ func (s *Sampler) Host() (domain.HostMetrics, error) {
 		return s.hostLast, nil
 	}
 	out := domain.HostMetrics{CPUCount: runtime.NumCPU()}
-	busy, total, err := s.readCPU()
+	busy, total, err := s.r.cpu()
 	if err != nil {
 		return out, err
 	}
@@ -85,11 +91,11 @@ func (s *Sampler) Host() (domain.HostMetrics, error) {
 		out.CPUPercent = s.hostLast.CPUPercent
 	}
 	s.hostPrev = &cpuSample{busy: busy, total: total, at: now}
-	if mt, ma, err := s.readMem(); err == nil {
+	if mt, ma, err := s.r.mem(); err == nil {
 		out.MemTotalBytes = mt
 		out.MemUsedBytes = mt - ma
 	}
-	if l, err := s.readLoad(); err == nil {
+	if l, err := s.r.load(); err == nil {
 		out.LoadAvg1 = l
 	}
 	s.hostLast = out
@@ -98,7 +104,7 @@ func (s *Sampler) Host() (domain.HostMetrics, error) {
 }
 
 // Prime takes a first host reading so the next Host call can report a real
-// CPU percentage. Errors are ignored: a host without /proc simply reports 0.
+// CPU percentage. Errors are ignored: a host without counters simply reports 0.
 func (s *Sampler) Prime() { _, _ = s.Host() }
 
 // Process returns the resident memory and CPU usage (percent of one core) of
@@ -120,13 +126,13 @@ func (s *Sampler) Process(pid int) (domain.ProcessMetrics, error) {
 	if ps.sampled && now.Sub(ps.at) < minInterval {
 		return ps.last, nil
 	}
-	ticks, err := s.readProcTicks(pid)
+	ticks, err := s.r.procTicks(pid)
 	if err != nil {
 		delete(s.procs, pid)
 		return domain.ProcessMetrics{}, err
 	}
 	out := domain.ProcessMetrics{}
-	if rss, err := s.readProcRSS(pid); err == nil {
+	if rss, err := s.r.procRSS(pid); err == nil {
 		out.MemoryBytes = rss
 	}
 	if ps.primed {
@@ -163,138 +169,6 @@ func (s *Sampler) evictLocked(now time.Time) {
 			delete(s.procs, pid)
 		}
 	}
-}
-
-func (s *Sampler) readCPU() (busy, total uint64, err error) {
-	b, err := os.ReadFile(filepath.Join(s.procRoot, "stat"))
-	if err != nil {
-		return 0, 0, fmt.Errorf("read /proc/stat: %w", err)
-	}
-	line, _, _ := strings.Cut(string(b), "\n")
-	return parseCPULine(line)
-}
-
-// parseCPULine parses the aggregate "cpu ..." line of /proc/stat.
-func parseCPULine(line string) (busy, total uint64, err error) {
-	f := strings.Fields(line)
-	if len(f) < 5 || f[0] != "cpu" {
-		return 0, 0, errors.New("metrics: unexpected /proc/stat format")
-	}
-	vals := make([]uint64, 0, len(f)-1)
-	for _, x := range f[1:] {
-		n, err := strconv.ParseUint(x, 10, 64)
-		if err != nil {
-			return 0, 0, fmt.Errorf("metrics: parse /proc/stat: %w", err)
-		}
-		vals = append(vals, n)
-	}
-	for _, v := range vals {
-		total += v
-	}
-	idle := vals[3]
-	if len(vals) > 4 {
-		idle += vals[4] // iowait counts as idle
-	}
-	return total - idle, total, nil
-}
-
-func (s *Sampler) readMem() (total, available int64, err error) {
-	b, err := os.ReadFile(filepath.Join(s.procRoot, "meminfo"))
-	if err != nil {
-		return 0, 0, err
-	}
-	return parseMeminfo(string(b))
-}
-
-// parseMeminfo returns MemTotal and MemAvailable in bytes.
-func parseMeminfo(text string) (total, available int64, err error) {
-	for _, line := range strings.Split(text, "\n") {
-		key, rest, ok := strings.Cut(line, ":")
-		if !ok {
-			continue
-		}
-		if key != "MemTotal" && key != "MemAvailable" {
-			continue
-		}
-		f := strings.Fields(rest)
-		if len(f) == 0 {
-			continue
-		}
-		kb, perr := strconv.ParseInt(f[0], 10, 64)
-		if perr != nil {
-			return 0, 0, fmt.Errorf("metrics: parse meminfo %s: %w", key, perr)
-		}
-		if key == "MemTotal" {
-			total = kb * 1024
-		} else {
-			available = kb * 1024
-		}
-	}
-	if total == 0 {
-		return 0, 0, errors.New("metrics: MemTotal missing")
-	}
-	return total, available, nil
-}
-
-func (s *Sampler) readLoad() (float64, error) {
-	b, err := os.ReadFile(filepath.Join(s.procRoot, "loadavg"))
-	if err != nil {
-		return 0, err
-	}
-	f := strings.Fields(string(b))
-	if len(f) == 0 {
-		return 0, errors.New("metrics: empty loadavg")
-	}
-	return strconv.ParseFloat(f[0], 64)
-}
-
-func (s *Sampler) readProcTicks(pid int) (uint64, error) {
-	b, err := os.ReadFile(filepath.Join(s.procRoot, strconv.Itoa(pid), "stat"))
-	if err != nil {
-		return 0, err
-	}
-	return parseProcStat(string(b))
-}
-
-// parseProcStat returns utime+stime (clock ticks) from /proc/<pid>/stat. The
-// command name is in parentheses and may itself contain spaces or
-// parentheses, so fields are counted from the last ')'.
-func parseProcStat(text string) (uint64, error) {
-	i := strings.LastIndexByte(text, ')')
-	if i < 0 {
-		return 0, errors.New("metrics: unexpected /proc/pid/stat format")
-	}
-	f := strings.Fields(text[i+1:])
-	// After ')' the fields are: state(3) ppid pgrp session tty tpgid flags
-	// minflt cminflt majflt cmajflt utime(14) stime(15) ...
-	if len(f) < 13 {
-		return 0, errors.New("metrics: short /proc/pid/stat")
-	}
-	ut, err := strconv.ParseUint(f[11], 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	st, err := strconv.ParseUint(f[12], 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return ut + st, nil
-}
-
-func (s *Sampler) readProcRSS(pid int) (int64, error) {
-	b, err := os.ReadFile(filepath.Join(s.procRoot, strconv.Itoa(pid), "statm"))
-	if err != nil {
-		return 0, err
-	}
-	f := strings.Fields(string(b))
-	if len(f) < 2 {
-		return 0, errors.New("metrics: short /proc/pid/statm")
-	}
-	pages, err := strconv.ParseInt(f[1], 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return pages * s.pageSize, nil
 }
 
 func clampPercent(v float64) float64 {

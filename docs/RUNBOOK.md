@@ -6,7 +6,7 @@ rationale live in `ARCHITECTURE.md`; this file is the "how do I" companion.
 ## 1. Install
 
 Requirements: Debian 12+ or Ubuntu 22.04+ on x86_64, systemd, root access, ~2 GB
-disk per instance plus backups.
+disk per instance plus backups. For Windows see §13.
 
 One command, nothing else to download by hand:
 
@@ -308,3 +308,74 @@ repository; the job prefers that secret when present. The built assets are
 also kept as the workflow artifact `release-vX.Y.Z` for 30 days, so a failed
 publish can be completed by hand with `gh release upload vX.Y.Z dist/*`.
 
+
+## 13. Windows
+
+Supported: Windows Server 2019+ and Windows 10/11 (x64). Same binary features,
+different plumbing: there is no systemd and no sudo wrapper, so the manager runs
+as a Windows service and supervises the game processes itself.
+
+Install or upgrade from an elevated PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/install.ps1 -OutFile install.ps1
+.\install.ps1                              # latest release
+.\install.ps1 -Version v1.4.0              # pin a release
+.\install.ps1 -BaseUrl https://valheim.example.com
+.\install.ps1 -Check                       # report, change nothing
+.\install.ps1 -Uninstall                   # remove service + binary, keep data
+```
+
+What it does (idempotent):
+
+1. Downloads `valheim-ui_windows_amd64.zip` and `SHA256SUMS` for the release
+   and verifies the checksum.
+2. Installs `%ProgramFiles%\valheim-ui\valheim-ui.exe` (previous binary kept as
+   `.prev`, installed tag in `VERSION`), creates `%ProgramData%\valheim-ui` and
+   writes `config.yaml` there if absent (`supervisor: direct`).
+3. Registers the service `valheim-ui` (`valheim-ui.exe serve --config ...`),
+   running as the virtual account `NT SERVICE\valheim-ui`, start type
+   Automatic, recovery actions "restart after 5 s" with the failure flag set.
+   Grants that account Modify on both directories.
+4. Downloads SteamCMD into `%ProgramData%\valheim-ui\steamcmd` (skip with
+   `-NoSteamCmd`).
+5. Starts the service.
+
+Day to day:
+
+```powershell
+Get-Service valheim-ui                       # state
+Restart-Service valheim-ui
+Get-Content -Wait $env:ProgramData\valheim-ui\manager.log          # manager log
+Get-Content -Wait $env:ProgramData\valheim-ui\instances\main\logs\console.log
+& "$env:ProgramFiles\valheim-ui\valheim-ui.exe" admin list-users --config $env:ProgramData\valheim-ui\config.yaml
+```
+
+Differences from Linux worth knowing:
+
+- **Game processes belong to the service.** Stopping or restarting the manager
+  (including a self-upgrade) stops every running instance first; each one gets
+  a console Ctrl+C, so it saves its world and exits cleanly. Instances flagged
+  *autostart* are started again when the service comes up. On Linux the game
+  units are independent of the manager.
+- **Stop is a console Ctrl+C**, delivered by the `launch` proxy on the hidden
+  console it shares with `valheim_server.exe`; the game cannot outlive the
+  proxy (job object). If the server ignores Ctrl+C for 120 s it is killed.
+- **Mods:** the BepInEx pack is installed the same way; the launcher passes
+  `--doorstop-enabled true/false` so the *Enable BepInEx* switch works without
+  editing `doorstop_config.ini`. Mods run as `NT SERVICE\valheim-ui`, the same
+  account as the manager (see SECURITY.md).
+- **Self-upgrade** swaps `valheim-ui.exe` in place and exits; the SCM recovery
+  action restarts the service on the new binary. Rollback:
+  `valheim-ui.exe self-upgrade --rollback` from an elevated prompt, then
+  `Restart-Service valheim-ui`.
+- **No load average** on the Overview host tile (Windows has none); CPU and
+  memory come from the Win32 process counters.
+- **Firewall:** open UDP `<port>` and `<port>+1` for each instance yourself
+  (`New-NetFirewallRule -DisplayName "Valheim main" -Direction Inbound -Protocol UDP -LocalPort 2456-2457 -Action Allow`).
+- **Reverse proxy / TLS:** the UI still listens on loopback; put IIS (ARR),
+  Caddy or nginx in front and set `base_url`, as in §2.
+
+Windows support is new in v1.4.0. The launcher, stop protocol and metrics are
+covered by the Windows CI job against the fake game server; please report
+anything the real `valheim_server.exe` does differently.

@@ -27,10 +27,13 @@ func newTestSampler(t *testing.T) (*Sampler, *time.Time) {
 	t.Helper()
 	root := t.TempDir()
 	now := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
-	s := &Sampler{procRoot: root, pageSize: 4096, procs: map[int]*procSample{}}
+	s := &Sampler{r: procfsReader{root: root, pageSize: 4096}, procs: map[int]*procSample{}}
 	s.now = func() time.Time { return now }
 	return s, &now
 }
+
+// procRoot returns the fixture directory a test sampler reads as /proc.
+func procRoot(s *Sampler) string { return s.r.(procfsReader).root }
 
 func TestParsers(t *testing.T) {
 	busy, total, err := parseCPULine("cpu  100 0 50 800 50 0 0 0 0 0")
@@ -53,7 +56,7 @@ func TestParsers(t *testing.T) {
 
 func TestHostCPUPercentNeedsTwoReadings(t *testing.T) {
 	s, now := newTestSampler(t)
-	writeProc(t, s.procRoot, map[string]string{
+	writeProc(t, procRoot(s), map[string]string{
 		"stat":    "cpu  100 0 50 800 50 0 0 0 0 0\n",
 		"meminfo": "MemTotal: 1000 kB\nMemAvailable: 250 kB\n",
 		"loadavg": "0.42 0.5 0.6 1/10 99\n",
@@ -67,7 +70,7 @@ func TestHostCPUPercentNeedsTwoReadings(t *testing.T) {
 	}
 	// 2 s later: 200 more ticks total, 100 of them busy -> 50 %.
 	*now = now.Add(2 * time.Second)
-	writeProc(t, s.procRoot, map[string]string{"stat": "cpu  200 0 50 900 50 0 0 0 0 0\n"})
+	writeProc(t, procRoot(s), map[string]string{"stat": "cpu  200 0 50 900 50 0 0 0 0 0\n"})
 	h, err = s.Host()
 	if err != nil {
 		t.Fatal(err)
@@ -77,7 +80,7 @@ func TestHostCPUPercentNeedsTwoReadings(t *testing.T) {
 	}
 	// Within minInterval the cached figure is returned even if /proc moved on.
 	*now = now.Add(200 * time.Millisecond)
-	writeProc(t, s.procRoot, map[string]string{"stat": "cpu  900 0 50 900 50 0 0 0 0 0\n"})
+	writeProc(t, procRoot(s), map[string]string{"stat": "cpu  900 0 50 900 50 0 0 0 0 0\n"})
 	if h, _ = s.Host(); h.CPUPercent != 50 {
 		t.Fatalf("cached cpu = %v, want 50", h.CPUPercent)
 	}
@@ -85,7 +88,7 @@ func TestHostCPUPercentNeedsTwoReadings(t *testing.T) {
 
 func TestProcessAndEnrich(t *testing.T) {
 	s, now := newTestSampler(t)
-	writeProc(t, s.procRoot, map[string]string{
+	writeProc(t, procRoot(s), map[string]string{
 		"4242/stat":  "4242 (valheim_server) S 1 1 1 0 -1 0 0 0 0 0 100 100 0 0 20 0 30 0 100 1 2 3\n",
 		"4242/statm": "5000 2560 300 1 0 100 0\n",
 	})
@@ -100,7 +103,7 @@ func TestProcessAndEnrich(t *testing.T) {
 
 	// 4 s later the process used 200 more ticks = 2 s of CPU -> 50 % of a core.
 	*now = now.Add(4 * time.Second)
-	writeProc(t, s.procRoot, map[string]string{
+	writeProc(t, procRoot(s), map[string]string{
 		"4242/stat": "4242 (valheim_server) S 1 1 1 0 -1 0 0 0 0 0 250 150 0 0 20 0 30 0 100 1 2 3\n",
 	})
 	st = &domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning, PID: 4242}

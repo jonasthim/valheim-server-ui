@@ -142,6 +142,11 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 		}
 		return total, nil
 	}
+	// systemd starts enabled valheim@<id> units at boot by itself; the direct
+	// supervisor has no such memory, so when the manager is the Windows
+	// service that owns the game processes it starts flagged instances here.
+	startAutostartInstances(ctx, deps, inst)
+
 	if err := wireSelfUpdate(ctx, deps, runner, playersEverywhere); err != nil {
 		return fmt.Errorf("self-update: %w", err)
 	}

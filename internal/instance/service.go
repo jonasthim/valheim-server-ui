@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -371,7 +372,7 @@ func (s *Service) composeStatus(ctx context.Context, r row) (*domain.InstanceSta
 		Detail:           supSt.Detail,
 		InstalledBuildID: r.InstalledBuildID,
 		UpdateAvailable:  r.LatestBuildID != "" && r.InstalledBuildID != "" && r.LatestBuildID != r.InstalledBuildID,
-		BepInExInstalled: fileExists(paths.BepInExDir() + "/core/BepInEx.Preloader.dll"),
+		BepInExInstalled: fileExists(filepath.Join(paths.BepInExDir(), "core", "BepInEx.Preloader.dll")),
 		BepInExEnabled:   r.Config.BepInExEnabled,
 	}
 	for _, e := range s.enrichersSnapshot() {

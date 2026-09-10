@@ -4,7 +4,7 @@ LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 GOFLAGS := CGO_ENABLED=0
 DEVDATA := $(CURDIR)/devdata
 
-.PHONY: all deps gen web build check test lint vet fmt dev dev-backend dev-web e2e clean release fake-server deploy-sync deploy-sync-check
+.PHONY: all deps gen web build build-go build-go-windows check test lint vet fmt dev dev-backend dev-web e2e clean release fake-server deploy-sync deploy-sync-check
 
 all: build
 
@@ -24,12 +24,22 @@ build: web
 build-go:
 	$(GOFLAGS) go build -trimpath -ldflags '$(LDFLAGS)' -o bin/valheim-ui ./cmd/valheim-ui
 
+# Windows build (cross-compiled; the embedded frontend must be built first).
+build-go-windows:
+	GOOS=windows GOARCH=amd64 $(GOFLAGS) go build -trimpath -ldflags '$(LDFLAGS)' -o bin/valheim-ui.exe ./cmd/valheim-ui
+
+# Portable fake game server used by the launcher/supervisor tests and by
+# Windows development (Linux dev uses testdata/fake-server.sh).
+fake-server:
+	$(GOFLAGS) go build -o bin/fake-server$(if $(filter windows,$(GOOS)),.exe,) ./tools/fake-server
+
 fmt:
 	gofmt -w cmd internal web/*.go
 	cd web && npm run format 2>/dev/null || true
 
 vet:
 	go vet ./...
+	GOOS=windows go vet ./...
 
 lint: vet
 	golangci-lint run ./...
@@ -57,9 +67,10 @@ dev:
 e2e: build
 	cd web && npx playwright test --config e2e/playwright.config.ts
 
-release: build
+release: build build-go-windows
 	mkdir -p dist
 	tar -czf dist/valheim-ui_linux_amd64.tar.gz -C bin valheim-ui
+	rm -f dist/valheim-ui_windows_amd64.zip && (cd bin && zip -q ../dist/valheim-ui_windows_amd64.zip valheim-ui.exe)
 	cp -r deploy dist/
 	@echo "artifacts in dist/"
 

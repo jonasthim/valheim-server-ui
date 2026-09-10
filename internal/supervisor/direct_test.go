@@ -23,6 +23,12 @@ import (
 // exactly like it does in production.
 var selfBinPath string
 
+// fakeServerPath is the Go fake game server (tools/fake-server): the same
+// console script as testdata/fake-server.sh, runnable without a shell.
+var fakeServerPath string
+
+var exeSuffix = map[bool]string{true: ".exe", false: ""}[runtime.GOOS == "windows"]
+
 func TestMain(m *testing.M) {
 	tmp, err := os.MkdirTemp("", "vsui-supervisor-test-*")
 	if err != nil {
@@ -30,13 +36,16 @@ func TestMain(m *testing.M) {
 	}
 	defer os.RemoveAll(tmp)
 
-	selfBinPath = filepath.Join(tmp, "vsui-test-bin")
-	cmd := exec.Command("go", "build", "-o", selfBinPath, "./cmd/valheim-ui")
-	cmd.Dir = repoRoot()
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-	if out, err := cmd.CombinedOutput(); err != nil {
-		println("build test binary failed:\n" + string(out))
-		panic(err)
+	selfBinPath = filepath.Join(tmp, "vsui-test-bin"+exeSuffix)
+	fakeServerPath = filepath.Join(tmp, "fake-server"+exeSuffix)
+	for bin, pkg := range map[string]string{selfBinPath: "./cmd/valheim-ui", fakeServerPath: "./tools/fake-server"} {
+		cmd := exec.Command("go", "build", "-o", bin, pkg)
+		cmd.Dir = repoRoot()
+		cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			println("build test binary failed:\n" + string(out))
+			panic(err)
+		}
 	}
 
 	os.Exit(m.Run())
@@ -77,7 +86,7 @@ func setupDirectInstance(t *testing.T) (sup Supervisor, id string, consoleLog st
 		t.Fatal(err)
 	}
 
-	fakeServer := filepath.Join(repoRoot(), "testdata", "fake-server.sh")
+	fakeServer := fakeServerPath
 	cfgFile := filepath.Join(dir, "config.yaml")
 	cfgYAML := "data_dir: " + strconv.Quote(dir) + "\n" +
 		"supervisor: direct\n" +

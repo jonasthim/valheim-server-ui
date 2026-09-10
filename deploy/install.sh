@@ -397,6 +397,8 @@ config_example_content() {
   cat <<'CONFIG_EOF'
 # /etc/valheim-ui/config.yaml — manager configuration.
 # Every key can be overridden with VALHEIM_UI_<UPPERCASE_KEY>.
+# (Windows: %ProgramData%\valheim-ui\config.yaml, written by deploy/install.ps1
+# with supervisor: direct and steamcmd_path pointing at steamcmd.exe.)
 
 # Address the web UI listens on. Keep it on loopback and put a TLS reverse proxy
 # (Caddy, nginx, Traefik) in front for remote access.

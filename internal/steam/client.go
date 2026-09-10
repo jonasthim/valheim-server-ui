@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
@@ -101,7 +100,7 @@ func (c *Client) Installed() bool {
 	if err != nil || info.IsDir() {
 		return false
 	}
-	return info.Mode()&0o111 != 0
+	return isExecutable(c.path, info)
 }
 
 func (c *Client) missingErr() error {
@@ -110,7 +109,7 @@ func (c *Client) missingErr() error {
 
 func (c *Client) installArgs(installDir string) []string {
 	return []string{
-		"+@sSteamCmdForcePlatformType", "linux",
+		"+@sSteamCmdForcePlatformType", steamPlatformType,
 		"+force_install_dir", installDir,
 		"+login", "anonymous",
 		"+app_update", domain.SteamAppID, "validate",
@@ -248,13 +247,8 @@ func runCommandEnv(ctx context.Context, steamcmdPath string, args []string, out 
 	}
 	cmd.Stdout = out
 	cmd.Stderr = out
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		if cmd.Process == nil {
-			return nil
-		}
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
+	setProcessGroup(cmd)
+	cmd.Cancel = func() error { return killProcessGroup(cmd) }
 	cmd.WaitDelay = 5 * time.Second
 	return cmd.Run()
 }

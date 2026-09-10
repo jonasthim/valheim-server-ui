@@ -2,6 +2,7 @@ package domain
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -388,27 +389,31 @@ const (
 // (ARCHITECTURE.md §3). instancesDir is <data_dir>/instances. Every package
 // must derive paths through this function, never by string concatenation.
 func PathsFor(instancesDir, id string) InstancePaths {
-	root := instancesDir + "/" + id
+	root := filepath.Join(instancesDir, id)
 	return InstancePaths{
 		Root:    root,
-		Server:  root + "/server",
-		Save:    root + "/save",
-		Backups: root + "/backups",
-		Logs:    root + "/logs",
+		Server:  filepath.Join(root, "server"),
+		Save:    filepath.Join(root, "save"),
+		Backups: filepath.Join(root, "backups"),
+		Logs:    filepath.Join(root, "logs"),
 	}
 }
 
+// ServerBinaryName is the game server executable inside the server dir:
+// valheim_server.x86_64 on Linux, valheim_server.exe on Windows.
+const ServerBinaryName = serverBinaryName
+
 // Well-known files inside an instance.
-func (p InstancePaths) LaunchFile() string   { return p.Root + "/launch.json" }
-func (p InstancePaths) ConsoleLog() string   { return p.Logs + "/console.log" }
-func (p InstancePaths) WorldsDir() string    { return p.Save + "/worlds_local" }
-func (p InstancePaths) ServerBinary() string { return p.Server + "/valheim_server.x86_64" }
+func (p InstancePaths) LaunchFile() string   { return filepath.Join(p.Root, "launch.json") }
+func (p InstancePaths) ConsoleLog() string   { return filepath.Join(p.Logs, "console.log") }
+func (p InstancePaths) WorldsDir() string    { return filepath.Join(p.Save, "worlds_local") }
+func (p InstancePaths) ServerBinary() string { return filepath.Join(p.Server, ServerBinaryName) }
 func (p InstancePaths) AppManifest() string {
-	return p.Server + "/steamapps/appmanifest_" + SteamAppID + ".acf"
+	return filepath.Join(p.Server, "steamapps", "appmanifest_"+SteamAppID+".acf")
 }
-func (p InstancePaths) BepInExDir() string { return p.Server + "/BepInEx" }
+func (p InstancePaths) BepInExDir() string { return filepath.Join(p.Server, "BepInEx") }
 func (p InstancePaths) ListFile(k ListKind) string {
-	return p.Save + "/" + k.FileName()
+	return filepath.Join(p.Save, k.FileName())
 }
 
 // AppUpdateInfo describes the manager's own release status (self-upgrade).

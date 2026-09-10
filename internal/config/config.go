@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -31,15 +32,18 @@ type Config struct {
 	DevNoAuth bool `yaml:"dev_no_auth"`
 }
 
-const DefaultPath = "/etc/valheim-ui/config.yaml"
+// DefaultPath is the config file read when neither --config nor
+// VALHEIM_UI_CONFIG is given: /etc/valheim-ui/config.yaml on Linux,
+// %ProgramData%\valheim-ui\config.yaml on Windows.
+var DefaultPath = defaultConfigPath()
 
 func Default() Config {
 	return Config{
 		Listen:       "127.0.0.1:8080",
-		DataDir:      "/var/lib/valheim",
-		Supervisor:   "systemd",
-		UnitctlPath:  "/usr/local/lib/valheim-ui/unitctl",
-		SteamCMDPath: "/var/lib/valheim/steamcmd/steamcmd.sh",
+		DataDir:      defaultDataDir(),
+		Supervisor:   defaultSupervisor,
+		UnitctlPath:  defaultUnitctlPath,
+		SteamCMDPath: defaultSteamCMDPath(),
 		LogLevel:     "info",
 	}
 }
@@ -97,6 +101,9 @@ func applyEnv(c *Config) {
 func (c *Config) Validate() error {
 	if c.Supervisor != "systemd" && c.Supervisor != "direct" {
 		return fmt.Errorf("supervisor must be systemd or direct, got %q", c.Supervisor)
+	}
+	if c.Supervisor == "systemd" && !systemdAvailable {
+		return fmt.Errorf("supervisor %q is not available on %s; use direct", c.Supervisor, runtime.GOOS)
 	}
 	if c.DataDir == "" {
 		return errors.New("data_dir is required")

@@ -210,13 +210,19 @@ without sudo (read-only D-Bus access is allowed for any user). Mapping:
 `install.sh` at `/etc/systemd/system/valheim@.service` and never edited by the
 manager; per-instance differences live entirely in `launch.json`.
 
-**direct implementation** (development, tests, non-systemd hosts): the manager
-spawns `<self> launch --instance <id>` as a child, redirects stdout/stderr to
-`logs/console.log`, stops with SIGINT then SIGKILL after 120 s. Documented
-limitation: instances die when the manager exits.
+**direct implementation** (development, tests, and production on Windows): the
+manager spawns `<self> launch --instance <id>` as a child, redirects
+stdout/stderr to `logs/console.log`, stops with SIGINT then SIGKILL after 120 s.
+Documented limitation: instances die when the manager exits. On Windows the
+stop request is a one-word line (`stop`, then `kill`) on the launcher's stdin
+(`internal/supervisor/proc_windows.go`), because the launcher is a proxy in
+front of the game there (§7); the manager, running as the `valheim-ui` Windows
+service, starts instances flagged autostart when it starts
+(`cmd/valheim-ui/autostart.go`), which is systemd's job on Linux.
 
 The `instance` service adds one derived state on top: `not_installed` when
-`server/valheim_server.x86_64` does not exist. `ready` (world loaded, accepting
+`server/valheim_server.x86_64` (`valheim_server.exe` on Windows,
+`domain.ServerBinaryName`) does not exist. `ready` (world loaded, accepting
 players) is derived from the console log, not from systemd.
 
 ## 7. Launch contract (`launch.json`)
@@ -256,6 +262,21 @@ Launcher algorithm:
 
 Because the launcher `exec`s, systemd's `KillSignal=SIGINT` reaches the game
 process directly, which is what triggers Valheim's graceful world save.
+
+**Windows** (`internal/launcher/run_windows.go`) has no exec and no signals. The
+launcher stays alive as a proxy: it spawns `valheim_server.exe` as a child inside
+a job object with `KILL_ON_JOB_CLOSE` (the game cannot outlive the proxy), keeps
+the game on its own hidden console (the supervisor starts the proxy with
+`CREATE_NO_WINDOW`), and reads one-word commands from stdin: `stop` becomes
+`GenerateConsoleCtrlEvent(CTRL_C_EVENT)` on that console, which the dedicated
+server treats exactly like SIGINT (save, exit 0); `kill` terminates it. The
+proxy ignores the Ctrl+C itself and exits with the game's exit code. Step 1
+sets only `SteamAppId` (no `LD_*`, no `HOME`). BepInEx's Doorstop reads
+`doorstop_config.ini` on Windows rather than the environment, so step 2 also
+appends `--doorstop-enabled true --doorstop-target-assembly <abs preloader>` to
+the game arguments when mods are on, and `--doorstop-enabled false` when they
+are off but the pack's `winhttp.dll` proxy is present (it would otherwise load
+with the ini's defaults). Everything else, including `launch.json`, is shared.
 
 ## 8. Logs, readiness and players
 
@@ -496,6 +517,19 @@ depends on it — see §6 and RUNBOOK.md §11):
 /usr/local/bin/valheim-ui             symlink -> /var/lib/valheim/bin/valheim-ui
 ```
 
+**Windows layout** (`deploy/install.ps1`, RUNBOOK.md §13): the manager runs as
+the Windows service `valheim-ui` under the virtual account
+`NT SERVICE\valheim-ui`; the binary lives at `%ProgramFiles%\valheim-ui\valheim-ui.exe`
+(with `VERSION` marker and `.prev` after an upgrade), data under
+`%ProgramData%\valheim-ui` (config.yaml, instances, steamcmd, manager.log). The
+service account has Modify on both, so the manager swaps its own binary on
+upgrade (a running .exe can be renamed); the release asset is
+`valheim-ui_windows_amd64.zip`. There is no unitctl and no root-owned binary
+on Windows: the service is the only privileged boundary (see SECURITY.md).
+Restart-after-upgrade relies on the service's recovery actions: the process
+exits without reporting `SERVICE_STOPPED`, the SCM counts that as a failure
+and restarts it.
+
 The binary is root-owned so that neither the manager nor a game process
 (mods run in it as the same `valheim` user) can rewrite it. Self-upgrade
 therefore has two halves: the manager downloads, verifies and stages a release
@@ -574,10 +608,21 @@ log_level: "info"
 
 Every key can be overridden with `VALHEIM_UI_<UPPERCASE_KEY>`.
 
+On Windows the defaults are `%ProgramData%\valheim-ui\config.yaml`,
+`data_dir: %ProgramData%\valheim-ui`, `supervisor: direct` (`systemd` is
+rejected there), `steamcmd_path: <data_dir>\steamcmd\steamcmd.exe`
+(`internal/config/defaults_windows.go`). `serve` exports the resolved config
+path as `VALHEIM_UI_CONFIG` so the `launch` children it spawns read the same
+file.
+
 ## 18. Testing strategy
 
 - Unit tests per package; no network in unit tests (Thunderstore and SteamCMD are
-  behind interfaces with fakes; fixtures under `testdata/`).
+  behind interfaces with fakes; fixtures under `testdata/`). The launcher and
+  supervisor tests drive `tools/fake-server` (a Go twin of
+  `testdata/fake-server.sh`, so they run on Windows too); CI vets the Windows
+  build on Linux (`GOOS=windows go vet`) and runs the platform packages on a
+  Windows runner.
 - `internal/launcher` tests use a fake `valheim_server.x86_64` shell script in a
   temp dir that echoes its args/env.
 - E2E (`make e2e`): start the manager with `supervisor: direct` and

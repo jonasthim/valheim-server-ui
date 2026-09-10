@@ -8,12 +8,18 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/config"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
+
+// fakeServerBin is the Go fake game server (tools/fake-server), built once
+// per test run so the launcher can be exercised on every platform.
+var fakeServerBin string
 
 // TestMain intercepts a re-exec of this test binary (see
 // TestRun_ExecsFakeServer) so the *real* exec path (real syscall.Exec, real
@@ -25,7 +31,20 @@ func TestMain(m *testing.M) {
 		// helperMain only returns on error; success replaces this process.
 		os.Exit(1)
 	}
-	os.Exit(m.Run())
+	tmp, err := os.MkdirTemp("", "vsui-launcher-test-*")
+	if err != nil {
+		panic(err)
+	}
+	fakeServerBin = filepath.Join(tmp, "fake-server"+exeSuffix)
+	build := exec.Command("go", "build", "-o", fakeServerBin, "./tools/fake-server")
+	build.Dir = filepath.Join("..", "..")
+	if out, err := build.CombinedOutput(); err != nil {
+		println("build fake server failed:\n" + string(out))
+		os.Exit(1)
+	}
+	code := m.Run()
+	_ = os.RemoveAll(tmp)
+	os.Exit(code)
 }
 
 func helperMain() {
@@ -57,17 +76,7 @@ func TestRun_ExecsFakeServer(t *testing.T) {
 	}
 
 	outFile := filepath.Join(dir, "out.txt")
-	fakeScript := filepath.Join(dir, "fake_server.sh")
-	script := "#!/bin/sh\n" +
-		"{\n" +
-		"  echo \"ARGS:$*\"\n" +
-		"  echo \"STEAMAPPID:$SteamAppId\"\n" +
-		"  echo \"LDLIB:$LD_LIBRARY_PATH\"\n" +
-		"  echo \"PWD:$(pwd)\"\n" +
-		"} > \"" + outFile + "\"\n"
-	if err := os.WriteFile(fakeScript, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv("FAKE_SERVER_DUMP", outFile)
 
 	launch := domain.Launch{
 		Version:    domain.LaunchVersion,
@@ -86,7 +95,7 @@ func TestRun_ExecsFakeServer(t *testing.T) {
 	}
 
 	cfgFile := filepath.Join(dir, "config.yaml")
-	cfgYAML := fmt.Sprintf("data_dir: %q\nsupervisor: direct\nfake_server: true\nfake_server_path: %q\n", dir, fakeScript)
+	cfgYAML := fmt.Sprintf("data_dir: %q\nsupervisor: direct\nfake_server: true\nfake_server_path: %q\n", dir, fakeServerBin)
 	if err := os.WriteFile(cfgFile, []byte(cfgYAML), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -97,11 +106,23 @@ func TestRun_ExecsFakeServer(t *testing.T) {
 		"VSUI_LAUNCHER_HELPER_CONFIG="+cfgFile,
 		"VSUI_LAUNCHER_HELPER_INSTANCE="+id,
 	)
-	out, err := cmd.CombinedOutput()
+	// The fake server runs for a while; stop it once its dump exists. On
+	// Linux the helper *is* the fake server (exec); on Windows the helper is
+	// the proxy in front of it and stops it through the stdin protocol.
+	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		t.Fatalf("helper process failed: %v\noutput:\n%s", err, out)
+		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "[valheim-ui] launching") || !strings.Contains(string(out), "********") {
+	var outBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &outBuf
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waitForFile(t, outFile, 20*time.Second)
+	stopHelper(t, cmd, stdin)
+	out := outBuf.String()
+	if !strings.Contains(out, "[valheim-ui] launching") || !strings.Contains(out, "********") {
 		t.Errorf("expected masked launch banner on stdout, got: %s", out)
 	}
 
@@ -116,12 +137,26 @@ func TestRun_ExecsFakeServer(t *testing.T) {
 	if !strings.Contains(text, "STEAMAPPID:892970") {
 		t.Errorf("SteamAppId not set: %s", text)
 	}
-	if !strings.Contains(text, "LDLIB:./linux64:") {
+	if runtime.GOOS != "windows" && !strings.Contains(text, "LDLIB:./linux64:") {
 		t.Errorf("LD_LIBRARY_PATH not set: %s", text)
 	}
 	if !strings.Contains(text, "PWD:"+paths.Server) {
 		t.Errorf("cwd was not the server dir: %s", text)
 	}
+}
+
+// waitForFile polls until path exists (the fake server writes its dump as
+// its first action).
+func waitForFile(t *testing.T, path string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", path)
 }
 
 // TestRun_MissingLaunchFile exercises the plain error path without exec-ing

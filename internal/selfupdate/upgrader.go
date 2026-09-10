@@ -2,6 +2,7 @@ package selfupdate
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"compress/gzip"
@@ -22,11 +23,9 @@ import (
 )
 
 // Asset/file names published by the release workflow (ARCHITECTURE.md §16).
-const (
-	tarballName = "valheim-ui_linux_amd64.tar.gz"
-	sumsName    = "SHA256SUMS"
-	binaryName  = "valheim-ui"
-)
+// archiveName and binaryName are per platform (names_*.go): the Linux
+// tarball holds "valheim-ui", the Windows zip holds "valheim-ui.exe".
+const sumsName = "SHA256SUMS"
 
 // maxDownloadBytes bounds a download when the release metadata does not
 // report the asset's size (defence in depth against a runaway response;
@@ -136,9 +135,9 @@ func (u *Upgrader) Apply(ctx context.Context, rel *Release, log io.Writer) (prev
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	_, _ = fmt.Fprintf(log, "downloading %s\n", tarballName)
-	tarPath := filepath.Join(tmpDir, tarballName)
-	if err := u.download(ctx, rel, tarballName, tarPath); err != nil {
+	_, _ = fmt.Fprintf(log, "downloading %s\n", archiveName)
+	tarPath := filepath.Join(tmpDir, archiveName)
+	if err := u.download(ctx, rel, archiveName, tarPath); err != nil {
 		return "", err
 	}
 
@@ -149,7 +148,7 @@ func (u *Upgrader) Apply(ctx context.Context, rel *Release, log io.Writer) (prev
 	}
 
 	_, _ = fmt.Fprintln(log, "verifying checksum")
-	if err := verifyChecksum(tarPath, sumsPath, tarballName); err != nil {
+	if err := verifyChecksum(tarPath, sumsPath, archiveName); err != nil {
 		return "", err
 	}
 
@@ -350,10 +349,14 @@ func verifyChecksum(tarPath, sumsPath, assetName string) error {
 }
 
 // extractSingleFile extracts the regular file named memberName from the
-// .tar.gz at archivePath to destPath. Only an exact (base-name) match is
-// extracted, so an attacker-controlled tarball cannot write anywhere else
-// (no path is ever joined with an entry's name).
+// archive at archivePath (.tar.gz, or .zip for the Windows release) to
+// destPath. Only an exact (base-name) match is extracted, so an
+// attacker-controlled archive cannot write anywhere else (no path is ever
+// joined with an entry's name).
 func extractSingleFile(archivePath, memberName, destPath string) error {
+	if strings.HasSuffix(strings.ToLower(archivePath), ".zip") {
+		return extractSingleFileZip(archivePath, memberName, destPath)
+	}
 	f, err := os.Open(archivePath)
 	if err != nil {
 		return fmt.Errorf("selfupdate: open tarball: %w", err)
@@ -394,6 +397,43 @@ func extractSingleFile(archivePath, memberName, destPath string) error {
 		}
 		return nil
 	}
+}
+
+// extractSingleFileZip is extractSingleFile for a zip archive.
+func extractSingleFileZip(archivePath, memberName, destPath string) error {
+	zr, err := zip.OpenReader(archivePath)
+	if err != nil {
+		return fmt.Errorf("selfupdate: open zip: %w", err)
+	}
+	defer func() { _ = zr.Close() }()
+	for _, zf := range zr.File {
+		if filepath.Base(filepath.Clean(zf.Name)) != memberName || zf.FileInfo().IsDir() {
+			continue
+		}
+		if zf.UncompressedSize64 > maxDownloadBytes {
+			return domain.Ef(domain.CodeUpstreamError, "release zip member %s is too large", memberName)
+		}
+		rc, err := zf.Open()
+		if err != nil {
+			return fmt.Errorf("selfupdate: open zip member: %w", err)
+		}
+		out, err := os.OpenFile(destPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec // becomes the executable binary
+		if err != nil {
+			_ = rc.Close()
+			return fmt.Errorf("selfupdate: create extracted file: %w", err)
+		}
+		_, err = io.CopyN(out, rc, int64(zf.UncompressedSize64)) //nolint:gosec // bounded above
+		_ = rc.Close()
+		if err != nil {
+			_ = out.Close()
+			return fmt.Errorf("selfupdate: write extracted file: %w", err)
+		}
+		if err := out.Close(); err != nil {
+			return fmt.Errorf("selfupdate: close extracted file: %w", err)
+		}
+		return nil
+	}
+	return domain.Ef(domain.CodeUpstreamError, "release zip does not contain %s", memberName)
 }
 
 // sanityRun runs `<path> version` with a short timeout and requires its

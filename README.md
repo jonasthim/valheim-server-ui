@@ -72,7 +72,8 @@ A dark-first, modern interface with Valheim accents; light mode is one click awa
 ## Install
 
 Requirements: Debian 12+ or Ubuntu 22.04+ on x86_64 with systemd, root access,
-about 2 GB of disk per instance plus room for backups.
+about 2 GB of disk per instance plus room for backups. Windows is supported too
+(see below).
 
 One command, nothing else to download by hand:
 
@@ -103,6 +104,24 @@ Put a TLS reverse proxy in front for remote access and set `base_url` in
 `/etc/valheim-ui/config.yaml` (Caddy and nginx snippets are in the
 [runbook](docs/RUNBOOK.md#2-reverse-proxy-and-tls)). For a trusted LAN only,
 `sudo ./deploy/install.sh --listen 0.0.0.0:8080` works too.
+
+### Windows
+
+Windows Server 2019+ or Windows 10+ (x64). From an elevated PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/install.ps1 -OutFile install.ps1
+.\install.ps1
+```
+
+The installer registers the Windows service `valheim-ui` (running as the
+virtual account `NT SERVICE\valheim-ui`), puts the binary in
+`%ProgramFiles%\valheim-ui`, data and `config.yaml` in `%ProgramData%\valheim-ui`,
+downloads SteamCMD, verifies the release checksum and starts the service on
+`127.0.0.1:8080`. Re-running upgrades in place. Game servers run as child
+processes of the service and stop with a console Ctrl+C, so worlds are saved
+on stop exactly as on Linux; see the [runbook](docs/RUNBOOK.md#13-windows) for
+what differs.
 
 ## First run
 

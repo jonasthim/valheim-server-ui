@@ -22,11 +22,27 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version-file: go.mod, cache: true }
       - run: go vet ./...
+      # The Windows build shares almost all code; vetting it here compiles the
+      # Windows-only files and every test file for that target.
+      - run: GOOS=windows go vet ./...
       - uses: golangci/golangci-lint-action@v8
         with: { version: v2.13.2 }
       - run: go test -race -count=1 ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
       - run: make deploy-sync-check
+
+  # Native Windows run of the platform-specific packages: the launcher proxy
+  # (job object, console Ctrl+C), the direct supervisor's stdin stop protocol,
+  # the Win32 metrics reader and the config defaults.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+      - run: go build ./...
+      - run: go test -count=1 ./internal/launcher/ ./internal/supervisor/ ./internal/metrics/ ./internal/config/ ./internal/domain/ ./internal/steam/ ./internal/logs/
+        env: { CGO_ENABLED: "0" }
 
   frontend:
     runs-on: ubuntu-latest
@@ -133,7 +149,7 @@ jobs:
 
   release:
     if: needs.version.outputs.publish == 'true'
-    needs: [version, backend, frontend, contract, e2e]
+    needs: [version, backend, windows, frontend, contract, e2e]
     runs-on: ubuntu-latest
     permissions: { contents: write }
     env:
@@ -145,17 +161,20 @@ jobs:
       - uses: actions/download-artifact@v4
         with: { name: web-dist, path: web/dist }
       - run: make build-go VERSION=$RELEASE_TAG COMMIT=${{ github.sha }}
+      - run: make build-go-windows VERSION=$RELEASE_TAG COMMIT=${{ github.sha }}
       - run: make deploy-sync-check
       - run: |
           set -euo pipefail
           mkdir -p dist
           tar -czf dist/valheim-ui_linux_amd64.tar.gz -C bin valheim-ui
+          ( cd bin && zip -q ../dist/valheim-ui_windows_amd64.zip valheim-ui.exe )
           tar -czf dist/deploy.tar.gz deploy
           cp deploy/install.sh dist/install.sh
+          cp deploy/install.ps1 dist/install.ps1
           # The raw binary's digest is listed too: `unitctl apply-upgrade`
           # re-verifies a staged binary against it before installing it as root.
           cp bin/valheim-ui dist/valheim-ui
-          ( cd dist && sha256sum valheim-ui_linux_amd64.tar.gz deploy.tar.gz install.sh valheim-ui > SHA256SUMS && rm valheim-ui )
+          ( cd dist && sha256sum valheim-ui_linux_amd64.tar.gz valheim-ui_windows_amd64.zip deploy.tar.gz install.sh install.ps1 valheim-ui > SHA256SUMS && rm valheim-ui )
           cat dist/SHA256SUMS
       # Keep the built assets as a workflow artifact too, so a failed publish
       # (e.g. the token lacking release permissions) never loses the build.
@@ -189,10 +208,18 @@ jobs:
             curl -fsSL https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/install.sh | sudo bash
             ```
 
+            Windows (elevated PowerShell):
+
+            ```powershell
+            irm https://raw.githubusercontent.com/jonasthim/valheim-server-ui/main/deploy/install.ps1 -OutFile install.ps1; .\install.ps1
+            ```
+
             Running instances upgrade from the dashboard (Settings → Application → Upgrade).
-            Assets: `valheim-ui_linux_amd64.tar.gz` (binary), `install.sh`, `deploy.tar.gz`, `SHA256SUMS`.
+            Assets: `valheim-ui_linux_amd64.tar.gz` and `valheim-ui_windows_amd64.zip` (binaries), `install.sh`, `install.ps1`, `deploy.tar.gz`, `SHA256SUMS`.
           files: |
             dist/valheim-ui_linux_amd64.tar.gz
+            dist/valheim-ui_windows_amd64.zip
             dist/deploy.tar.gz
             dist/install.sh
+            dist/install.ps1
             dist/SHA256SUMS

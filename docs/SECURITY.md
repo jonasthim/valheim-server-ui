@@ -164,6 +164,14 @@ advisory for an unused `x/crypto` package).
 - **Operators can run code as `valheim`** by uploading a mod. That is the feature. The
   sandbox on the game unit and the root-owned binary bound what that code can reach.
 - **Third-party apt sources and SteamCMD** are trusted at install time.
+- **Windows has weaker process isolation.** The manager, the game servers and
+  therefore mods all run as the service's virtual account `NT SERVICE\valheim-ui`,
+  which can also replace `valheim-ui.exe` (that is how self-upgrade works there).
+  A malicious mod on Windows can reach everything the manager can, unlike on
+  Linux where the game units are sandboxed and the binary is root-owned. The
+  installer never executes the installed binary as an administrator (it reads a
+  version marker instead). Splitting the game processes into a second, lower
+  account is the planned follow-up.
 
 ## Reporting
 

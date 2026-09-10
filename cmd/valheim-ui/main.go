@@ -25,6 +25,15 @@ func main() {
 	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
 		cmd, args = args[0], args[1:]
 	}
+	// Under the Windows service control manager `serve` is driven by the
+	// SCM's start/stop requests instead of signals (service_windows.go).
+	if handled, err := runAsServiceIfNeeded(cmd, args); handled {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	var err error
 	switch cmd {
 	case "serve":

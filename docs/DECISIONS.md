@@ -118,3 +118,27 @@ the syscall surface of the game is not something this project can vouch for.
 ## ADR-020 Security review findings are tracked in docs/SECURITY.md
 Every finding from the September 2026 review, its severity, status and the accepted
 residual risks live in one document so the next review starts from the last one.
+
+## ADR-021 Windows support runs the direct supervisor behind a launcher proxy
+
+**Context.** Windows has no systemd, no `exec`, and no signals: a dedicated
+server is asked to save and exit with a console Ctrl+C, which only a process
+attached to the same console can generate, and a service has no console.
+
+**Decision.** One binary, one code base, platform files behind build tags.
+On Windows the manager is a Windows service (`x/sys/windows/svc`, already an
+indirect dependency) using the existing `direct` supervisor; `launch` does not
+exec but stays alive as a proxy that spawns `valheim_server.exe` on a hidden
+console inside a kill-on-close job object and turns `stop`/`kill` lines on its
+stdin into `CTRL_C_EVENT` / termination. Doorstop is switched through its
+command-line options because it reads an ini rather than the environment on
+Windows. Restart after self-upgrade relies on SCM recovery actions. Defaults
+move to `%ProgramData%\valheim-ui`; `install.ps1` replaces `install.sh`.
+
+**Consequences.** Game processes are children of the service (stopping the
+manager stops them, autostart is re-applied at service start) and run under
+the same account as the manager, so the Linux isolation (root-owned binary,
+sandboxed game units) has no Windows equivalent yet; SECURITY.md records this.
+Metrics come from Win32 counters (no load average). Tests use a Go fake game
+server (`tools/fake-server`) so the launcher and supervisor suites run on a
+Windows CI runner; the real `valheim_server.exe` has not been exercised in CI.

@@ -51,7 +51,7 @@ func buildReleaseAssets(t *testing.T, tag string) (tarball, sums []byte) {
 	tarball = buf.Bytes()
 
 	sum := sha256.Sum256(tarball)
-	sums = []byte(hex.EncodeToString(sum[:]) + "  " + tarballName + "\n")
+	sums = []byte(hex.EncodeToString(sum[:]) + "  " + archiveName + "\n")
 	return tarball, sums
 }
 
@@ -80,7 +80,7 @@ func newGitHubServer(t *testing.T, opt githubServerOptions) *httptest.Server {
 			"html_url":     "https://github.com/" + domain.GitHubRepo + "/releases/tag/" + tag,
 			"published_at": time.Now().UTC().Format(time.RFC3339),
 			"assets": []map[string]any{
-				{"name": tarballName, "browser_download_url": srv.URL + "/assets/" + tarballName, "size": len(opt.tarball)},
+				{"name": archiveName, "browser_download_url": srv.URL + "/assets/" + archiveName, "size": len(opt.tarball)},
 				{"name": sumsName, "browser_download_url": srv.URL + "/assets/" + sumsName, "size": len(opt.sums)},
 			},
 		}
@@ -102,7 +102,7 @@ func newGitHubServer(t *testing.T, opt githubServerOptions) *httptest.Server {
 		}
 		writeRelease(w, tag)
 	})
-	mux.HandleFunc("/assets/"+tarballName, func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/assets/"+archiveName, func(w http.ResponseWriter, _ *http.Request) {
 		if opt.assetDelay > 0 {
 			time.Sleep(opt.assetDelay)
 		}

@@ -6,14 +6,14 @@ import (
 	"os"
 	"os/exec"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
-// stopGrace is how long Stop waits for a SIGINT to end the process before
-// escalating to SIGKILL (ARCHITECTURE.md §6).
+// stopGrace is how long Stop waits for a graceful stop request (SIGINT, or a
+// console Ctrl+C on Windows) to end the process before killing it
+// (ARCHITECTURE.md §6).
 const stopGrace = 120 * time.Second
 
 // direct is the development/test Supervisor: it spawns
@@ -29,6 +29,7 @@ type direct struct {
 type directProc struct {
 	mu        sync.Mutex
 	cmd       *exec.Cmd
+	ctl       *procControl
 	pid       int
 	since     time.Time
 	autostart bool
@@ -89,6 +90,11 @@ func (d *direct) Start(ctx context.Context, id string) error {
 	cmd.Stderr = logFile
 	// cmd.Env left nil: inherit the manager process's environment, including
 	// VALHEIM_UI_CONFIG, so `launch` reads the same config file.
+	ctl, err := prepareCommand(cmd)
+	if err != nil {
+		_ = logFile.Close()
+		return domain.Wrap(domain.CodeInternal, fmt.Sprintf("prepare instance %s", id), err)
+	}
 
 	if err := cmd.Start(); err != nil {
 		_ = logFile.Close()
@@ -96,6 +102,7 @@ func (d *direct) Start(ctx context.Context, id string) error {
 	}
 
 	p.cmd = cmd
+	p.ctl = ctl
 	p.pid = cmd.Process.Pid
 	p.since = time.Now()
 	p.state = StateRunning
@@ -104,15 +111,16 @@ func (d *direct) Start(ctx context.Context, id string) error {
 	done := make(chan struct{})
 	p.done = done
 
-	go d.reap(id, p, cmd, logFile, done)
+	go d.reap(id, p, cmd, ctl, logFile, done)
 	return nil
 }
 
 // reap waits for the child to exit and records the resulting state. It never
 // blocks callers of Start/Stop/Status.
-func (d *direct) reap(id string, p *directProc, cmd *exec.Cmd, logFile *os.File, done chan struct{}) {
+func (d *direct) reap(id string, p *directProc, cmd *exec.Cmd, ctl *procControl, logFile *os.File, done chan struct{}) {
 	err := cmd.Wait()
 	_ = logFile.Close()
+	ctl.close()
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -150,6 +158,7 @@ func (d *direct) Stop(ctx context.Context, id string) error {
 		return nil
 	}
 	proc := p.cmd.Process
+	ctl := p.ctl
 	done := p.done
 	p.state = StateStopping
 	p.stopping = true
@@ -158,7 +167,7 @@ func (d *direct) Stop(ctx context.Context, id string) error {
 	if proc == nil {
 		return nil
 	}
-	if err := proc.Signal(syscall.SIGINT); err != nil && !isProcessDone(err) {
+	if err := ctl.requestStop(proc); err != nil && !isProcessDone(err) {
 		return domain.Wrap(domain.CodeInternal, fmt.Sprintf("signal instance %s", id), err)
 	}
 
@@ -170,7 +179,7 @@ func (d *direct) Stop(ctx context.Context, id string) error {
 	case <-time.After(stopGrace):
 	}
 
-	if err := proc.Signal(syscall.SIGKILL); err != nil && !isProcessDone(err) {
+	if err := ctl.kill(proc); err != nil && !isProcessDone(err) {
 		return domain.Wrap(domain.CodeInternal, fmt.Sprintf("kill instance %s", id), err)
 	}
 	select {

@@ -1,6 +1,12 @@
 // Package launcher implements `valheim-ui launch --instance ID`, the process
 // systemd (or the direct supervisor) execs to start one Valheim dedicated
 // server. See docs/ARCHITECTURE.md §7.
+//
+// On Linux the launcher execs the game binary over itself. On Windows there
+// is no exec: the launcher stays alive as a thin proxy that spawns the game
+// in a kill-on-close job object and turns a stop request from the supervisor
+// into a console Ctrl+C, which is how the dedicated server saves and exits
+// cleanly (see run_windows.go).
 package launcher
 
 import (
@@ -11,7 +17,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/jonasthim/valheim-server-ui/internal/config"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
@@ -22,10 +27,11 @@ import (
 type execFunc func(argv0 string, argv []string, envv []string) error
 
 // Run reads <instances>/<instanceID>/launch.json, prepares the environment,
-// and execs the game server binary (or the fake server, when cfg.FakeServer).
-// On success it never returns: the calling process image is replaced.
+// and starts the game server binary (or the fake server, when
+// cfg.FakeServer). On success it never returns: on Linux the process image
+// is replaced, on Windows the proxy exits with the game's exit code.
 func Run(ctx context.Context, cfg config.Config, instanceID string) error {
-	return run(ctx, cfg, instanceID, syscall.Exec)
+	return run(ctx, cfg, instanceID, platformExec)
 }
 
 func run(ctx context.Context, cfg config.Config, instanceID string, execFn execFunc) error {
@@ -67,14 +73,15 @@ func run(ctx context.Context, cfg config.Config, instanceID string, execFn execF
 			return err
 		}
 	}
+	env, args := platformDoorstop(launch, env)
 
-	binPath := "./valheim_server.x86_64"
+	binPath := "./" + domain.ServerBinaryName
 	if cfg.FakeServer {
 		binPath = fakePath
 	}
-	argv := append([]string{binPath}, launch.Args...)
+	argv := append([]string{binPath}, args...)
 
-	fmt.Println(maskedLaunchLine(binPath, launch.Args))
+	fmt.Println(maskedLaunchLine(binPath, args))
 
 	return execFn(binPath, argv, env)
 }
@@ -107,28 +114,21 @@ func resolveFakePath(p string) (string, error) {
 	return abs, nil
 }
 
-// baseEnv is process env + SteamAppId + LD_LIBRARY_PATH=./linux64:$LD_LIBRARY_PATH
-// (ARCHITECTURE.md §7 step 1). When home is non-empty, HOME is pinned to it:
-// Unity writes ~/.config/unity3d/IronGate/Valheim (Player.log, prefs) and the
-// Steam client writes ~/.steam, and the systemd unit denies /home
-// (ProtectHome=true), so both must land inside the data directory whatever the
-// valheim account's passwd home says.
+// baseEnv is process env + SteamAppId plus the platform's loader variables
+// (ARCHITECTURE.md §7 step 1): on Linux LD_LIBRARY_PATH=./linux64:... and,
+// when home is non-empty, HOME pinned to it (Unity writes
+// ~/.config/unity3d/IronGate/Valheim, the Steam client ~/.steam, and the
+// systemd unit denies /home), see addPlatformEnv.
 func baseEnv(environ []string, home string) []string {
 	order, m := envToOrdered(environ)
-	if home != "" {
-		if _, exists := m["HOME"]; !exists {
-			order = append(order, "HOME")
+	setEnv := func(key, value string) {
+		if _, exists := m[key]; !exists {
+			order = append(order, key)
 		}
-		m["HOME"] = home
+		m[key] = value
 	}
-	if _, exists := m["LD_LIBRARY_PATH"]; !exists {
-		order = append(order, "LD_LIBRARY_PATH")
-	}
-	m["LD_LIBRARY_PATH"] = "./linux64:" + m["LD_LIBRARY_PATH"]
-	if _, exists := m["SteamAppId"]; !exists {
-		order = append(order, "SteamAppId")
-	}
-	m["SteamAppId"] = domain.SteamGameAppID
+	addPlatformEnv(setEnv, m, home)
+	setEnv("SteamAppId", domain.SteamGameAppID)
 	return orderedToEnv(order, m)
 }
 

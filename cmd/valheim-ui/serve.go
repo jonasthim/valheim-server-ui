@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -22,26 +23,42 @@ import (
 )
 
 func runServe(args []string) error {
-	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
-	cfgPath := fs.String("config", envOr("VALHEIM_UI_CONFIG", config.DefaultPath), "config file")
-	if err := fs.Parse(args); err != nil {
-		return err
-	}
-	cfg, err := config.Load(*cfgPath)
+	cfg, err := parseServe(args)
 	if err != nil {
 		return err
 	}
-	log := newLogger(cfg.LogLevel)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	return serve(ctx, cfg, os.Stderr)
+}
+
+// parseServe reads the serve flags and loads the configuration.
+func parseServe(args []string) (config.Config, error) {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	cfgPath := fs.String("config", envOr("VALHEIM_UI_CONFIG", config.DefaultPath), "config file")
+	if err := fs.Parse(args); err != nil {
+		return config.Config{}, err
+	}
+	// The direct supervisor spawns `<self> launch` with an inherited
+	// environment; export the path so a --config given only here (as the
+	// Windows service registration does) reaches those children too.
+	if err := os.Setenv("VALHEIM_UI_CONFIG", *cfgPath); err != nil {
+		return config.Config{}, fmt.Errorf("export config path: %w", err)
+	}
+	return config.Load(*cfgPath)
+}
+
+// serve runs the manager until ctx is cancelled (a signal, or the service
+// control manager on Windows). Logs go to logOut.
+func serve(ctx context.Context, cfg config.Config, logOut io.Writer) error {
+	log := newLogger(cfg.LogLevel, logOut)
 	slog.SetDefault(log)
 
 	for _, dir := range []string{cfg.DataDir, cfg.InstancesDir(), cfg.JobsDir(), cfg.CacheDir()} {
-		if err := os.MkdirAll(dir, 0o750); err != nil {
+		if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // dirs derive from the operator's configured data_dir
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
 
 	sqldb, err := db.Open(ctx, cfg.DBPath())
 	if err != nil {
@@ -101,7 +118,7 @@ func runServe(args []string) error {
 	return srv.Shutdown(shutdownCtx)
 }
 
-func newLogger(level string) *slog.Logger {
+func newLogger(level string, out io.Writer) *slog.Logger {
 	var lv slog.Level
 	switch strings.ToLower(level) {
 	case "debug":
@@ -113,7 +130,7 @@ func newLogger(level string) *slog.Logger {
 	default:
 		lv = slog.LevelInfo
 	}
-	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lv}))
+	return slog.New(slog.NewTextHandler(out, &slog.HandlerOptions{Level: lv}))
 }
 
 func envOr(key, def string) string {
