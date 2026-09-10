@@ -49,7 +49,24 @@ namespace ValheimUI.Agent
 
         public MapObjects()
         {
-            foreach (var k in Kinds) _kindByHash[k.Prefab.GetStableHashCode()] = k;
+            foreach (var k in Kinds) _kindByHash[StableHash(k.Prefab)] = k;
+        }
+
+        /// <summary>
+        /// Valheim's string hash (StringExtensionMethods.GetStableHashCode in
+        /// assembly_utils), used for prefab ids in ZDOs. Inlined so the plugin
+        /// depends on assembly_valheim alone.
+        /// </summary>
+        internal static int StableHash(string str)
+        {
+            int a = 5381, b = 5381;
+            for (int i = 0; i < str.Length; i += 2)
+            {
+                a = ((a << 5) + a) ^ str[i];
+                if (i == str.Length - 1) break;
+                b = ((b << 5) + b) ^ str[i + 1];
+            }
+            return a + b * 1566083941;
         }
 
         /// <summary>Refreshes the object list when due. Main thread.</summary>
