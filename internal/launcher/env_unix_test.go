@@ -41,4 +41,3 @@ func TestBaseEnv(t *testing.T) {
 	}
 	assertEnvEquals(t, got2, want2)
 }
-
