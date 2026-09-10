@@ -415,28 +415,47 @@ Troubleshooting:
 
 ### 14.1 The map
 
-With the agent installed the instance gets a **Map** tab: the world rendered
-from its seed (no fog) with live players, portals and their tags, ships,
-carts, tombstones, beds and boss locations as toggleable layers.
+With the agent installed the instance gets a **Map** tab drawn like the
+in-game map: textured biomes, tree crowns, hill shading, coastlines, the
+parchment of the unexplored, game-style icons with uppercase labels, and
+players, portals and their tags, ships, carts, tombstones, beds, shared pins
+and boss locations as toggleable layers. Zoom in as far as the game lets you:
+the map is served as tiles drawn on demand from the server's own sampling,
+so it never pixelates.
 
-- The server renders the image itself about 15 s after the world loads, in
-  small slices (default 4 ms per frame, 1024 px), so expect a minute or two
-  before the tab shows terrain; the tab shows the progress meanwhile. The image
-  is cached both in the server directory (`BepInEx/cache/valheimui-agent/`)
-  and in the instance (`cache/map/`), so restarts are instant.
-- *Re-render* (operators) redraws it; raise `[Map] Resolution` in
-  `se.jonasthim.valheimui.agent.cfg` (up to 4096) for a sharper map at the
-  cost of a longer one-time render, or lower `RenderBudgetMs` on a busy server.
+- The server samples the world about 15 s after the world loads, in small
+  slices (default 4 ms per frame, 2048 cells), so expect a minute or two
+  before the tab shows terrain; the tab shows the progress meanwhile. The
+  layers are cached in the server directory (`BepInEx/cache/valheimui-agent/
+  layers-<seed>-<size>.png`); the manager keeps its drawings under the
+  instance's `cache/map/` (`layers-`, `styled-`, `fogstyled-`, `tiles/`), all
+  safe to delete. Restarts are instant.
+- After upgrading from 1.9 or earlier the map re-samples itself on the next
+  world load (the cache file name changed); *Re-render* forces it. Until the
+  agent is updated from the Mods tab the manager keeps serving the older flat
+  image and says so above the map.
+- `[Map] Resolution` in `se.jonasthim.valheimui.agent.cfg` (256–4096) is the
+  sampling grid; 2048 matches the game, 4096 gives the sharpest coastlines at
+  deep zoom for four times the one-time sampling. Lower `RenderBudgetMs` on a
+  busy server.
+- Drawing a 2048 world on the manager takes about a second the first time, a
+  4096 one a few seconds; tiles for the first zoom levels are drawn ahead in
+  the background, deeper ones when first looked at. The tile cache is capped
+  at 1 GB per instance and prunes itself.
+- *Animate* (remembered per browser, off with reduced-motion settings)
+  drifts clouds over the unexplored parchment, shimmers explored water,
+  glides players between updates and shows map pings as expanding rings, as
+  in the game.
 - Players who turned off "visible to other players" appear in the count but
-  without a position for viewers; operators see everyone (this is logged in
-  the audit trail like other agent data access is not; positions are read
+  without a position for viewers; operators see everyone (positions are read
   only, never stored).
-- A new world (different seed) gets a new image automatically; the old file is
-  kept in the cache directory and can be deleted.
+- A new world (different seed) gets new layers automatically; old files stay
+  in the cache directories and can be deleted.
 
 ### 14.2 Fog of war
 
-The map shows only explored terrain by default. The server has no exploration
+The map shows only explored terrain; the rest is the game's parchment with
+a soft cloudy edge, painted on the server. The server has no exploration
 data of its own, so the agent builds it from two sources:
 
 - where players go while the agent runs (the game's 100 m reveal radius);
@@ -471,3 +490,25 @@ view. Objects and boss locations under the fog are left out of viewers'
 answers. The fogged image is cached as `cache/map/fogmap-<seed>-<size>.png`
 in the instance directory and rebuilt at most every 10 s; it is safe to
 delete.
+
+### 14.3 Custom map textures
+
+The built-in look imitates the game with procedural textures. An admin can
+replace any of them by putting PNGs into `instances/<id>/map-textures/`
+(next to the instance's `config`, not under `cache/`), named per role:
+
+```
+parchment.png meadows.png blackforest.png forest_tree.png swamp.png
+mountain.png snow.png plains.png mistlands.png mist.png ashlands.png
+lava.png deepnorth.png ocean.png shallows.png
+```
+
+Each texture tiles in world metres (defaults: 512 m for terrain, 256 m for
+`forest_tree`, 768 m for `mist` and `lava`, 3072 m for `parchment`, 256 m
+for `shallows`); an optional `pack.json` sets others:
+`{"metres_per_tile": {"meadows": 400}}`. Textures must be seamless and at
+most 2048×2048. `forest_tree.png` uses its alpha as tree coverage, `mist.png`
+and `lava.png` theirs as where mist or lava shows. A missing or unreadable
+file leaves that role built in and is logged once. Changes are picked up
+within a poll; the map, the fog and the tiles redraw. The project ships no
+game assets; whatever goes into this folder is the admin's own.

@@ -31,7 +31,7 @@ server into a Docker puzzle.
 | **Backups & worlds** | One-click or scheduled world backups, retention policy, restore with an automatic safety backup, world upload/download, switch the active world. |
 | **Mods** | Install BepInEx, browse and install from Thunderstore with dependency resolution, upload zips or DLLs, enable/disable/update/uninstall, and edit plugin `.cfg` files with typed inputs. |
 | **Live world (agent)** | Our own server plugin, installed with BepInEx: day, in-game clock, weather, world keys and players with positions straight from the running server, plus save-now, kick and an in-game broadcast to all players. Nothing to install for players. |
-| **Live map** | The world rendered from the seed on the server with fog of war built from where players have been, from cartography tables, the pins players shared on those tables (including boss locations found at Vegvisir stones), players moving live, portals and their tags, ships, carts, tombstones, beds and boss locations as layers. Pan, zoom, re-render at up to 4096 px. |
+| **Live map** | The world drawn like the in-game map from the server's own sampling: textured biomes, tree crowns, hill shading, coastlines, parchment fog with a cloudy edge, game-style icons, and tiles drawn on demand so it stays sharp at any zoom. Fog of war from where players have been and from cartography tables, shared pins, boss locations found at Vegvisir stones, players moving live, portals and their tags, ships, carts, tombstones and beds as layers; drifting clouds, water shimmer and pings as in the game. Custom texture packs. |
 | **Schedules** | Cron-based restarts, backups and Steam update checks with a "only when nobody is online" switch. |
 | **Updates** | Detects new Valheim builds on Steam and updates with an optional pre-update backup. |
 | **Self-upgrade** | The manager polls GitHub releases, shows what's new, and upgrades itself from the UI with a verified download, atomic swap and rollback. On Linux game servers keep running while it restarts; on Windows they are stopped cleanly and autostarted again. |
@@ -179,7 +179,8 @@ is printed in the job log. Plugin `.cfg` files show up below as typed forms.
 Valheim UI Agent, the manager's own server plugin. The Overview then shows a
 World card (day, clock, weather, players, world keys) with *Save world* and
 *Broadcast*, the Players tab gets a *Kick* button, and the **Map** tab shows
-the world rendered from its seed under fog of war, with players moving live
+the world drawn like the in-game map (textured biomes, hill shading,
+parchment fog, game-style icons, sharp at any zoom) with players moving live
 and portals, ships, tombstones and boss locations as layers. The fog comes
 from where players go and from cartography tables, so what players wrote to
 a table before the agent existed shows up too, along with the pins they

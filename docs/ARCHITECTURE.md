@@ -699,45 +699,115 @@ plugin (`AgentInfo.update_available`). Resolution order for the package:
 `VALHEIM_UI_AGENT_ZIP` (development), the embedded copy, the matching GitHub
 release asset verified against `SHA256SUMS`.
 
-**Compatibility.** The plugin uses public game APIs only (`ZNet` peers, `EnvMan`,
-`ZoneSystem` global keys, `WorldGenerator` seed, `MessageHud` RPC) and no
-Harmony patches, so game patches rarely break it; when they do, the fix ships
-with the next manager release and the UI offers the update.
+**Compatibility.** The plugin uses public game APIs (`ZNet` peers, `EnvMan`,
+`ZoneSystem` global keys, `WorldGenerator`, `MessageHud` RPC) and binds the
+optional ones (`GetBiomeHeight`, `GetForestFactor`, the ZDO table) by
+reflection with fallbacks, so game patches rarely break it; when they do, the
+fix ships with the next manager release and the UI offers the update. Its two
+Harmony patches are read-only prefixes on routed-RPC handling (Vegvisir
+discoveries, map pings) that never alter the call.
 
 ### 20.1 Live map
 
-The plugin renders the world map itself: it samples `WorldGenerator`'s biome
-and height on a `Resolution`² grid (default 1024, config section `[Map]`)
-covering the whole ±10 500 m world, colours it like the in-game map with no
-fog (biome palette, altitude and a light east-west hillshade, water by depth,
-the band beyond the 10 km playable circle darkened), encodes the PNG with its
-own encoder on a worker thread and caches it under
-`BepInEx/cache/valheimui-agent/map-<seed>-<size>.png`. Sampling runs on the
-Unity main thread in slices bounded by `RenderBudgetMs` (default 4 ms per
-frame), so a 1024 px map takes a minute or two after the world loads without
-stalling the server; `AutoRender` starts it 15 s after the world is ready.
+The map is drawn the way the game draws its own: from raw layers, styled by
+a renderer, at any zoom.
 
-- `GET /v1/map` returns the PNG, or `202` with `{state, progress, seed, size,
-  world_radius, playable_radius, sea_level}` while rendering.
+**Layers (plugin).** `MapRenderer` samples the whole ±10 500 m world square
+on a `Resolution`² grid (default 2048, the game's own map texture size;
+256–4096; config section `[Map]`) into an RGBA PNG,
+`BepInEx/cache/valheimui-agent/layers-<seed>-<size>.png`: `R` = terrain
+mask nibble (high) and biome code (low: 1 Meadows, 2 Black Forest, 3 Swamp,
+4 Mountain, 5 Plains, 6 Mistlands, 7 Ashlands, 8 Deep North, 9 Ocean, 15
+off-world), `G:B` = height as `(h + 200) × 32` big endian, `A` = forest
+factor × 100. Height and mask come from `GetBiomeHeight` (lava and mist
+live in the mask), the forest from the static `GetForestFactor` (low values
+are forest, as `InForest` defines it); both are bound by reflection into
+delegates once per generator and degrade to `GetHeight` and "no forest" with
+a logged warning. Sampling runs on the Unity main thread in slices bounded
+by `RenderBudgetMs` (default 4 ms per frame); the PNG is streamed row by
+row into the deflater on a worker thread. `AutoRender` starts it 15 s after
+the world is ready.
+
+- `GET /v1/map/layers` returns the layers PNG, or `202` with `{state,
+  progress, seed, size, world_radius, playable_radius, sea_level, layers,
+  layers_version}` while sampling. `GET /v1/map` answers `410` (agents before
+  1.10 served a flat styled image there).
 - `GET /v1/map/info` returns that state; `POST /v1/map/render?size=&force=`
-  starts a render.
-- `GET /v1/map/objects` returns `{objects[{type, label, x, y, z, text}],
-  locations[{name, x, y, z}], updated_at}`: portals (with tag), ships, carts,
-  tombstones (owner), claimed beds (owner) from one pass over the ZDO table
-  every 30 s (table accessor resolved by reflection, since it moved between
-  game versions; capped at 5 000 objects), and the game's own location icons
-  (boss altars, the start temple, traders once found).
+  starts a sampling run.
+- `GET /v1/map/objects` returns `{objects[{type, label, x, y, z, text,
+  explored}], pins[{name, x, y, z, type, type_id, checked, author, source}],
+  locations[{name, x, y, z, explored, discovered}], updated_at}` from one
+  pass over the ZDO table every 15 s (accessor resolved by reflection; capped
+  at 5 000 objects) plus the game's own location icons.
 
-The manager (`internal/agent/mapcache.go`) copies a ready image into
-`instances/<id>/cache/map/map-<seed>-<size>.png` on first request and serves it
-from there (`GET /instances/{id}/map.png`, `202` with progress while the plugin
-renders, the newest cached image marked `stale` when the agent is away).
-`GET /instances/{id}/map` bundles render state, objects (cached 10 s) and
-players (positions of hidden players only for operators). Image pixel
-mapping: `u = (x + R) / 2R`, `v = (R - z) / 2R` with `R = world_radius`,
-north up. The Map tab (`web/src/features/map`) pans and zooms the image with
-CSS transforms and places markers in image fractions, counter-scaled so they
-keep their screen size; player markers follow the `agent.status` stream.
+**Style (manager, `internal/agent/mapstyle`).** Everything visual is
+procedural in world metres, so the same layers render sharp at every scale:
+per-biome textures (meadows, black forest, swamp, mountain rock and snow,
+plains, mistlands with mist, ashlands with lava, deep north), tree crowns
+where the forest factor is low (a closed canopy at deep zoom, a mottled
+darkening at overview scale, cross-faded between 1.5 and 3 m per pixel),
+hill shading lit from the north-west with central differences on a bicubic
+height field, depth-shaded water with a coastline stroke, shallows and a
+beach line, snow above the tree line, and the darkened ring beyond the
+playable radius. Height is sampled bicubically and forest, mask and biome
+weights bilinearly, so coastlines and biome edges are smooth curves rather
+than the layer grid's steps. `RenderRegion` draws any world rectangle at any
+pixel size; `Render` is the full square. `mapstyle.Version` is part of every
+cache name, so a restyle invalidates old images without a plugin update.
+`MAPSTYLE_PREVIEW=<png> go test ./internal/agent/mapstyle -run
+TestStylePreview` renders synthetic terrain (or a real `MAPSTYLE_LAYERS`
+file) for a look check.
+
+**Texture packs.** PNGs in `instances/<id>/map-textures/` named per role
+(`parchment meadows blackforest forest_tree swamp mountain snow plains
+mistlands mist ashlands lava deepnorth ocean shallows`, optional `pack.json`
+with `metres_per_tile`) replace the builtin textures role by role; the
+folder is fingerprinted on every poll and its fingerprint is part of the
+cache names and of `image_version`, so a dropped file re-renders within a
+poll. Problems are logged once per fingerprint.
+
+**Whole map (manager, `internal/agent/mapcache.go`).** The manager fetches
+the layers into `instances/<id>/cache/map/layers-<seed>-<size>.png`, styles
+them into `styled-<seed>-<size>-v<style>-<pack>.png` (serialised per
+instance; other styles or packs of the same world removed) and composites
+the fog into `fogstyled-…` (§20.2). `GET /instances/{id}/map.png` serves the
+fogged image (`?fog=0`, operators, the bare one); `GET /instances/{id}/map`
+bundles render state, `layers_supported`, `style_version`, `image_version`,
+`tiles`, objects, pins, locations (stripped of what lies under the fog for
+viewers) and players. Agents before 1.10 still serve their flat
+`map-<seed>-<size>.png`, which the manager fogs as before and flags with
+`layers_supported: false`; the Map tab tells operators to update the agent.
+Offline, cached layers are restyled when the style or pack changed. Image
+pixel mapping: `u = (x + R) / 2R`, `v = (R - z) / 2R` with `R =
+world_radius`, north up.
+
+**Tiles (`internal/agent/maptiles.go`).** For deep zoom the manager serves a
+pyramid: `GET /instances/{id}/map/tiles/{z}/{x}/{y}.png`, 256 px tiles, `2^z`
+per side, `z = 0` the whole world and `z = 7` (0.64 m per pixel, about the
+in-game map's deepest zoom) the limit. Tiles are rendered on demand with
+`RenderRegion`, cached bare under `cache/map/tiles/<seed>-<size>-v<style>-
+<pack>/z/x/y.png` (1 GB cap, oldest pruned), and fogged per request in
+memory from the decoded mask, so fog progress never invalidates the cache.
+Levels 0–4 are pre-rendered when a world's layers arrive. Each tile carries
+an `ETag` and answers `304`; `InstanceMap.tiles` advertises tile size,
+deepest zoom and a version (style, pack, mask version) to key URLs on. The
+Map tab (`web/src/features/map/MapView.tsx`) picks the level whose tile
+pixels match screen pixels, mounts only the tiles in view, keeps the previous
+level underneath until the new one has loaded, and caps the zoom at the
+pyramid's deepest level; markers sit in world fractions, counter-scaled.
+
+**Icons and animation.** Markers are hand-drawn SVG glyphs in the game's
+style (`MapIcons.tsx`): player portrait, portal, ship, cart, tombstone, bed,
+sacrificial stones, boss skull, trader and the pin kinds, checked pins
+crossed out; boss and place icons carry the game's uppercase caption, players
+their name. Movement is layered on the client so nothing hidden shows: a
+seamless cloud texture (`GET map/clouds.png`) drifts over the parchment,
+masked by the fog mask; a faint shimmer scrolls over explored water, masked
+by `GET map/water.png` (a 1024² mask that is zero under the fog); player
+markers glide between status updates; map pings (the plugin records
+`ChatMessage` RPCs of type Ping into `AgentStatus.pings`) appear as
+expanding rings with the sender's name. An *Animate* chip switches it off,
+and `prefers-reduced-motion` does so by default.
 
 ### 20.2 Fog of war
 
@@ -795,8 +865,12 @@ waiting for its own poll.
 
 The fog is applied on the server, not in the browser
 (`internal/agent/fog.go`): `GET /instances/{id}/map.png` serves a composite
-of the cached map and the cached mask, with unexplored pixels painted a
-solid dark tone and the mask sampled bilinearly so edges are soft. The bare
+of the cached map and the cached mask, with unexplored pixels painted as
+parchment (`mapstyle.Parchment`, the game's beige paper with soft blotches),
+the mask sampled bilinearly and its threshold perturbed by slow noise for a
+cloudy edge that can never expose an unexplored cell, and a faint shadow on
+the explored side of the edge. Tiles get the same composite per request
+(`compositeFogRect`). The bare
 render is only served with `?fog=0`, which the handler restricts to
 operators, so a viewer cannot obtain unexplored terrain by any request. The
 composite is cached as `cache/map/fogmap-<seed>-<size>.png`, keyed on the
