@@ -1,0 +1,34 @@
+name: repo-metadata
+# Sets the repository's About description, website and topics. Run it from the
+# Actions tab ("Run workflow"). GITHUB_TOKEN cannot edit repository metadata,
+# so it needs a personal access token with repository administration rights
+# stored as the secret REPO_ADMIN_TOKEN (a classic token with the `repo` scope,
+# or a fine-grained one with "Administration: write" on this repository).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply description, website and topics
+        env:
+          GH_TOKEN: ${{ secrets.REPO_ADMIN_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "::error::secret REPO_ADMIN_TOKEN is not set; GITHUB_TOKEN cannot edit repository metadata" >&2
+            exit 1
+          fi
+          gh repo edit "$GH_REPO" \
+            --description "Self-hosted web UI for Valheim dedicated servers on Linux and Windows: one binary, SteamCMD installs, live console, players and ban lists, backups and worlds, BepInEx/Thunderstore mods, schedules, in-app upgrades, multi-user with SSO." \
+            --homepage "https://github.com/$GH_REPO/releases/latest" \
+            --add-topic valheim --add-topic valheim-server --add-topic dedicated-server \
+            --add-topic game-server --add-topic steamcmd --add-topic bepinex --add-topic thunderstore \
+            --add-topic self-hosted --add-topic web-ui --add-topic golang --add-topic react \
+            --add-topic systemd --add-topic windows-service
+          gh repo view "$GH_REPO" --json description,homepageUrl,repositoryTopics
