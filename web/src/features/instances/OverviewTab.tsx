@@ -1,7 +1,6 @@
 import {
   ActionIcon,
   Alert,
-  Badge,
   Button,
   CopyButton,
   Group,
@@ -15,6 +14,7 @@ import {
   Tooltip,
 } from '@mantine/core'
 import { modals } from '@mantine/modals'
+import { useNavigate } from 'react-router-dom'
 import {
   IconAlertTriangle,
   IconBox,
@@ -22,6 +22,7 @@ import {
   IconDeviceSdCard,
   IconCheck,
   IconCopy,
+  IconDownload,
   IconKey,
   IconPlayerPlay,
   IconPlayerStop,
@@ -35,6 +36,8 @@ import { fmtAgo, fmtBytes, fmtPercent, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
 import { SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
+import { useModsOverview } from '../mods/useMods'
+import { CheckModUpdatesButton } from '../mods/CheckModUpdatesButton'
 import { useInstance } from './useInstance'
 import {
   useCheckForUpdate,
@@ -51,8 +54,10 @@ import { canInstall, canRestart, canStart, canStop, stateColor, stateLabel } fro
 // Owned by WP-11. Props: the instance id.
 export function OverviewTab({ id }: { id: string }) {
   const { hasRole } = useAuth()
+  const navigate = useNavigate()
   const inst = useInstance(id)
   const statusQuery = useInstanceStatus(id)
+  const modsOverview = useModsOverview(id)
   const { openJob } = useJobDrawer()
 
   const start = useStartInstance(id)
@@ -131,9 +136,22 @@ export function OverviewTab({ id }: { id: string }) {
   const latestBuildId = checkUpdate.data?.latest_buildid ?? systemInfo.data?.latest_buildid
   const latestBuildCheckedAt = checkUpdate.data?.checked_at ?? systemInfo.data?.buildid_checked_at
 
+  // Updates: game server (SteamCMD buildid) + mods (Thunderstore/Hexium index).
+  const bepinex = modsOverview.data?.bepinex
+  const modUpdateCount = modsOverview.data?.mods.filter((m) => m.update_available).length ?? 0
+  const bepinexUpdate = !!(bepinex?.installed && bepinex.latest_version && bepinex.latest_version !== bepinex.version)
+  const modsPending = modUpdateCount + (bepinexUpdate ? 1 : 0)
+  const gameUpdate = !!status.update_available
+  const anyUpdate = gameUpdate || modsPending > 0
+  const updatesValue = anyUpdate
+    ? [gameUpdate ? 'Game' : null, modsPending > 0 ? `${modsPending} mod${modsPending === 1 ? '' : 's'}` : null]
+        .filter(Boolean)
+        .join(' + ')
+    : 'Up to date'
+
   return (
     <Stack>
-      <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }}>
+      <SimpleGrid cols={{ base: 2, md: 3, xl: 7 }}>
         <StatTile
           label="State"
           value={stateLabel(status.state)}
@@ -184,14 +202,97 @@ export function OverviewTab({ id }: { id: string }) {
         <StatTile
           label="Build"
           value={status.installed_buildid ?? 'unknown'}
-          hint={status.update_available ? 'update available' : 'up to date'}
+          hint={gameUpdate ? 'update available' : 'up to date'}
           icon={<IconBox size={16} />}
-          accent={status.update_available ? 'var(--vh-ember)' : undefined}
+          accent={gameUpdate ? 'var(--vh-ember)' : undefined}
+        />
+        <StatTile
+          label="Updates"
+          value={updatesValue}
+          hint={anyUpdate ? 'available' : 'all current'}
+          icon={<IconDownload size={16} />}
+          accent={anyUpdate ? 'var(--vh-ember)' : undefined}
         />
       </SimpleGrid>
 
+      <SectionCard title="Updates" description="Game server files and installed mods.">
+        <Stack gap="md">
+          <Group justify="space-between" wrap="wrap" gap="sm" align="flex-start">
+            <div style={{ minWidth: 0 }}>
+              <Group gap="xs">
+                <Text size="sm" fw={600}>
+                  Game server
+                </Text>
+                <StatusPill color={gameUpdate ? 'orange' : 'moss'}>
+                  {gameUpdate ? 'update available' : 'up to date'}
+                </StatusPill>
+              </Group>
+              <Text size="xs" c="dimmed">
+                Installed build {status.installed_buildid ?? 'unknown'} · latest {latestBuildId ?? 'unknown'}
+                {latestBuildCheckedAt ? ` (checked ${fmtAgo(latestBuildCheckedAt)})` : ''}
+              </Text>
+              {gameUpdate && (
+                <Text size="xs" c="dimmed">
+                  {instance.config.backup_before_update
+                    ? 'A backup will be taken automatically before updating.'
+                    : 'Enable "Backup before update" in Config to snapshot the world first.'}
+                </Text>
+              )}
+            </div>
+            {canOperate && (
+              <Group gap="xs">
+                <Button
+                  size="xs"
+                  variant="default"
+                  leftSection={<IconRefresh size={14} />}
+                  loading={checkUpdate.isPending}
+                  onClick={() => checkUpdate.mutate()}
+                >
+                  Check for updates
+                </Button>
+                {gameUpdate && (
+                  <Button size="xs" color="orange" loading={updateNow.isPending} onClick={confirmUpdate}>
+                    Update now
+                  </Button>
+                )}
+              </Group>
+            )}
+          </Group>
+
+          <div style={{ borderTop: '1px solid var(--vh-border)' }} />
+
+          <Group justify="space-between" wrap="wrap" gap="sm" align="flex-start">
+            <div style={{ minWidth: 0 }}>
+              <Group gap="xs">
+                <Text size="sm" fw={600}>
+                  Mods
+                </Text>
+                {bepinex?.installed ? (
+                  <StatusPill color={modsPending > 0 ? 'orange' : 'moss'}>
+                    {modsPending > 0 ? `${modsPending} update${modsPending === 1 ? '' : 's'}` : 'up to date'}
+                  </StatusPill>
+                ) : (
+                  <StatusPill color="gray">BepInEx not installed</StatusPill>
+                )}
+              </Group>
+              <Text size="xs" c="dimmed">
+                {bepinex?.installed
+                  ? `BepInEx ${bepinex.version ?? ''}${bepinexUpdate ? ` → ${bepinex.latest_version}` : ''} · ${modUpdateCount} mod${modUpdateCount === 1 ? '' : 's'} with an update`
+                  : 'Install BepInEx from the Mods tab to run mods.'}
+              </Text>
+            </div>
+            <Group gap="xs">
+              {canOperate && bepinex?.installed && <CheckModUpdatesButton id={id} />}
+              <Button size="xs" variant="light" onClick={() => navigate(`/instances/${id}/mods`)}>
+                Open Mods
+              </Button>
+            </Group>
+          </Group>
+        </Stack>
+      </SectionCard>
+
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-        <SectionCard title="Controls" description="Manage the running process and installed game files.">
+        <SectionCard title="Controls" description="Manage the running process.">
           <Stack gap="sm">
             <Group gap="xs">
               <StatusDot color={status.ready ? 'moss' : 'gray'} />
@@ -268,50 +369,6 @@ export function OverviewTab({ id }: { id: string }) {
                 )}
               </Group>
             )}
-
-            <Stack gap="xs" pt="xs" style={{ borderTop: '1px solid var(--vh-border)' }} mt="xs">
-              <Text size="sm" c="dimmed">
-                Installed build {status.installed_buildid ?? 'unknown'}
-              </Text>
-              <Text size="sm" c="dimmed">
-                Latest known build {latestBuildId ?? 'unknown'}
-                {latestBuildCheckedAt ? ` (checked ${fmtAgo(latestBuildCheckedAt)})` : ''}
-              </Text>
-              <Group>
-                <Badge color={status.bepinex_installed ? 'green' : 'gray'} variant="light">
-                  BepInEx {status.bepinex_installed ? 'installed' : 'not installed'}
-                </Badge>
-                <Badge color={status.bepinex_enabled ? 'green' : 'gray'} variant="light">
-                  BepInEx {status.bepinex_enabled ? 'enabled' : 'disabled'}
-                </Badge>
-              </Group>
-              {canOperate && (
-                <Group>
-                  <Button size="xs" variant="outline" loading={checkUpdate.isPending} onClick={() => checkUpdate.mutate()}>
-                    Check for updates
-                  </Button>
-                </Group>
-              )}
-              {status.update_available && (
-                <Alert color="orange" icon={<IconAlertTriangle size={16} />} title="Game update available">
-                  <Stack gap="xs">
-                    <Text size="sm">
-                      Build {latestBuildId ?? 'a newer build'} is available.{' '}
-                      {instance.config.backup_before_update
-                        ? 'A backup will be taken automatically before updating.'
-                        : 'Enable "Backup before update" in Config to snapshot the world first.'}
-                    </Text>
-                    {canOperate && (
-                      <Group>
-                        <Button size="xs" color="orange" loading={updateNow.isPending} onClick={confirmUpdate}>
-                          Update now
-                        </Button>
-                      </Group>
-                    )}
-                  </Stack>
-                </Alert>
-              )}
-            </Stack>
           </Stack>
         </SectionCard>
 
