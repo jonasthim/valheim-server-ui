@@ -12,9 +12,12 @@ type fileIdentity struct {
 	dev, ino uint64
 }
 
-func identify(fi os.FileInfo) fileIdentity {
+func identify(_ string, fi os.FileInfo) fileIdentity {
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
 		return fileIdentity{dev: uint64(st.Dev), ino: uint64(st.Ino)} //nolint:unconvert // Dev is int32 on some platforms
 	}
 	return fileIdentity{}
 }
+
+// openForTail opens path for reading.
+func openForTail(path string) (*os.File, error) { return os.Open(path) }

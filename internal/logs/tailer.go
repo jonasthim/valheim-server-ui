@@ -154,10 +154,10 @@ func (t *Tailer) check(onLine func(string), log *slog.Logger) error {
 		return fmt.Errorf("stat %s: %w", t.Path, err)
 	}
 
-	curIno := identify(st)
+	curIno := identify(t.Path, st)
 
 	if t.f == nil {
-		f, err := os.Open(t.Path)
+		f, err := openForTail(t.Path)
 		if err != nil {
 			return fmt.Errorf("open %s: %w", t.Path, err)
 		}
@@ -208,7 +208,7 @@ func (t *Tailer) check(onLine func(string), log *slog.Logger) error {
 		// Rotated: the path now refers to a different file. Follow the new
 		// one from the start.
 		_ = t.f.Close()
-		f, err := os.Open(t.Path)
+		f, err := openForTail(t.Path)
 		if err != nil {
 			t.f = nil
 			return fmt.Errorf("reopen %s: %w", t.Path, err)

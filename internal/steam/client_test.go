@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,10 +15,17 @@ import (
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
+// writeFakeSteamCMD creates a file Installed() accepts: an executable script
+// on unix, a file named steamcmd.exe on Windows (where the tests always
+// inject a CommandRunner, so it is never actually run).
 func writeFakeSteamCMD(t *testing.T, script string) string {
 	t.Helper()
 	dir := t.TempDir()
-	path := filepath.Join(dir, "steamcmd.sh")
+	name := "steamcmd.sh"
+	if runtime.GOOS == "windows" {
+		name = "steamcmd.exe"
+	}
+	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
 		t.Fatalf("write fake steamcmd: %v", err)
 	}
@@ -36,7 +44,7 @@ func TestInstalled(t *testing.T) {
 		t.Fatal("expected missing path to be reported not installed")
 	}
 
-	// Not executable.
+	// Not executable (on Windows: not an .exe).
 	dir := t.TempDir()
 	notExec := filepath.Join(dir, "steamcmd.sh")
 	if err := os.WriteFile(notExec, []byte("#!/bin/sh\nexit 0\n"), 0o644); err != nil {
@@ -200,7 +208,7 @@ func TestInstallOrUpdate_ContextCancelled(t *testing.T) {
 		<-ctx.Done()
 		return ctx.Err()
 	}
-	c := New("/bin/true", nil, WithCommandRunner(run))
+	c := New(writeFakeSteamCMD(t, "exit 0"), nil, WithCommandRunner(run))
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() { errCh <- c.InstallOrUpdate(ctx, t.TempDir(), io.Discard) }()
