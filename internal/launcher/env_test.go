@@ -77,23 +77,6 @@ func TestResolveBepInExEnv_NoMarkers(t *testing.T) {
 	}
 }
 
-func TestBaseEnv(t *testing.T) {
-	got := baseEnv([]string{"FOO=bar", "LD_LIBRARY_PATH=/opt/lib"}, "")
-	want := map[string]string{
-		"FOO":             "bar",
-		"LD_LIBRARY_PATH": "./linux64:/opt/lib",
-		"SteamAppId":      "892970",
-	}
-	assertEnvEquals(t, got, want)
-
-	got2 := baseEnv(nil, "")
-	want2 := map[string]string{
-		"LD_LIBRARY_PATH": "./linux64:",
-		"SteamAppId":      "892970",
-	}
-	assertEnvEquals(t, got2, want2)
-}
-
 func TestMaskedLaunchLine(t *testing.T) {
 	line := maskedLaunchLine("./valheim_server.x86_64", []string{"-name", "Our Server", "-password", "s3cret", "-public", "1"})
 	want := `[valheim-ui] launching valheim_server.x86_64 -name Our Server -password ******** -public 1`

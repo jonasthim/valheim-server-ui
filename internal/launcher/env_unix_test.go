@@ -1,3 +1,7 @@
+//go:build !windows
+
+// Linux-only parts of baseEnv: LD_LIBRARY_PATH and the HOME pin.
+
 package launcher
 
 import (
@@ -20,3 +24,21 @@ func TestBaseEnvPinsHome(t *testing.T) {
 		t.Fatalf("empty home must leave HOME untouched: %v", env)
 	}
 }
+
+func TestBaseEnv(t *testing.T) {
+	got := baseEnv([]string{"FOO=bar", "LD_LIBRARY_PATH=/opt/lib"}, "")
+	want := map[string]string{
+		"FOO":             "bar",
+		"LD_LIBRARY_PATH": "./linux64:/opt/lib",
+		"SteamAppId":      "892970",
+	}
+	assertEnvEquals(t, got, want)
+
+	got2 := baseEnv(nil, "")
+	want2 := map[string]string{
+		"LD_LIBRARY_PATH": "./linux64:",
+		"SteamAppId":      "892970",
+	}
+	assertEnvEquals(t, got2, want2)
+}
+
