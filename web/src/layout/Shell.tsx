@@ -37,7 +37,7 @@ import { useEvents } from '../events/useEvents'
 import { ActivityIndicator } from '../features/jobs/ActivityIndicator'
 import { JobDrawerHost } from '../features/jobs/JobDrawerHost'
 import { useSystemInfo } from '../features/system'
-import { BrandMark } from '../ui'
+import { BrandMark, ErrorBoundary } from '../ui'
 import classes from './Shell.module.css'
 
 type Role = 'viewer' | 'operator' | 'admin'
@@ -206,9 +206,11 @@ export function Shell() {
       <AppShell.Main className={classes.main}>
         <div className={classes.content}>
           <JobDrawerHost>
-            <Suspense fallback={<Center h="50vh"><Loader /></Center>}>
-              <Outlet />
-            </Suspense>
+            <ErrorBoundary key={loc.pathname}>
+              <Suspense fallback={<Center h="50vh"><Loader /></Center>}>
+                <Outlet />
+              </Suspense>
+            </ErrorBoundary>
           </JobDrawerHost>
         </div>
       </AppShell.Main>

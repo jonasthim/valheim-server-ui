@@ -30,7 +30,7 @@ import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtBytes } from '../../lib/format'
 import type { ConfigEntry } from '../../api/types'
 import { EmptyState, SectionCard } from '../../ui'
-import { entryKey, isBooleanEntry, isClientSideSetting, isNumericEntry } from './helpers'
+import { entryKey, isBooleanEntry, isClientSideSetting, isKeybindEntry, isNumericEntry } from './helpers'
 import { useConfigFiles, useModConfig, useSaveModConfig } from './useModConfig'
 import { useModsOverview } from './useMods'
 
@@ -316,12 +316,16 @@ function ConfigEntryField({
         disabled={readOnly}
       />
     )
-  } else if (entry.acceptable_values && entry.acceptable_values.length > 0) {
+  } else if (!isKeybindEntry(entry) && entry.acceptable_values && entry.acceptable_values.length > 0) {
+    // Mantine Select throws on duplicate option values; some mod cfgs list a
+    // value more than once. Dedupe, and make sure the current value is always
+    // selectable even if the mod dropped it from its acceptable list.
+    const options = Array.from(new Set([...entry.acceptable_values, current].filter((v) => v !== '')))
     control = (
       <Select
         label={entry.key}
         description={description}
-        data={entry.acceptable_values}
+        data={options}
         value={current}
         onChange={(v) => onChange(v ?? entry.value)}
         disabled={readOnly}
@@ -331,11 +335,12 @@ function ConfigEntryField({
   } else if (isNumericEntry(entry)) {
     const min = entry.range?.min !== undefined && entry.range.min !== '' ? Number(entry.range.min) : undefined
     const max = entry.range?.max !== undefined && entry.range.max !== '' ? Number(entry.range.max) : undefined
+    const num = Number(current)
     control = (
       <NumberInput
         label={entry.key}
         description={description}
-        value={current === '' ? '' : Number(current)}
+        value={current === '' || Number.isNaN(num) ? '' : num}
         min={min}
         max={max}
         onChange={(v) => onChange(String(v))}
