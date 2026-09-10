@@ -6,11 +6,20 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 func writeFile(path, body string) error { return os.WriteFile(path, []byte(body), 0o600) }
+
+// prepareHelper mirrors supervisor.prepareCommand: a hidden console of its
+// own for the proxy, so its console Ctrl+C stays with the fake server.
+func prepareHelper(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+}
 
 const exeSuffix = ".exe"
 

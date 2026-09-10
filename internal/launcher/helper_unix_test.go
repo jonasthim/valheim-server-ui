@@ -13,6 +13,8 @@ import (
 
 const exeSuffix = ""
 
+func prepareHelper(*exec.Cmd) {}
+
 // stopHelper ends the helper process: after exec it is the fake server, so
 // SIGINT makes it exit 0 the way the direct supervisor stops a real one.
 func stopHelper(t *testing.T, cmd *exec.Cmd, stdin io.WriteCloser) {

@@ -106,6 +106,11 @@ func TestRun_ExecsFakeServer(t *testing.T) {
 		"VSUI_LAUNCHER_HELPER_CONFIG="+cfgFile,
 		"VSUI_LAUNCHER_HELPER_INSTANCE="+id,
 	)
+	// Same process attributes the direct supervisor uses: on Windows that is
+	// a console of the helper's own, so the Ctrl+C the proxy generates for
+	// the fake server cannot reach this test process (or the shell running
+	// `go test`).
+	prepareHelper(cmd)
 	// The fake server runs for a while; stop it once its dump exists. On
 	// Linux the helper *is* the fake server (exec); on Windows the helper is
 	// the proxy in front of it and stops it through the stdin protocol.
