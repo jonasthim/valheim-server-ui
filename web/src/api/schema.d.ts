@@ -2142,6 +2142,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/map/tiles/{z}/{x}/{y}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+                /** @description Zoom level; 2^z tiles per side */
+                z: number;
+                x: number;
+                y: number;
+            };
+            cookie?: never;
+        };
+        /**
+         * One tile of the deep-zoom map pyramid, drawn from the agent's layers
+         * @description Tiles are `InstanceMap.tiles.tile_size` px; zoom `z` splits the world square
+         *     into `2^z × 2^z` tiles (`z = 0` is the whole world, `max_zoom` about the
+         *     in-game map's deepest zoom, ~0.6 m per pixel). Tiles are rendered on demand
+         *     from the raw layers, so textures and coastlines stay crisp at any zoom, and
+         *     composited with the fog per request. Append `?v=<InstanceMap.tiles.version>`;
+         *     the response carries an `ETag`. `fog=0` gives the bare tile (operators).
+         *     `202` with MapInfo while the plugin samples or encodes its first mask, `404`
+         *     outside the pyramid, `409` for agents without layers (before 1.10).
+         */
+        get: {
+            parameters: {
+                query?: {
+                    fog?: "1" | "0";
+                };
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                    /** @description Zoom level; 2^z tiles per side */
+                    z: number;
+                    x: number;
+                    y: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/png": string;
+                    };
+                };
+                202: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MapInfo"];
+                    };
+                };
+                /** @description Not modified (If-None-Match matched the ETag) */
+                304: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description No such tile */
+                404: components["responses"]["Error"];
+                /** @description Agent without layers */
+                409: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/map/explored.png": {
         parameters: {
             query?: never;
@@ -3560,6 +3638,7 @@ export interface components {
             image_ready: boolean;
             /** @description Changes whenever map.png would serve different bytes (new render or fog rebuild); append as ?v= */
             image_version?: string;
+            tiles?: components["schemas"]["MapTiles"];
             /** @description The image comes from an earlier run and could not be confirmed against the current world */
             stale: boolean;
             info?: components["schemas"]["MapInfo"];
@@ -3571,6 +3650,15 @@ export interface components {
             objects_updated_at?: string;
             players: components["schemas"]["AgentPlayer"][];
             world?: components["schemas"]["AgentWorld"];
+        };
+        /** @description The deep-zoom tile pyramid; absent when the agent exports no layers */
+        MapTiles: {
+            /** @description Tile side in pixels (256) */
+            tile_size: number;
+            /** @description Deepest zoom level (7) */
+            max_zoom: number;
+            /** @description Changes whenever tile bytes would (style */
+            version: string;
         };
         MapRenderRequest: {
             size?: number;

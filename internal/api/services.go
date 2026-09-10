@@ -169,6 +169,9 @@ type AgentService interface {
 	// ErrMapRendering-style progress via info); RenderMap forces a render.
 	Map(ctx context.Context, instanceID string, includeHidden bool) (*domain.InstanceMap, error)
 	MapPNG(ctx context.Context, instanceID string, fog bool) (path string, info *domain.MapInfo, err error)
+	// TilePNG renders or serves tile z/x/y of the deep-zoom pyramid; etag
+	// identifies the exact bytes.
+	TilePNG(ctx context.Context, instanceID string, z, x, y int, fog bool) (png []byte, etag string, info *domain.MapInfo, err error)
 	ExploredPNG(ctx context.Context, instanceID string) (path string, info *domain.ExploredInfo, err error)
 	RenderMap(ctx context.Context, instanceID string, req domain.MapRenderRequest) (*domain.MapInfo, error)
 }

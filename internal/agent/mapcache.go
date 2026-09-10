@@ -125,6 +125,7 @@ type mapState struct {
 
 	fog fogState
 
+	tiles      tileSource     // decoded layers and mask for the tile renderer
 	styleMu    sync.Mutex     // serialises styling per instance (not held under s.mu)
 	fogMu      sync.Mutex     // serialises fog composites per instance (not held under s.mu)
 	pack       *mapstyle.Pack // texture pack for packFP
@@ -312,6 +313,7 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 	}
 	s.mu.Lock()
 	out.ImageVersion = s.imageVersionLocked(ms, dir, out.Info, pack)
+	out.Tiles = s.tilesLocked(ms, dir, out.Info, pack)
 	s.mu.Unlock()
 	return out, nil
 }

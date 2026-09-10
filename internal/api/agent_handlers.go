@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -28,6 +29,8 @@ func registerAgentRoutes(r chi.Router, d *Deps) {
 		Get("/instances/{instanceId}/map.png", getMapImageHandler(d))
 	r.With(RequireRole(domain.RoleViewer), guard).
 		Get("/instances/{instanceId}/map/explored.png", getExploredImageHandler(d))
+	r.With(RequireRole(domain.RoleViewer), guard).
+		Get("/instances/{instanceId}/map/tiles/{z}/{x}/{y}.png", getTileHandler(d))
 	r.With(RequireRole(domain.RoleOperator), guard).
 		Post("/instances/{instanceId}/map/render", renderMapHandler(d))
 }
@@ -77,6 +80,67 @@ func getMapHandler(d *Deps) http.HandlerFunc {
 	}
 }
 
+// fogRequested reads ?fog=0 (bare map, operators only). It writes the 403
+// itself and returns false in the second value when the caller must stop.
+func fogRequested(w http.ResponseWriter, r *http.Request) (fog bool, ok bool) {
+	switch r.URL.Query().Get("fog") {
+	case "0", "false", "off":
+		u := UserFrom(r.Context())
+		if u == nil || !u.Role.AtLeast(domain.RoleOperator) {
+			WriteError(w, domain.E(domain.CodeForbidden, "the bare map without fog is for operators"))
+			return false, false
+		}
+		return false, true
+	}
+	return true, true
+}
+
+// getTileHandler serves one tile of the deep-zoom pyramid, fogged unless an
+// operator asks for the bare map. 202 with MapInfo while the plugin samples
+// or its first fog mask encodes; 404 outside the pyramid; 409 for agents
+// without layers.
+func getTileHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		z, errZ := strconv.Atoi(chi.URLParam(r, "z"))
+		x, errX := strconv.Atoi(chi.URLParam(r, "x"))
+		y, errY := strconv.Atoi(chi.URLParam(r, "y"))
+		if errZ != nil || errX != nil || errY != nil {
+			WriteError(w, domain.E(domain.CodeNotFound, "no such tile"))
+			return
+		}
+		fog, ok := fogRequested(w, r)
+		if !ok {
+			return
+		}
+		data, etag, info, err := d.Agent.TilePNG(r.Context(), id, z, x, y, fog)
+		if err != nil {
+			if info != nil && domain.AsError(err).Code == domain.CodeInternal {
+				// Still sampling or encoding: progress instead of an error.
+				WriteJSON(w, http.StatusAccepted, info)
+				return
+			}
+			WriteError(w, err)
+			return
+		}
+		if etag != "" && r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "private, max-age=10")
+		if etag != "" {
+			w.Header().Set("ETag", etag)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(data) //nolint:gosec // PNG bytes the service rendered, served as image/png
+	}
+}
+
 // stripUnexplored removes what lies under the fog from a viewer's answer,
 // so the JSON does not reveal what the fogged image hides.
 func stripUnexplored(m *domain.InstanceMap) {
@@ -107,15 +171,9 @@ func getMapImageHandler(d *Deps) http.HandlerFunc {
 			WriteError(w, err)
 			return
 		}
-		fog := true
-		switch r.URL.Query().Get("fog") {
-		case "0", "false", "off":
-			u := UserFrom(r.Context())
-			if u == nil || !u.Role.AtLeast(domain.RoleOperator) {
-				WriteError(w, domain.E(domain.CodeForbidden, "the bare map without fog is for operators"))
-				return
-			}
-			fog = false
+		fog, ok := fogRequested(w, r)
+		if !ok {
+			return
 		}
 		path, info, err := d.Agent.MapPNG(r.Context(), id, fog)
 		if err != nil {

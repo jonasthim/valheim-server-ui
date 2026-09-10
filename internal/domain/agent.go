@@ -192,6 +192,16 @@ type MapObjects struct {
 	UpdatedAt *time.Time    `json:"updated_at"`
 }
 
+// MapTiles describes the tile pyramid GET /instances/{id}/map/tiles/{z}/{x}/{y}.png
+// serves: TileSize px tiles, 2^z per side at zoom z up to MaxZoom. Version
+// changes whenever tile bytes would (style, texture pack or fog mask), so
+// clients append it to tile URLs.
+type MapTiles struct {
+	TileSize int    `json:"tile_size"`
+	MaxZoom  int    `json:"max_zoom"`
+	Version  string `json:"version"`
+}
+
 // InstanceMap is what GET /instances/{id}/map returns: everything the Map
 // tab needs besides the image itself.
 type InstanceMap struct {
@@ -216,6 +226,8 @@ type InstanceMap struct {
 	// ImageVersion changes whenever map.png would serve different bytes (a
 	// new render or a fog rebuild); clients append it to the image URL.
 	ImageVersion string `json:"image_version,omitempty"`
+	// Tiles is the deep-zoom pyramid; nil when the agent exports no layers.
+	Tiles *MapTiles `json:"tiles,omitempty"`
 	// Stale is true when the served image was cached from an earlier run and
 	// the agent is not reachable to confirm it matches the current world.
 	Stale     bool          `json:"stale"`

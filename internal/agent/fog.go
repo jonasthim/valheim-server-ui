@@ -19,6 +19,16 @@ import (
 // fully parchment (the noise can never expose it), and a fully explored one
 // keeps the map untouched. The base is left as is.
 func compositeFog(base, mask image.Image, fog *mapstyle.Parchment, worldRadius float32) *image.NRGBA {
+	if worldRadius <= 0 {
+		worldRadius = 10500
+	}
+	return compositeFogRect(base, mask, fog, worldRadius, -worldRadius, worldRadius, worldRadius, -worldRadius)
+}
+
+// compositeFogRect is compositeFog for a base image that covers only the
+// world rectangle from (wx0, wz0) (west, north) to (wx1, wz1): what a map
+// tile needs. The mask always covers the whole world square.
+func compositeFogRect(base, mask image.Image, fog *mapstyle.Parchment, worldRadius, wx0, wz0, wx1, wz1 float32) *image.NRGBA {
 	b := base.Bounds()
 	w, h := b.Dx(), b.Dy()
 	out := image.NewNRGBA(image.Rect(0, 0, w, h))
@@ -34,28 +44,46 @@ func compositeFog(base, mask image.Image, fog *mapstyle.Parchment, worldRadius f
 		worldRadius = 10500
 	}
 
+	// Mask cell coordinates of each output column/row (bilinear taps).
 	type axis struct {
 		i0, i1 int
 		f      float32
 	}
-	xs := make([]axis, w)
-	for x := 0; x < w; x++ {
-		xs[x] = sampleAxis(x, w, mw)
+	tap := func(world, n float32) axis {
+		pos := world*n - 0.5
+		if pos < 0 {
+			pos = 0
+		}
+		i0 := int(pos)
+		if i0 > int(n)-1 {
+			i0 = int(n) - 1
+		}
+		i1 := i0 + 1
+		if i1 > int(n)-1 {
+			i1 = int(n) - 1
+		}
+		return axis{i0, i1, pos - float32(i0)}
 	}
-	mppX := 2 * worldRadius / float32(w)
-	mppZ := 2 * worldRadius / float32(h)
+	mppX := (wx1 - wx0) / float32(w)
+	mppZ := (wz0 - wz1) / float32(h)
+	xs := make([]axis, w)
+	wxs := make([]float32, w)
+	for x := 0; x < w; x++ {
+		wxs[x] = wx0 + (float32(x)+0.5)*mppX
+		xs[x] = tap((wxs[x]+worldRadius)/(2*worldRadius), float32(mw))
+	}
 
 	src := pixelReader(base)
 	for y := 0; y < h; y++ {
-		ya := sampleAxis(y, h, mh)
+		wz := wz0 - (float32(y)+0.5)*mppZ
+		ya := tap((worldRadius-wz)/(2*worldRadius), float32(mh))
 		row0, row1 := ya.i0*mw, ya.i1*mw
-		wz := worldRadius - (float32(y)+0.5)*mppZ
 		for x := 0; x < w; x++ {
 			xa := xs[x]
 			top := float32(maskAt(row0+xa.i0))*(1-xa.f) + float32(maskAt(row0+xa.i1))*xa.f
 			bot := float32(maskAt(row1+xa.i0))*(1-xa.f) + float32(maskAt(row1+xa.i1))*xa.f
 			a := (top*(1-ya.f) + bot*ya.f) / 255
-			wx := -worldRadius + (float32(x)+0.5)*mppX
+			wx := wxs[x]
 			r, g, bb := src(b.Min.X+x, b.Min.Y+y)
 			o := out.Pix[y*out.Stride+x*4:]
 			if a <= 0 {
@@ -98,30 +126,6 @@ func toByte(f float32) uint8 {
 		return 255
 	}
 	return uint8(f*255 + 0.5)
-}
-
-// sampleAxis maps output index i of n to the two mask indices (of m) it lies
-// between and the weight of the second one.
-func sampleAxis(i, n, m int) struct {
-	i0, i1 int
-	f      float32
-} {
-	pos := (float32(i)+0.5)*float32(m)/float32(n) - 0.5
-	if pos < 0 {
-		pos = 0
-	}
-	i0 := int(pos)
-	if i0 > m-1 {
-		i0 = m - 1
-	}
-	i1 := i0 + 1
-	if i1 > m-1 {
-		i1 = m - 1
-	}
-	return struct {
-		i0, i1 int
-		f      float32
-	}{i0, i1, pos - float32(i0)}
 }
 
 // maskReader returns the fog value (0..255) at a linear mask index. The
