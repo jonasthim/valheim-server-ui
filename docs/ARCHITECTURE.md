@@ -758,10 +758,19 @@ therefore reconstructs it (`plugin/ValheimUI.Agent/Exploration.cs`):
   it, so deleted pins go away) and `MapObjects` emits the distinct union as
   `pins` with a stable type name (`fire`, `house`, `mine`, `cave`, `death`,
   `bed`, `portal`, `boss`, `hildir`, `other`) and the author resolved to a
-  connected player's name where the game stored a network user id. A boss
-  pin within 80 m of a location icon marks that location `discovered`,
-  which is how a Vegvisir find reaches the map: the runestone adds the pin
-  on the client, the player writes it to a table, the server reads it;
+  connected player's name where the game stored a network user id;
+- Vegvisir discoveries are caught as they happen
+  (`plugin/ValheimUI.Agent/Discoveries.cs`): reading a runestone makes the
+  client ask the server for the closest location of that kind, and the
+  server answers with the routed RPC `DiscoverLocationResponse` (pin name,
+  `PinType`, position). A Harmony prefix on
+  `ZRoutedRpc.InvokeRoutedRPC(long, string, object[])` records that answer,
+  read-only and by argument position so the game's parameter names do not
+  matter, and the list is persisted per world as `discovered-<seed>.tsv`.
+  Discoveries join `pins` with `source: vegvisir` (table pins carry
+  `source: table`), and a boss pin from either source within 80 m of a
+  location icon marks that location `discovered`, so it shows through the
+  fog; this is the only Harmony patch in the plugin;
 - the union is persisted per world at
   `BepInEx/cache/valheimui-agent/explored-<seed>-1024.bin` (once a minute
   when changed, and on shutdown).

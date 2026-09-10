@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using BepInEx;
+using HarmonyLib;
 using BepInEx.Configuration;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -34,7 +35,12 @@ namespace ValheimUI.Agent
 
         private readonly MapRenderer _map = new MapRenderer();
         private readonly Exploration _explored = new Exploration();
+        private readonly Discoveries _discoveries = new Discoveries();
         private readonly MapObjects _objects;
+
+        /// <summary>For the Harmony patch that records Vegvisir discoveries.</summary>
+        internal static Discoveries Discoveries { get; private set; }
+        internal static BepInEx.Logging.ManualLogSource Log { get; private set; }
         private float _worldReadyAt = -1f;
         private int _worldSeed;
         private string _cacheDir = "";
@@ -53,7 +59,8 @@ namespace ValheimUI.Agent
 
         public AgentPlugin()
         {
-            _objects = new MapObjects(_explored);
+            _objects = new MapObjects(_explored, _discoveries);
+            Discoveries = _discoveries;
         }
 
         private void Awake()
@@ -71,6 +78,15 @@ namespace ValheimUI.Agent
             {
                 Logger.LogInfo("Valheim UI Agent is a dedicated-server plugin; not starting on a game client.");
                 return;
+            }
+            Log = Logger;
+            try
+            {
+                new Harmony("se.jonasthim.valheimui.agent").PatchAll(typeof(AgentPlugin).Assembly);
+            }
+            catch (Exception e)
+            {
+                Logger.LogWarning("Vegvisir discoveries will not be tracked (patch failed): " + e.Message);
             }
 
             var port = _port.Value > 0 ? _port.Value : GamePortFromCommandLine();
@@ -103,6 +119,7 @@ namespace ValheimUI.Agent
         private void OnDestroy()
         {
             _explored.MaybeSave(true);
+            _discoveries.MaybeSave(true);
             _api?.Stop();
         }
 
@@ -123,6 +140,7 @@ namespace ValheimUI.Agent
                         _worldReadyAt = now;
                         _worldSeed = snap.Seed;
                         _explored.Load(snap.Seed, _cacheDir);
+                        _discoveries.Load(snap.Seed, _cacheDir);
                     }
                     if (snap.Ready && _explored.Loaded)
                     {
@@ -132,6 +150,7 @@ namespace ValheimUI.Agent
                         }
                         _explored.MaybeSave(false);
                         _explored.MaybeEncode();
+                        _discoveries.MaybeSave(false);
                     }
                     _statusJson = snap.ToJson(BuildInfo.Version, _gameVersion, now - _startedAt);
                     DiffPeers(snap);

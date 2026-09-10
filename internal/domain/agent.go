@@ -163,6 +163,9 @@ type MapPin struct {
 	// Author is the placing player's name when known; "" for an offline
 	// player whose id the game recorded.
 	Author string `json:"author,omitempty"`
+	// Source is "table" for a pin shared on a cartography table or
+	// "vegvisir" for a location the game revealed through a runestone.
+	Source string `json:"source,omitempty"`
 }
 
 // ExploredInfo is the plugin's fog-of-war state (GET /v1/map/explored/info).

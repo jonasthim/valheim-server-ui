@@ -25,6 +25,8 @@ namespace ValheimUI.Agent
         public bool Checked;
         /// <summary>Network user id or name of who placed it, as the game stores it.</summary>
         public string Author;
+        /// <summary>"table" for a cartography-table pin, "vegvisir" for a location the game revealed.</summary>
+        public string Source = "table";
 
         /// <summary>Stable names for the game's PinType values.</summary>
         public string Kind

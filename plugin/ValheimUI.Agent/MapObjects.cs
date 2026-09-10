@@ -45,13 +45,15 @@ namespace ValheimUI.Agent
         private FieldInfo _objectsField;
         private MethodInfo _objectsMethod;
         private readonly Exploration _exploration;
+        private readonly Discoveries _discoveries;
         private static readonly int CartographyHash = StableHash("piece_cartographytable");
 
         public string Json => _json;
 
-        public MapObjects(Exploration exploration)
+        public MapObjects(Exploration exploration, Discoveries discoveries)
         {
             _exploration = exploration;
+            _discoveries = discoveries;
             foreach (var k in Kinds) _kindByHash[StableHash(k.Prefab)] = k;
         }
 
@@ -134,6 +136,21 @@ namespace ValheimUI.Agent
             // that location discovered, so it shows through the fog.
             var pins = new List<MapPin>();
             try { pins = _exploration.Pins(); } catch (Exception) { }
+            // Locations the game revealed through Vegvisir runestones join the
+            // list as boss pins unless a table already carries the same spot.
+            try
+            {
+                foreach (var d in _discoveries.Snapshot())
+                {
+                    bool dup = false;
+                    foreach (var p in pins)
+                    {
+                        if (p.Type == d.Type && (p.Pos - d.Pos).sqrMagnitude < 64f) { dup = true; break; }
+                    }
+                    if (!dup) pins.Add(new MapPin { Name = d.Name, Pos = d.Pos, Type = d.Type, Checked = false, Author = "", Source = "vegvisir" });
+                }
+            }
+            catch (Exception) { }
             var names = PeerNames();
             sb.Append("],\"pins\":[");
             for (int i = 0; i < pins.Count; i++)
@@ -148,6 +165,7 @@ namespace ValheimUI.Agent
                     .Append(",\"type_id\":").Append(pin.Type.ToString(System.Globalization.CultureInfo.InvariantCulture))
                     .Append(",\"checked\":").Append(pin.Checked ? "true" : "false")
                     .Append(",\"author\":").Append(JsonWriter.Quote(AuthorName(pin.Author, names)))
+                    .Append(",\"source\":").Append(JsonWriter.Quote(pin.Source))
                     .Append('}');
             }
 

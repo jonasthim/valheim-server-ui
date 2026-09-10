@@ -3503,7 +3503,7 @@ export interface components {
             /** @description A boss pin shared on a cartography table (what a Vegvisir adds) marks this location */
             discovered?: boolean;
         };
-        /** @description A pin players shared on a cartography table (their own marks and the boss locations Vegvisir runestones add) */
+        /** @description A pin players shared on a cartography table (their own marks) or a location the game revealed to a player through a Vegvisir runestone */
         MapPin: {
             name: string;
             x: number;
@@ -3517,6 +3517,11 @@ export interface components {
             checked: boolean;
             /** @description Placing player's name when known */
             author?: string;
+            /**
+             * @description A pin shared on a cartography table
+             * @enum {string}
+             */
+            source?: "table" | "vegvisir";
         };
         ExploredInfo: {
             /** @description Increments whenever new terrain is revealed */

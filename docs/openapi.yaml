@@ -1878,7 +1878,7 @@ components:
 
     MapPin:
       type: object
-      description: A pin players shared on a cartography table (their own marks and the boss locations Vegvisir runestones add)
+      description: A pin players shared on a cartography table (their own marks) or a location the game revealed to a player through a Vegvisir runestone
       required: [name, x, y, z, type, type_id, checked]
       properties:
         name: { type: string }
@@ -1889,6 +1889,7 @@ components:
         type_id: { type: integer, description: The game's raw PinType value }
         checked: { type: boolean, description: Crossed out by the player }
         author: { type: string, description: Placing player's name when known }
+        source: { type: string, enum: [table, vegvisir], description: A pin shared on a cartography table, or a location the game revealed through a Vegvisir runestone (recorded by the agent as it happens) }
 
     ExploredInfo:
       type: object

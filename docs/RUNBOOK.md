@@ -444,12 +444,18 @@ data of its own, so the agent builds it from two sources:
   a table becomes explored on the manager's map too. Ask players to write
   their maps once after upgrading, and the fog matches what they know;
 - **pins** written to a table come along: the marks players place (fire,
-  house, mine, cave, portal, and so on) and the boss pins a Vegvisir
-  runestone adds. They appear on the *Pins* layer, are never hidden by the
-  fog (the players already know them), and a boss pin at an altar shows that
-  boss location through the fog on the *Bosses & places* layer. Pins players
+  house, mine, cave, portal, and so on). They appear on the *Pins* layer and
+  are never hidden by the fog (the players already know them). Pins players
   keep only on their own map are not visible to the server; they show up once
-  someone writes to a table.
+  someone writes to a table;
+- **boss locations the game reveals** at Vegvisir runestones are recorded
+  by the agent the moment any player reads one (the client asks the server
+  for the location and the agent sees the answer), so they appear on the map
+  right away, through the fog, on the *Bosses & places* layer, without a
+  table. They are kept per world in
+  `BepInEx/cache/valheimui-agent/discovered-<seed>.tsv`. Runestones read
+  before the agent existed are only known if the finder wrote their map to
+  a table.
 
 Fog and objects refresh within a few seconds: the agent re-encodes the mask
 at most every 3 s and rescans objects every 15 s, the manager polls fog

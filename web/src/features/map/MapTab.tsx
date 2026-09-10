@@ -113,7 +113,7 @@ export function MapTab({ id }: { id: string }) {
         // A location a player pinned from a Vegvisir is known even under the fog.
         if (fogOn && l.explored === false && !l.discovered) return
         const { u, v } = worldToFraction(l.x, l.z, radius)
-        out.push({ key: `l-${i}`, u, v, kind: 'location', label: LOCATION_LABELS[l.name] ?? l.name, detail: l.discovered ? 'pinned on a cartography table' : undefined })
+        out.push({ key: `l-${i}`, u, v, kind: 'location', label: LOCATION_LABELS[l.name] ?? l.name, detail: l.discovered ? 'discovered by a player' : undefined })
       })
     }
     if (on.has('pins')) {
@@ -121,7 +121,7 @@ export function MapTab({ id }: { id: string }) {
         // Pins are knowledge players wrote to a table, so they are never hidden by the fog.
         if (p.type === 'boss' && on.has('locations') && locations.some((l) => Math.hypot(l.x - p.x, l.z - p.z) <= BOSS_PIN_MERGE_M)) return
         const { u, v } = worldToFraction(p.x, p.z, radius)
-        const parts = [p.author ? `by ${p.author}` : '', p.checked ? 'checked off' : ''].filter(Boolean)
+        const parts = [p.source === 'vegvisir' ? 'found at a Vegvisir' : '', p.author ? `by ${p.author}` : '', p.checked ? 'checked off' : ''].filter(Boolean)
         out.push({ key: `pin-${i}`, u, v, kind: 'pin', pin: p.type, checked: p.checked, label: p.name || PIN_LABELS[p.type] || 'Pin', detail: parts.length ? parts.join(' · ') : undefined })
       })
     }
