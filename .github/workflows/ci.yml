@@ -202,6 +202,10 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
           body: |
+            Valheim Server UI manages Valheim dedicated servers from the browser, on Linux and Windows:
+            one binary, SteamCMD installs, live console, players and lists, backups and worlds,
+            BepInEx/Thunderstore mods, schedules, in-app upgrades and multi-user access with SSO.
+
             Install or upgrade with one command:
 
             ```bash
