@@ -72,6 +72,25 @@
   width: 10px;
   height: 10px;
 }
+/* Pins shared on cartography tables: a diamond in the game's pin colour. */
+.pin {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  background: #e8e2d0;
+}
+.pin[data-pin='fire'] { background: #f07d3a; }
+.pin[data-pin='house'] { background: #d9c27a; }
+.pin[data-pin='mine'] { background: #b08a5a; }
+.pin[data-pin='cave'] { background: #8d8f9a; }
+.pin[data-pin='death'] { background: #6b6b75; }
+.pin[data-pin='bed'] { background: #6aa84f; }
+.pin[data-pin='portal'] { background: #7bb7ff; }
+.pin[data-pin='boss'] { background: #e04545; width: 13px; height: 13px; }
+.pin[data-pin='hildir'] { background: #d580ff; }
+.pin[data-checked='true'] { opacity: 0.55; }
+
 .location {
   background: #f0d060;
   width: 14px;

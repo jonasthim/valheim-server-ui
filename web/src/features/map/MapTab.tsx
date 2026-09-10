@@ -13,9 +13,10 @@ import { useAgent } from '../agent'
 import { MapView, type Marker } from './MapView'
 import { fogImageUrl, mapImageUrl, useInstanceMap, useRenderMap, worldToFraction } from './useMap'
 
-type Layer = 'players' | 'portals' | 'ships' | 'carts' | 'tombstones' | 'beds' | 'locations'
+type Layer = 'players' | 'portals' | 'ships' | 'carts' | 'tombstones' | 'beds' | 'locations' | 'pins'
 const LAYERS: { id: Layer; label: string }[] = [
   { id: 'players', label: 'Players' },
+  { id: 'pins', label: 'Pins' },
   { id: 'portals', label: 'Portals' },
   { id: 'locations', label: 'Bosses & places' },
   { id: 'ships', label: 'Ships' },
@@ -23,7 +24,23 @@ const LAYERS: { id: Layer; label: string }[] = [
   { id: 'tombstones', label: 'Tombstones' },
   { id: 'beds', label: 'Beds' },
 ]
-const DEFAULT_LAYERS: Layer[] = ['players', 'portals', 'locations', 'ships', 'tombstones']
+const DEFAULT_LAYERS: Layer[] = ['players', 'pins', 'portals', 'locations', 'ships', 'tombstones']
+
+const PIN_LABELS: Record<string, string> = {
+  fire: 'Fire',
+  house: 'House',
+  mine: 'Mine',
+  cave: 'Cave',
+  death: 'Death',
+  bed: 'Bed',
+  portal: 'Portal',
+  boss: 'Boss',
+  hildir: 'Hildir',
+  other: 'Pin',
+}
+
+/** A boss pin this close to a boss location is the location itself (a Vegvisir marks the altar). */
+const BOSS_PIN_MERGE_M = 80
 
 const LOCATION_LABELS: Record<string, string> = {
   StartTemple: 'Sacrificial Stones',
@@ -80,15 +97,26 @@ export function MapTab({ id }: { id: string }) {
       const { u, v } = worldToFraction(o.x, o.z, radius)
       out.push({ key: `o-${o.type}-${i}`, u, v, kind: o.type, label: o.label, detail: o.text || undefined })
     })
+    const locations = data?.locations ?? []
     if (on.has('locations')) {
-      ;(data?.locations ?? []).forEach((l, i) => {
-        if (fogOn && l.explored === false) return
+      locations.forEach((l, i) => {
+        // A location a player pinned from a Vegvisir is known even under the fog.
+        if (fogOn && l.explored === false && !l.discovered) return
         const { u, v } = worldToFraction(l.x, l.z, radius)
-        out.push({ key: `l-${i}`, u, v, kind: 'location', label: LOCATION_LABELS[l.name] ?? l.name })
+        out.push({ key: `l-${i}`, u, v, kind: 'location', label: LOCATION_LABELS[l.name] ?? l.name, detail: l.discovered ? 'pinned on a cartography table' : undefined })
+      })
+    }
+    if (on.has('pins')) {
+      ;(data?.pins ?? []).forEach((p, i) => {
+        // Pins are knowledge players wrote to a table, so they are never hidden by the fog.
+        if (p.type === 'boss' && on.has('locations') && locations.some((l) => Math.hypot(l.x - p.x, l.z - p.z) <= BOSS_PIN_MERGE_M)) return
+        const { u, v } = worldToFraction(p.x, p.z, radius)
+        const parts = [p.author ? `by ${p.author}` : '', p.checked ? 'checked off' : ''].filter(Boolean)
+        out.push({ key: `pin-${i}`, u, v, kind: 'pin', pin: p.type, checked: p.checked, label: p.name || PIN_LABELS[p.type] || 'Pin', detail: parts.length ? parts.join(' · ') : undefined })
       })
     }
     return out
-  }, [layers, players, data?.objects, data?.locations, radius, fogOn])
+  }, [layers, players, data?.objects, data?.pins, data?.locations, radius, fogOn])
 
   function confirmRerender() {
     modals.openConfirmModal({

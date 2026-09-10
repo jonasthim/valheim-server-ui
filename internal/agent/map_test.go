@@ -219,7 +219,9 @@ func TestExploredPNG_FetchesWhenVersionChanges(t *testing.T) {
 		_, _ = w.Write([]byte(`{"state":"ready","progress":1,"seed":42,"size":512,"world_radius":10500,"playable_radius":10000,"sea_level":30}`))
 	})
 	mux.HandleFunc("/v1/map/objects", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"objects":[{"type":"portal","label":"Portal","x":1,"y":31,"z":2,"text":"a","explored":false}],"locations":[],"updated_at":"2026-09-10T12:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"objects":[{"type":"portal","label":"Portal","x":1,"y":31,"z":2,"text":"a","explored":false}],` +
+			`"pins":[{"name":"Eikthyr","x":-500,"y":40,"z":300,"type":"boss","type_id":9,"checked":false,"author":"Bjorn"}],` +
+			`"locations":[{"name":"Eikthyrnir","x":-510,"y":40,"z":310,"explored":false,"discovered":true}],"updated_at":"2026-09-10T12:00:00Z"}`))
 	})
 	mux.HandleFunc("/v1/map/explored/info", func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"version":` + fmt.Sprint(maskVersion.Load()) + `,"size":1024,"explored_cells":5000,"total_cells":1048576,"percent":0.48,"mask_version":` + fmt.Sprint(maskVersion.Load()) + `}`))
@@ -248,6 +250,12 @@ func TestExploredPNG_FetchesWhenVersionChanges(t *testing.T) {
 	}
 	if !m.FogSupported || m.Explored == nil || m.Explored.Percent != 0.48 || m.Objects[0].Explored == nil || *m.Objects[0].Explored {
 		t.Fatalf("fog state: %+v obj=%+v", m.Explored, m.Objects[0])
+	}
+	if len(m.Pins) != 1 || m.Pins[0].Type != "boss" || m.Pins[0].Author != "Bjorn" || m.Pins[0].Name != "Eikthyr" {
+		t.Fatalf("pins: %+v", m.Pins)
+	}
+	if len(m.Locations) != 1 || m.Locations[0].Discovered == nil || !*m.Locations[0].Discovered {
+		t.Fatalf("location discovered flag: %+v", m.Locations)
 	}
 
 	p1, info, err := s.ExploredPNG(ctx, "main")

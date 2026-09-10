@@ -1863,6 +1863,21 @@ components:
         y: { type: number }
         z: { type: number }
         explored: { type: boolean }
+        discovered: { type: boolean, description: A boss pin shared on a cartography table (what a Vegvisir adds) marks this location, so it is shown through the fog }
+
+    MapPin:
+      type: object
+      description: A pin players shared on a cartography table (their own marks and the boss locations Vegvisir runestones add)
+      required: [name, x, y, z, type, type_id, checked]
+      properties:
+        name: { type: string }
+        x: { type: number }
+        y: { type: number }
+        z: { type: number }
+        type: { type: string, enum: [fire, house, mine, cave, death, bed, portal, boss, hildir, other] }
+        type_id: { type: integer, description: The game's raw PinType value }
+        checked: { type: boolean, description: Crossed out by the player }
+        author: { type: string, description: Placing player's name when known }
 
     ExploredInfo:
       type: object
@@ -1878,7 +1893,7 @@ components:
 
     InstanceMap:
       type: object
-      required: [connected, map_supported, fog_supported, image_ready, stale, objects, locations, players]
+      required: [connected, map_supported, fog_supported, image_ready, stale, objects, pins, locations, players]
       properties:
         connected: { type: boolean }
         map_supported: { type: boolean, description: False when the running agent predates the map API (update it from the Mods tab) }
@@ -1889,6 +1904,7 @@ components:
         stale: { type: boolean, description: The image comes from an earlier run and could not be confirmed against the current world }
         info: { $ref: '#/components/schemas/MapInfo' }
         objects: { type: array, items: { $ref: '#/components/schemas/MapObject' } }
+        pins: { type: array, items: { $ref: '#/components/schemas/MapPin' }, description: Empty from agents before 1.9.0 }
         locations: { type: array, items: { $ref: '#/components/schemas/MapLocation' } }
         objects_updated_at: { type: string, format: date-time }
         players: { type: array, items: { $ref: '#/components/schemas/AgentPlayer' } }

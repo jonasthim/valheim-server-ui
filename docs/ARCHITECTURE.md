@@ -752,6 +752,16 @@ therefore reconstructs it (`plugin/ValheimUI.Agent/Exploration.cs`):
   bool per 12 m map pixel, then pins, which are ignored). This brings in what
   players explored before the agent existed, as long as someone wrote their
   map to a table. A table is re-read when its data changes;
+- the same table data carries, from format version 2, the pins the writers
+  shared: owner id, name, position, `PinType`, checked flag and (version 3)
+  author. `Exploration` keeps the pin list per table (a rewrite replaces
+  it, so deleted pins go away) and `MapObjects` emits the distinct union as
+  `pins` with a stable type name (`fire`, `house`, `mine`, `cave`, `death`,
+  `bed`, `portal`, `boss`, `hildir`, `other`) and the author resolved to a
+  connected player's name where the game stored a network user id. A boss
+  pin within 80 m of a location icon marks that location `discovered`,
+  which is how a Vegvisir find reaches the map: the runestone adds the pin
+  on the client, the player writes it to a table, the server reads it;
 - the union is persisted per world at
   `BepInEx/cache/valheimui-agent/explored-<seed>-1024.bin` (once a minute
   when changed, and on shutdown).
@@ -774,5 +784,8 @@ waiting for its own poll.
 The Map tab draws the fog as a fully opaque dark layer with the mask as CSS
 `mask-image` (default on): unexplored terrain is not visible at all, not
 dimmed. It hides objects and locations that lie under the fog, so boss altars
-are not revealed by the Bosses layer. Players are
+are not revealed by the Bosses layer, except locations a shared boss pin
+has discovered. Shared pins are drawn regardless of the fog on their own
+layer; a boss pin that sits on a location is merged into that location's
+marker. Players are
 always drawn. Agents before 1.7.0 report no fog; the toggle explains why.

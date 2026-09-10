@@ -15,6 +15,41 @@ namespace ValheimUI.Agent
     /// map) is imported, which brings in exploration made before the agent
     /// existed. The union is persisted per world so it survives restarts.
     /// </summary>
+    /// <summary>A pin shared on a cartography table.</summary>
+    internal sealed class MapPin
+    {
+        public string Name;
+        public Vector3 Pos;
+        /// <summary>Minimap.PinType as written by the game.</summary>
+        public int Type;
+        public bool Checked;
+        /// <summary>Network user id or name of who placed it, as the game stores it.</summary>
+        public string Author;
+
+        /// <summary>Stable names for the game's PinType values.</summary>
+        public string Kind
+        {
+            get
+            {
+                switch (Type)
+                {
+                    case 0: return "fire";
+                    case 1: return "house";
+                    case 2: return "mine";
+                    case 3: return "cave";
+                    case 4: return "death";
+                    case 5: return "bed";
+                    case 6: return "portal";
+                    case 9: return "boss";
+                    case 14:
+                    case 15:
+                    case 16: return "hildir";
+                    default: return "other";
+                }
+            }
+        }
+    }
+
     internal sealed class Exploration
     {
         public const int Size = 1024;
@@ -36,6 +71,7 @@ namespace ValheimUI.Agent
         private DateTime _updatedAt = DateTime.MinValue;
         private DateTime _lastEncodeStarted = DateTime.MinValue;
         private readonly Dictionary<ZDOID, int> _importedTables = new Dictionary<ZDOID, int>();
+        private readonly Dictionary<ZDOID, List<MapPin>> _tablePins = new Dictionary<ZDOID, List<MapPin>>();
 
         public int Version { get { lock (_lock) return _version; } }
         public bool Loaded { get; private set; }
@@ -49,6 +85,7 @@ namespace ValheimUI.Agent
                 Array.Clear(_cells, 0, _cells.Length);
                 _count = 0;
                 _importedTables.Clear();
+                _tablePins.Clear();
                 try
                 {
                     if (File.Exists(_path))
@@ -157,9 +194,11 @@ namespace ValheimUI.Agent
 
         /// <summary>
         /// Imports the shared map of a cartography table (its "data" ZDO field):
-        /// a gzip'd ZPackage with version, texture size and one bool per map
-        /// pixel (12 m each, centred on the world). Only the explored bits are
-        /// read; pins and later fields are ignored. Best effort per table.
+        /// a gzip'd ZPackage with version, texture size, one bool per map
+        /// pixel (12 m each, centred on the world) and, from version 2, the
+        /// pins players shared. The table's pin list replaces what was read
+        /// from it before, so pins removed from a table disappear. Best
+        /// effort per table.
         /// </summary>
         public void ImportSharedMap(ZDOID table, byte[] data)
         {
@@ -171,16 +210,40 @@ namespace ValheimUI.Agent
                 if (_importedTables.TryGetValue(table, out seen) && seen == key) return;
                 _importedTables[table] = key;
             }
-            ImportMapData(data);
+            var pins = new List<MapPin>();
+            if (ImportMapData(data, pins) < 0) return;
+            lock (_lock) _tablePins[table] = pins;
         }
 
         /// <summary>
-        /// Merges Minimap map data (the format both cartography tables and
-        /// character files carry): a gzip'd ZPackage with version, texture
-        /// size and one bool per 12 m pixel. Returns the number of newly
-        /// revealed cells, or -1 when the data could not be parsed.
+        /// Every distinct pin shared on any cartography table. Any thread.
         /// </summary>
-        public int ImportMapData(byte[] data)
+        public List<MapPin> Pins()
+        {
+            var seen = new HashSet<string>();
+            var outList = new List<MapPin>();
+            lock (_lock)
+            {
+                foreach (var list in _tablePins.Values)
+                {
+                    foreach (var pin in list)
+                    {
+                        var k = pin.Type + "|" + pin.Name + "|" + Mathf.RoundToInt(pin.Pos.x) + "|" + Mathf.RoundToInt(pin.Pos.z);
+                        if (seen.Add(k)) outList.Add(pin);
+                    }
+                }
+            }
+            return outList;
+        }
+
+        /// <summary>
+        /// Merges Minimap shared-map data: a gzip'd ZPackage with version,
+        /// texture size and one bool per 12 m pixel, then (version 2+) the
+        /// pin list, which is appended to <paramref name="pins"/> when given.
+        /// Returns the number of newly revealed cells, or -1 when the data
+        /// could not be parsed.
+        /// </summary>
+        public int ImportMapData(byte[] data, List<MapPin> pins)
         {
             if (data == null || data.Length < 8) return -1;
             byte[] raw;
@@ -228,11 +291,40 @@ namespace ValheimUI.Agent
                         _updatedAt = DateTime.UtcNow;
                     }
                 }
+                if (version >= 2 && pins != null) ReadPins(pkg, version, pins);
                 return added;
             }
             catch (Exception)
             {
                 return -1;
+            }
+        }
+
+        /// <summary>
+        /// The pin list after the explored bits (Minimap.AddSharedMapData):
+        /// count, then per pin owner id, name, position, type, checked and,
+        /// from version 3, the author. Stops quietly at the first field that
+        /// does not read, keeping the pins before it.
+        /// </summary>
+        private static void ReadPins(ZPackage pkg, int version, List<MapPin> pins)
+        {
+            try
+            {
+                int n = pkg.ReadInt();
+                if (n < 0 || n > 100000) return;
+                for (int i = 0; i < n; i++)
+                {
+                    pkg.ReadLong();
+                    string name = pkg.ReadString() ?? "";
+                    Vector3 pos = pkg.ReadVector3();
+                    int type = pkg.ReadInt();
+                    bool isChecked = pkg.ReadBool();
+                    string author = version >= 3 ? (pkg.ReadString() ?? "") : "";
+                    pins.Add(new MapPin { Name = name, Pos = pos, Type = type, Checked = isChecked, Author = author });
+                }
+            }
+            catch (Exception)
+            {
             }
         }
 

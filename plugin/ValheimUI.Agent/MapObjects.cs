@@ -40,7 +40,7 @@ namespace ValheimUI.Agent
         private readonly TimeSpan _refreshEvery = TimeSpan.FromSeconds(15);
         private readonly Dictionary<int, Kind> _kindByHash = new Dictionary<int, Kind>();
         private DateTime _lastCompleted = DateTime.MinValue;
-        private volatile string _json = "{\"objects\":[],\"locations\":[],\"updated_at\":null}";
+        private volatile string _json = "{\"objects\":[],\"pins\":[],\"locations\":[],\"updated_at\":null}";
         private bool _lookupResolved;
         private FieldInfo _objectsField;
         private MethodInfo _objectsMethod;
@@ -129,6 +129,28 @@ namespace ValheimUI.Agent
             {
             }
 
+            // Pins players shared on cartography tables: their own marks and
+            // the boss pins a Vegvisir adds. A boss pin near a location marks
+            // that location discovered, so it shows through the fog.
+            var pins = new List<MapPin>();
+            try { pins = _exploration.Pins(); } catch (Exception) { }
+            var names = PeerNames();
+            sb.Append("],\"pins\":[");
+            for (int i = 0; i < pins.Count; i++)
+            {
+                var pin = pins[i];
+                if (i > 0) sb.Append(',');
+                sb.Append("{\"name\":").Append(JsonWriter.Quote(pin.Name))
+                    .Append(",\"x\":").Append(F(pin.Pos.x))
+                    .Append(",\"y\":").Append(F(pin.Pos.y))
+                    .Append(",\"z\":").Append(F(pin.Pos.z))
+                    .Append(",\"type\":").Append(JsonWriter.Quote(pin.Kind))
+                    .Append(",\"type_id\":").Append(pin.Type.ToString(System.Globalization.CultureInfo.InvariantCulture))
+                    .Append(",\"checked\":").Append(pin.Checked ? "true" : "false")
+                    .Append(",\"author\":").Append(JsonWriter.Quote(AuthorName(pin.Author, names)))
+                    .Append('}');
+            }
+
             sb.Append("],\"locations\":[");
             try
             {
@@ -145,6 +167,7 @@ namespace ValheimUI.Agent
                         .Append(",\"y\":").Append(F(kv.Key.y))
                         .Append(",\"z\":").Append(F(kv.Key.z))
                         .Append(",\"explored\":").Append(_exploration.IsExplored(kv.Key) ? "true" : "false")
+                        .Append(",\"discovered\":").Append(HasBossPinNear(pins, kv.Key) ? "true" : "false")
                         .Append('}');
                 }
             }
@@ -153,6 +176,61 @@ namespace ValheimUI.Agent
             }
             sb.Append("],\"updated_at\":").Append(JsonWriter.Quote(DateTime.UtcNow.ToString("o"))).Append('}');
             _json = sb.ToString();
+        }
+
+        /// <summary>Boss location icons sit at the altar; a Vegvisir pins the same spot.</summary>
+        private const float DiscoverRadius = 80f;
+
+        private static bool HasBossPinNear(List<MapPin> pins, Vector3 pos)
+        {
+            for (int i = 0; i < pins.Count; i++)
+            {
+                if (pins[i].Type != 9) continue;
+                float dx = pins[i].Pos.x - pos.x, dz = pins[i].Pos.z - pos.z;
+                if (dx * dx + dz * dz <= DiscoverRadius * DiscoverRadius) return true;
+            }
+            return false;
+        }
+
+        /// <summary>Connected players by platform user id ("Steam_765..." → host name), for pin authors.</summary>
+        private static Dictionary<string, string> PeerNames()
+        {
+            var names = new Dictionary<string, string>();
+            try
+            {
+                var znet = ZNet.instance;
+                if (znet == null) return names;
+                foreach (var peer in znet.GetPeers())
+                {
+                    if (peer == null || peer.m_socket == null) continue;
+                    var host = peer.m_socket.GetHostName();
+                    if (!string.IsNullOrEmpty(host) && !string.IsNullOrEmpty(peer.m_playerName)) names[host] = peer.m_playerName;
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return names;
+        }
+
+        /// <summary>
+        /// The game stores a network user id ("Steam_7656...") as pin author.
+        /// Resolve it to a connected player's name when possible; pass a plain
+        /// name through; hide ids of players who are offline.
+        /// </summary>
+        private static string AuthorName(string author, Dictionary<string, string> names)
+        {
+            if (string.IsNullOrEmpty(author)) return "";
+            int us = author.IndexOf('_');
+            if (us <= 0 || us == author.Length - 1) return author;
+            string id = author.Substring(us + 1);
+            string name;
+            if (names.TryGetValue(id, out name) || names.TryGetValue(author, out name)) return name;
+            for (int i = 0; i < id.Length; i++)
+            {
+                if (id[i] < '0' || id[i] > '9') return author;
+            }
+            return "";
         }
 
         /// <summary>

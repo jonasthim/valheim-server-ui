@@ -442,7 +442,14 @@ data of its own, so the agent builds it from two sources:
 - where players go while the agent runs (the game's 100 m reveal radius);
 - the shared map on **cartography tables**: everything a player has written to
   a table becomes explored on the manager's map too. Ask players to write
-  their maps once after upgrading, and the fog matches what they know.
+  their maps once after upgrading, and the fog matches what they know;
+- **pins** written to a table come along: the marks players place (fire,
+  house, mine, cave, portal, and so on) and the boss pins a Vegvisir
+  runestone adds. They appear on the *Pins* layer, are never hidden by the
+  fog (the players already know them), and a boss pin at an altar shows that
+  boss location through the fog on the *Bosses & places* layer. Pins players
+  keep only on their own map are not visible to the server; they show up once
+  someone writes to a table.
 
 Fog and objects refresh within a few seconds: the agent re-encodes the mask
 at most every 3 s and rescans objects every 15 s, the manager polls fog

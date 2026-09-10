@@ -89,7 +89,7 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 		return nil, err
 	}
 	paths := s.inst.Paths(id)
-	out := &domain.InstanceMap{MapSupported: true, Objects: []domain.MapObject{}, Locations: []domain.MapLocation{}, Players: []domain.AgentPlayer{}}
+	out := &domain.InstanceMap{MapSupported: true, Objects: []domain.MapObject{}, Pins: []domain.MapPin{}, Locations: []domain.MapLocation{}, Players: []domain.AgentPlayer{}}
 
 	s.mu.Lock()
 	x := s.states[id]
@@ -174,6 +174,7 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 	}
 	if ms.objects != nil {
 		out.Objects = append(out.Objects, ms.objects.Objects...)
+		out.Pins = append(out.Pins, ms.objects.Pins...)
 		out.Locations = append(out.Locations, ms.objects.Locations...)
 		out.ObjectsAt = ms.objects.UpdatedAt
 	}

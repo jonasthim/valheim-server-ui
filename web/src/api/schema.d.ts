@@ -3492,6 +3492,23 @@ export interface components {
             y: number;
             z: number;
             explored?: boolean;
+            /** @description A boss pin shared on a cartography table (what a Vegvisir adds) marks this location */
+            discovered?: boolean;
+        };
+        /** @description A pin players shared on a cartography table (their own marks and the boss locations Vegvisir runestones add) */
+        MapPin: {
+            name: string;
+            x: number;
+            y: number;
+            z: number;
+            /** @enum {string} */
+            type: "fire" | "house" | "mine" | "cave" | "death" | "bed" | "portal" | "boss" | "hildir" | "other";
+            /** @description The game's raw PinType value */
+            type_id: number;
+            /** @description Crossed out by the player */
+            checked: boolean;
+            /** @description Placing player's name when known */
+            author?: string;
         };
         ExploredInfo: {
             /** @description Increments whenever new terrain is revealed */
@@ -3522,6 +3539,8 @@ export interface components {
             stale: boolean;
             info?: components["schemas"]["MapInfo"];
             objects: components["schemas"]["MapObject"][];
+            /** @description Empty from agents before 1.9.0 */
+            pins: components["schemas"]["MapPin"][];
             locations: components["schemas"]["MapLocation"][];
             /** Format: date-time */
             objects_updated_at?: string;

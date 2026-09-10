@@ -10,7 +10,11 @@ export type Marker = {
   key: string
   u: number
   v: number
-  kind: 'player' | 'portal' | 'ship' | 'cart' | 'tombstone' | 'bed' | 'location'
+  kind: 'player' | 'portal' | 'ship' | 'cart' | 'tombstone' | 'bed' | 'location' | 'pin'
+  /** For kind 'pin': the game's pin type (fire, house, mine, cave, death, bed, portal, boss, hildir, other). */
+  pin?: string
+  /** Drawn dimmed (a pin the player checked off). */
+  checked?: boolean
   label: string
   detail?: string
   /** Rendered next to the marker (player names). */
@@ -125,7 +129,7 @@ export function MapView({
         {markers.map((m) => (
           <div key={m.key} className={classes.markerAnchor} style={{ left: `${m.u * 100}%`, top: `${m.v * 100}%` }}>
             <Tooltip label={m.detail ? `${m.label} · ${m.detail}` : m.label} withArrow openDelay={150}>
-              <div className={`${classes.marker} ${classes[m.kind]}`} style={markerScale} data-kind={m.kind}>
+              <div className={`${classes.marker} ${classes[m.kind]}`} style={markerScale} data-kind={m.kind} data-pin={m.pin} data-checked={m.checked ? 'true' : undefined}>
                 {m.caption && <span className={classes.caption}>{m.caption}</span>}
               </div>
             </Tooltip>

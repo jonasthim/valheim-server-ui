@@ -143,6 +143,26 @@ type MapLocation struct {
 	Y        float64 `json:"y"`
 	Z        float64 `json:"z"`
 	Explored *bool   `json:"explored,omitempty"`
+	// Discovered is true when a boss pin shared on a cartography table (the
+	// mark a Vegvisir adds) sits at this location, so it shows through the fog.
+	Discovered *bool `json:"discovered,omitempty"`
+}
+
+// MapPin is a pin players shared on a cartography table: their own marks and
+// the boss locations Vegvisir runestones add to their maps.
+type MapPin struct {
+	Name string  `json:"name"`
+	X    float64 `json:"x"`
+	Y    float64 `json:"y"`
+	Z    float64 `json:"z"`
+	// Type is a stable name for the game's PinType: fire, house, mine, cave,
+	// death, bed, portal, boss, hildir or other.
+	Type    string `json:"type"`
+	TypeID  int    `json:"type_id"`
+	Checked bool   `json:"checked"`
+	// Author is the placing player's name when known; "" for an offline
+	// player whose id the game recorded.
+	Author string `json:"author,omitempty"`
 }
 
 // ExploredInfo is the plugin's fog-of-war state (GET /v1/map/explored/info).
@@ -160,6 +180,7 @@ type ExploredInfo struct {
 // MapObjects is GET /v1/map/objects.
 type MapObjects struct {
 	Objects   []MapObject   `json:"objects"`
+	Pins      []MapPin      `json:"pins"`
 	Locations []MapLocation `json:"locations"`
 	UpdatedAt *time.Time    `json:"updated_at"`
 }
@@ -184,6 +205,7 @@ type InstanceMap struct {
 	Stale     bool          `json:"stale"`
 	Info      *MapInfo      `json:"info,omitempty"`
 	Objects   []MapObject   `json:"objects"`
+	Pins      []MapPin      `json:"pins"`
 	Locations []MapLocation `json:"locations"`
 	ObjectsAt *time.Time    `json:"objects_updated_at,omitempty"`
 	Players   []AgentPlayer `json:"players"`
