@@ -769,7 +769,10 @@ therefore reconstructs it (`plugin/ValheimUI.Agent/Exploration.cs`):
 `GET /v1/map/explored` serves the fog as a grey+alpha PNG (255 = unexplored,
 both channels, so browsers masking by alpha or by luminance agree),
 re-encoded on a worker thread when the exploration version changes, at most
-every 3 s; `/v1/map/explored/info` reports version, mask version and the
+every 3 s, kicked from the main-thread tick and the info endpoint rather
+than only from mask requests (otherwise the mask version would stall until
+someone fetched the mask, and with it the fogged image and the explored
+percent); `/v1/map/explored/info` reports version, mask version and the
 explored share. Objects and locations carry `explored` and are rescanned
 every 15 s.
 

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -283,5 +284,56 @@ func TestExploredPNG_FetchesWhenVersionChanges(t *testing.T) {
 	s.tick(ctx)
 	if p, _, err := s.ExploredPNG(ctx, "main"); err != nil || p != p1 {
 		t.Fatalf("offline mask: %s %v", p, err)
+	}
+}
+
+// TestService_ExplorationProgressPublishes covers the percent in the UI: a
+// change in explored cells alone (no player moved, mask not re-encoded yet)
+// must publish a fresh agent.status event carrying the new fog state.
+func TestService_ExplorationProgressPublishes(t *testing.T) {
+	paths := testPaths(t)
+	installPlugin(t, paths, "1.9.0")
+	cfg, err := EnsureConfig(paths, 2456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cells atomic.Int32
+	cells.Store(100)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "Bearer "+cfg.Token {
+			_, _ = w.Write([]byte(sampleStatus))
+		}
+	})
+	mux.HandleFunc("/v1/map/explored/info", func(w http.ResponseWriter, r *http.Request) {
+		c := cells.Load()
+		_, _ = fmt.Fprintf(w, `{"version":%d,"size":1024,"explored_cells":%d,"total_cells":1048576,"percent":%.2f,"mask_version":1}`, c, c, float64(c)*100/1048576)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning},
+	}}
+	bus := &fakeBus{}
+	s := NewService(fi, bus, slog.New(slog.NewTextHandler(io.Discard, nil)), fixedVersion("1.9.0"))
+	s.http = srv.Client()
+	s.baseURL = func(int) string { return srv.URL }
+	ctx := context.Background()
+
+	s.tick(ctx)
+	s.tick(ctx)
+	if len(bus.events) != 1 {
+		t.Fatalf("unchanged exploration must not re-publish: %d events", len(bus.events))
+	}
+	cells.Store(160)
+	s.tick(ctx)
+	if len(bus.events) != 2 {
+		t.Fatalf("exploration progress must publish an event, got %d", len(bus.events))
+	}
+	raw, _ := json.Marshal(bus.events[1].Data)
+	if !strings.Contains(string(raw), `"explored_cells":160`) {
+		t.Fatalf("event must carry the new fog state: %s", raw)
 	}
 }

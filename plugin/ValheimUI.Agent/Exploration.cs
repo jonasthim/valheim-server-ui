@@ -335,13 +335,23 @@ namespace ValheimUI.Agent
         /// </summary>
         public byte[] MaskPng()
         {
-            byte[] current;
+            MaybeEncode();
+            lock (_lock) return _png;
+        }
+
+        /// <summary>
+        /// Starts a mask encode on a worker thread when exploration moved
+        /// since the last one, at most every 3 s (exploration changes every
+        /// frame while someone walks; an encode costs a few hundred ms). It
+        /// is driven from the main-thread tick and from the info endpoint
+        /// too, not only from mask requests, so the mask version keeps
+        /// advancing while nobody has fetched the mask yet. Any thread.
+        /// </summary>
+        public void MaybeEncode()
+        {
             bool kick = false;
             lock (_lock)
             {
-                current = _png;
-                // Re-encode at most every 3 s: exploration moves every frame
-                // while someone walks, the encode costs a few hundred ms.
                 if (_pngVersion != _version && !_encoding && (DateTime.UtcNow - _lastEncodeStarted).TotalSeconds >= 3)
                 {
                     _encoding = true;
@@ -385,11 +395,11 @@ namespace ValheimUI.Agent
                     }
                 });
             }
-            return current;
         }
 
         public string InfoJson()
         {
+            MaybeEncode();
             var w = new JsonWriter();
             w.BeginObject();
             lock (_lock)

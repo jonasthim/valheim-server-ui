@@ -212,7 +212,9 @@ func (s *Service) poll(ctx context.Context, id string, port int, paths domain.In
 	x.status = st
 	fp := fingerprint(st)
 	if explored != nil {
-		fp += "|mask:" + fmt.Sprint(explored.MaskVersion)
+		// Exploration progress (the percent in the UI) and the mask the
+		// fogged image is built from each count as a change worth an event.
+		fp += fmt.Sprintf("|expl:%d/%d|mask:%d", explored.Version, explored.ExploredCells, explored.MaskVersion)
 	}
 	if fp != x.lastFingerprint {
 		changed = true

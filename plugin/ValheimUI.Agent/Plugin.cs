@@ -131,6 +131,7 @@ namespace ValheimUI.Agent
                             if (p.HasPosition) _explored.Explore(p.Position, Exploration.ExploreRadius);
                         }
                         _explored.MaybeSave(false);
+                        _explored.MaybeEncode();
                     }
                     _statusJson = snap.ToJson(BuildInfo.Version, _gameVersion, now - _startedAt);
                     DiffPeers(snap);

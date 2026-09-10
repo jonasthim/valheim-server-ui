@@ -6,6 +6,7 @@ import { Alert, Badge, Button, Chip, Group, Loader, Progress, Skeleton, Stack, T
 import { modals } from '@mantine/modals'
 import { IconAlertTriangle, IconMapOff, IconRefresh } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
+import type { ExploredInfo } from '../../api/types'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatusPill } from '../../ui'
@@ -37,6 +38,12 @@ const PIN_LABELS: Record<string, string> = {
   boss: 'Boss',
   hildir: 'Hildir',
   other: 'Pin',
+}
+
+function newerExplored(a: ExploredInfo | undefined, b: ExploredInfo | undefined): ExploredInfo | undefined {
+  if (!a) return b
+  if (!b) return a
+  return b.version > a.version ? b : a
 }
 
 /** A boss pin this close to a boss location is the location itself (a Vegvisir marks the altar). */
@@ -78,8 +85,9 @@ export function MapTab({ id }: { id: string }) {
   // The fog is composited on the server; only operators may lift it.
   const canLiftFog = hasRole('operator')
   const fogOn = (fog || !canLiftFog) && fogSupported
-  // The agent stream carries the fog version every 2 s; the map poll is the fallback.
-  const explored = agent.data?.explored ?? data?.explored
+  // Two sources carry the fog state: the agent stream (every change, ~2 s)
+  // and the map poll (5 s). Show whichever reflects the newer exploration.
+  const explored = newerExplored(agent.data?.explored, data?.explored)
 
   const markers = useMemo<Marker[]>(() => {
     const out: Marker[] = []
