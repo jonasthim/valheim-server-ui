@@ -26,14 +26,19 @@ namespace ValheimUI.Agent
         private readonly Func<string> _mapInfo;
         private readonly Func<byte[]> _mapPng;
         private readonly Func<string> _mapObjects;
+        private readonly Func<string> _exploredInfo;
+        private readonly Func<byte[]> _exploredPng;
 
         private HttpListener _listener;
         private Thread _thread;
         private volatile bool _running;
 
         public HttpApi(ManualLogSource log, Func<string> status, Func<long, string> events, Action<PendingCommand> enqueue, Func<string> token,
-            Func<string> mapInfo, Func<byte[]> mapPng, Func<string> mapObjects)
+            Func<string> mapInfo, Func<byte[]> mapPng, Func<string> mapObjects,
+            Func<string> exploredInfo, Func<byte[]> exploredPng)
         {
+            _exploredInfo = exploredInfo;
+            _exploredPng = exploredPng;
             _log = log;
             _status = status;
             _events = events;
@@ -108,6 +113,22 @@ namespace ValheimUI.Agent
                 if (req.HttpMethod == "GET" && path == "/v1/map/objects")
                 {
                     Json(ctx, 200, _mapObjects());
+                    return;
+                }
+                if (req.HttpMethod == "GET" && path == "/v1/map/explored/info")
+                {
+                    Json(ctx, 200, _exploredInfo());
+                    return;
+                }
+                if (req.HttpMethod == "GET" && path == "/v1/map/explored")
+                {
+                    var mask = _exploredPng();
+                    if (mask == null)
+                    {
+                        Json(ctx, 202, _exploredInfo());
+                        return;
+                    }
+                    Bytes(ctx, 200, "image/png", mask);
                     return;
                 }
                 if (req.HttpMethod == "GET" && path == "/v1/map")

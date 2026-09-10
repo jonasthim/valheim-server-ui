@@ -44,11 +44,14 @@ namespace ValheimUI.Agent
         private bool _lookupResolved;
         private FieldInfo _objectsField;
         private MethodInfo _objectsMethod;
+        private readonly Exploration _exploration;
+        private static readonly int CartographyHash = StableHash("piece_cartographytable");
 
         public string Json => _json;
 
-        public MapObjects()
+        public MapObjects(Exploration exploration)
         {
+            _exploration = exploration;
             foreach (var k in Kinds) _kindByHash[StableHash(k.Prefab)] = k;
         }
 
@@ -89,8 +92,14 @@ namespace ValheimUI.Agent
                     {
                         var zdo = kv.Value;
                         if (zdo == null) continue;
+                        int prefab = zdo.GetPrefab();
+                        if (prefab == CartographyHash)
+                        {
+                            try { _exploration.ImportSharedMap(kv.Key, zdo.GetByteArray("data", null)); } catch (Exception) { }
+                            continue;
+                        }
                         Kind kind;
-                        if (!_kindByHash.TryGetValue(zdo.GetPrefab(), out kind)) continue;
+                        if (!_kindByHash.TryGetValue(prefab, out kind)) continue;
                         var pos = zdo.GetPosition();
                         string text = "";
                         if (kind.TextKey != null)
@@ -104,6 +113,7 @@ namespace ValheimUI.Agent
                             .Append(",\"y\":").Append(F(pos.y))
                             .Append(",\"z\":").Append(F(pos.z))
                             .Append(",\"text\":").Append(JsonWriter.Quote(text))
+                            .Append(",\"explored\":").Append(_exploration.IsExplored(pos) ? "true" : "false")
                             .Append('}');
                         if (++count >= MaxObjects) break;
                     }
@@ -134,6 +144,7 @@ namespace ValheimUI.Agent
                         .Append(",\"x\":").Append(F(kv.Key.x))
                         .Append(",\"y\":").Append(F(kv.Key.y))
                         .Append(",\"z\":").Append(F(kv.Key.z))
+                        .Append(",\"explored\":").Append(_exploration.IsExplored(kv.Key) ? "true" : "false")
                         .Append('}');
                 }
             }

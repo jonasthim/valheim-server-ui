@@ -16,13 +16,25 @@ namespace ValheimUI.Agent
         public static byte[] EncodeRgb(int width, int height, byte[] rgb)
         {
             if (rgb.Length != width * height * 3) throw new ArgumentException("rgb buffer size mismatch");
-            var raw = new byte[(width * 3 + 1) * height];
-            int stride = width * 3;
+            return Encode(width, height, rgb, 3, 2);
+        }
+
+        /// <summary>8-bit greyscale (colour type 0), one byte per pixel.</summary>
+        public static byte[] EncodeGray(int width, int height, byte[] gray)
+        {
+            if (gray.Length != width * height) throw new ArgumentException("gray buffer size mismatch");
+            return Encode(width, height, gray, 1, 0);
+        }
+
+        private static byte[] Encode(int width, int height, byte[] pixels, int channels, byte colourType)
+        {
+            var raw = new byte[(width * channels + 1) * height];
+            int stride = width * channels;
             for (int y = 0; y < height; y++)
             {
                 int dst = y * (stride + 1);
                 raw[dst] = 0; // filter: none
-                Buffer.BlockCopy(rgb, y * stride, raw, dst + 1, stride);
+                Buffer.BlockCopy(pixels, y * stride, raw, dst + 1, stride);
             }
 
             byte[] deflated;
@@ -43,7 +55,7 @@ namespace ValheimUI.Agent
                 WriteBE(ihdr, 0, (uint)width);
                 WriteBE(ihdr, 4, (uint)height);
                 ihdr[8] = 8;  // bit depth
-                ihdr[9] = 2;  // colour type: truecolour
+                ihdr[9] = colourType; // 2 truecolour, 0 greyscale
                 ihdr[10] = 0; // compression
                 ihdr[11] = 0; // filter
                 ihdr[12] = 0; // interlace

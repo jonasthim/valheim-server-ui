@@ -33,7 +33,8 @@ namespace ValheimUI.Agent
         private ConfigEntry<bool> _mapAutoRender;
 
         private readonly MapRenderer _map = new MapRenderer();
-        private readonly MapObjects _objects = new MapObjects();
+        private readonly Exploration _explored = new Exploration();
+        private readonly MapObjects _objects;
         private float _worldReadyAt = -1f;
         private int _worldSeed;
         private string _cacheDir = "";
@@ -49,6 +50,11 @@ namespace ValheimUI.Agent
         private readonly LinkedList<KeyValuePair<long, string>> _events = new LinkedList<KeyValuePair<long, string>>();
         private long _eventSeq;
         private Dictionary<long, string> _lastPeers = new Dictionary<long, string>();
+
+        public AgentPlugin()
+        {
+            _objects = new MapObjects(_explored);
+        }
 
         private void Awake()
         {
@@ -76,7 +82,9 @@ namespace ValheimUI.Agent
                 () => _token.Value,
                 () => _map.InfoJson(),
                 () => _map.Png(),
-                () => _objects.Json);
+                () => _objects.Json,
+                () => _explored.InfoJson(),
+                () => _explored.MaskPng());
             try
             {
                 _api.Start(_bind.Value, port);
@@ -94,6 +102,7 @@ namespace ValheimUI.Agent
 
         private void OnDestroy()
         {
+            _explored.MaybeSave(true);
             _api?.Stop();
         }
 
@@ -113,6 +122,15 @@ namespace ValheimUI.Agent
                     {
                         _worldReadyAt = now;
                         _worldSeed = snap.Seed;
+                        _explored.Load(snap.Seed, _cacheDir);
+                    }
+                    if (snap.Ready && _explored.Loaded)
+                    {
+                        foreach (var p in snap.Players)
+                        {
+                            if (p.HasPosition) _explored.Explore(p.Position, Exploration.ExploreRadius);
+                        }
+                        _explored.MaybeSave(false);
                     }
                     _statusJson = snap.ToJson(BuildInfo.Version, _gameVersion, now - _startedAt);
                     DiffPeers(snap);
