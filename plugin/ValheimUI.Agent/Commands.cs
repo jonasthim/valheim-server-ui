@@ -130,9 +130,16 @@ namespace ValheimUI.Agent
             double dayLen = env.m_dayLengthSec;
             if (dayLen <= 0) dayLen = 1800;
             string skip = Arg(c, "skip"), fraction = Arg(c, "fraction"), seconds = Arg(c, "seconds");
+            // The game's skip-to-morning glides the clock over a few seconds,
+            // so the result reports the time the world settles at, not a
+            // read-back taken mid-glide.
+            double target;
+            bool glides = false;
             if (skip == "morning")
             {
+                target = MorningStart(env, env.GetDay(now) + 1, dayLen);
                 env.SkipToMorning();
+                glides = true;
             }
             else if (fraction.Length > 0)
             {
@@ -141,7 +148,7 @@ namespace ValheimUI.Agent
                 {
                     return new CommandResult { Ok = false, Message = "fraction must be between 0 and 1" };
                 }
-                double target = Math.Floor(now / dayLen) * dayLen + f * dayLen;
+                target = Math.Floor(now / dayLen) * dayLen + f * dayLen;
                 if (target <= now) target += dayLen;
                 znet.SetNetTime(target);
             }
@@ -152,21 +159,22 @@ namespace ValheimUI.Agent
                 {
                     return new CommandResult { Ok = false, Message = "seconds must be between 1 and 86400" };
                 }
-                znet.SetNetTime(now + n);
+                target = now + n;
+                znet.SetNetTime(target);
             }
             else
             {
                 return new CommandResult { Ok = false, Message = "fraction, skip=morning or seconds is required" };
             }
-            double t = znet.GetTimeSeconds();
-            int day = env.GetDay(t);
-            double frac = (t % dayLen) / dayLen;
+            int day = env.GetDay(target);
+            double frac = (target % dayLen) / dayLen;
             int hh = (int)(frac * 24), mm = (int)((frac * 24 - hh) * 60);
             var w = new JsonWriter();
             w.BeginObject();
             w.Prop("day", day);
             w.Prop("day_fraction", frac);
-            w.Prop("time_seconds", t);
+            w.Prop("time_seconds", target);
+            w.Prop("settling", glides);
             w.EndObject();
             return new CommandResult
             {
@@ -174,6 +182,29 @@ namespace ValheimUI.Agent
                 Message = "time set to day " + day.ToString(CultureInfo.InvariantCulture) + ", " + hh.ToString("00") + ":" + mm.ToString("00"),
                 DataJson = w.ToString(),
             };
+        }
+
+        /// <summary>
+        /// Where the game's own skip lands: its morning start for the given
+        /// day (EnvMan.GetMorningStartSec) or, on builds without it, a
+        /// quarter into the day, which is what the game uses.
+        /// </summary>
+        private static double MorningStart(EnvMan env, int day, double dayLen)
+        {
+            try
+            {
+                var m = HarmonyLib.AccessTools.Method(typeof(EnvMan), "GetMorningStartSec", new[] { typeof(int) });
+                if (m != null)
+                {
+                    var r = m.Invoke(env, new object[] { day });
+                    if (r is double d) return d;
+                    if (r is float f) return f;
+                }
+            }
+            catch (Exception)
+            {
+            }
+            return day * dayLen + dayLen * 0.25;
         }
 
         /// <summary>
@@ -189,7 +220,7 @@ namespace ValheimUI.Agent
             if (text.Length == 0) return new CommandResult { Ok = false, Message = "message is required" };
             if (text.Length > MaxTextLength) text = text.Substring(0, MaxTextLength);
             var name = Arg(c, "name");
-            if (name.Length == 0) name = AgentPlugin.ServerName;
+            if (name.Length == 0) name = AgentPlugin.ResolveServerName();
             if (name.Length > 32) name = name.Substring(0, 32);
             object sender = MakeUserInfo(name) ?? (object)name;
             var pos = new Vector3(0f, 30f, 0f);
@@ -235,21 +266,32 @@ namespace ValheimUI.Agent
             if (zs == null) return new CommandResult { Ok = false, Message = "zone system not running" };
             var key = Arg(c, "key");
             if (!KeyPattern.IsMatch(key)) return new CommandResult { Ok = false, Message = "key must match [A-Za-z0-9_]{1,64}" };
+            if (Catalog.IsModifierName(key))
+            {
+                return new CommandResult { Ok = false, Message = key + " is a world modifier; set it in the instance config (launch arguments), not as a global key" };
+            }
             if (set) zs.SetGlobalKey(key);
             else zs.RemoveGlobalKey(key);
+            var keys = new List<string>();
+            var mods = new List<KeyValuePair<string, string>>();
+            GameState.SplitGlobalKeys(zs.GetGlobalKeys(), keys, mods);
             var w = new JsonWriter();
             w.BeginObject();
             w.Name("global_keys").BeginArray();
-            var keys = zs.GetGlobalKeys();
-            if (keys != null) foreach (var k in keys) w.Value(k);
+            foreach (var k in keys) w.Value(k);
             w.EndArray();
+            w.Name("modifiers").BeginObject();
+            foreach (var m in mods) w.Prop(m.Key, m.Value);
+            w.EndObject();
             w.EndObject();
             return new CommandResult { Ok = true, Message = (set ? "set global key " : "removed global key ") + key, DataJson = w.ToString() };
         }
 
         /// <summary>
         /// Starts one of the world's random events (a raid) at a position: the
-        /// given x/z, else a connected player's position, else the centre.
+        /// given x/z, else a connected player's position. Events only spawn
+        /// around players, so with nobody online a position is required
+        /// rather than silently raiding the world origin.
         /// The event system is server-authoritative, so clients follow.
         /// </summary>
         private static CommandResult StartEvent(ZNet znet, PendingCommand c)
@@ -272,13 +314,19 @@ namespace ValheimUI.Agent
             }
             else
             {
+                bool anchored = false;
                 foreach (var peer in znet.GetPeers())
                 {
                     if (peer != null && peer.IsReady() && peer.m_characterID != ZDOID.None)
                     {
                         pos = peer.m_refPos;
+                        anchored = true;
                         break;
                     }
+                }
+                if (!anchored)
+                {
+                    return new CommandResult { Ok = false, Message = "no player online to place the event at; pass x and z" };
                 }
             }
             rs.SetRandomEventByName(found.m_name, pos);

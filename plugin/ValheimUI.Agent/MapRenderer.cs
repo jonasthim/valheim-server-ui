@@ -184,6 +184,7 @@ namespace ValheimUI.Agent
                     var m4 = t.GetMethod("GetBiomeHeight", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance, null,
                         new[] { typeof(Heightmap.Biome), typeof(float), typeof(float), byRefColor }, null);
                     if (m4 != null) _biomeHeight = (BiomeHeightFn)Delegate.CreateDelegate(typeof(BiomeHeightFn), gen, m4);
+                    else _biomeHeight = BindBiomeHeightByShape(gen, t);
                 }
                 var fm = t.GetMethod("GetForestFactor", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, null,
                     new[] { typeof(Vector3) }, null);
@@ -195,6 +196,75 @@ namespace ValheimUI.Agent
             }
             if (_biomeHeight == null) AgentPlugin.Log?.LogWarning("map layers: GetBiomeHeight not found; the terrain mask (lava, mist) will be empty");
             if (_forest == null) AgentPlugin.Log?.LogWarning("map layers: GetForestFactor not found; the forest layer will be empty");
+        }
+
+        /// <summary>
+        /// Last resort when neither known GetBiomeHeight signature exists:
+        /// any instance method of that name taking (biome, x, y, out mask,
+        /// ...) is called through reflection, trailing parameters at their
+        /// defaults and the mask read back whether it is a Color or a
+        /// Color32. Slower per sample, but the render is budgeted per frame
+        /// anyway, and the bound signature is logged for the next update.
+        /// </summary>
+        private static BiomeHeightFn BindBiomeHeightByShape(WorldGenerator gen, Type t)
+        {
+            MethodInfo found = null;
+            var seen = new System.Text.StringBuilder();
+            foreach (var m in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            {
+                if (m.Name != "GetBiomeHeight") continue;
+                var ps = m.GetParameters();
+                seen.Append(' ').Append(Describe(m));
+                if (ps.Length < 4 || !ps[0].ParameterType.IsEnum || ps[1].ParameterType != typeof(float) ||
+                    ps[2].ParameterType != typeof(float) || !ps[3].ParameterType.IsByRef) continue;
+                if (found == null || ps.Length < found.GetParameters().Length) found = m;
+            }
+            if (found == null)
+            {
+                AgentPlugin.Log?.LogWarning("map layers: no GetBiomeHeight with (biome, x, y, out mask, ...); candidates:" +
+                    (seen.Length == 0 ? " none" : seen.ToString()));
+                return null;
+            }
+            var pars = found.GetParameters();
+            int n = pars.Length;
+            var mi = found;
+            AgentPlugin.Log?.LogInfo("map layers: GetBiomeHeight bound by reflection as " + Describe(mi));
+            return (Heightmap.Biome b, float x, float y, out Color mk) =>
+            {
+                var args = new object[n];
+                args[0] = Enum.ToObject(pars[0].ParameterType, (int)b);
+                args[1] = x;
+                args[2] = y;
+                args[3] = null;
+                for (int i = 4; i < n; i++)
+                {
+                    var pt = pars[i].ParameterType;
+                    args[i] = pars[i].HasDefaultValue ? pars[i].DefaultValue : (pt.IsValueType ? Activator.CreateInstance(pt) : null);
+                }
+                var r = mi.Invoke(gen, args);
+                mk = ToColor(args[3]);
+                return Convert.ToSingle(r);
+            };
+        }
+
+        private static Color ToColor(object v)
+        {
+            if (v is Color c) return c;
+            if (v is Color32 c32) return c32;
+            if (v is Vector4 v4) return new Color(v4.x, v4.y, v4.z, v4.w);
+            return default(Color);
+        }
+
+        private static string Describe(MethodInfo m)
+        {
+            var sb = new System.Text.StringBuilder(m.Name).Append('(');
+            var ps = m.GetParameters();
+            for (int i = 0; i < ps.Length; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append(ps[i].ParameterType.Name);
+            }
+            return sb.Append(')').ToString();
         }
 
         private void Encode(int size, byte[] rgba, string path)

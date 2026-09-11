@@ -49,8 +49,34 @@ namespace ValheimUI.Agent
         internal static Pings Pings { get; private set; }
         /// <summary>For the Harmony patch that records chat.</summary>
         internal static ChatLog Chat { get; private set; }
-        /// <summary>Name the "say" command speaks as ([Chat] ServerName).</summary>
-        internal static string ServerName { get; private set; } = "Server";
+        private static ConfigEntry<string> _serverNameOverride;
+
+        /// <summary>
+        /// Name the "say" command speaks as and the catalog reports: the
+        /// [Chat] ServerName override when set, else the game's own server
+        /// name (the -name launch argument, ZNet.m_ServerName), else "Server".
+        /// Resolved on each call because the game fills the static after start-up.
+        /// </summary>
+        internal static string ResolveServerName()
+        {
+            var o = _serverNameOverride?.Value;
+            if (!string.IsNullOrEmpty(o)) return o.Trim();
+            try
+            {
+                var f = HarmonyLib.AccessTools.Field(typeof(ZNet), "m_ServerName");
+                var v = f != null && f.IsStatic ? f.GetValue(null) as string : null;
+                if (string.IsNullOrEmpty(v))
+                {
+                    var p = HarmonyLib.AccessTools.Property(typeof(ZNet), "m_ServerName") ?? HarmonyLib.AccessTools.Property(typeof(ZNet), "ServerName");
+                    if (p != null && p.GetGetMethod(true) != null && p.GetGetMethod(true).IsStatic) v = p.GetValue(null, null) as string;
+                }
+                if (!string.IsNullOrEmpty(v)) return v.Trim();
+            }
+            catch (Exception)
+            {
+            }
+            return "Server";
+        }
         internal static BepInEx.Logging.ManualLogSource Log { get; private set; }
         private float _worldReadyAt = -1f;
         private int _worldSeed;
@@ -85,8 +111,8 @@ namespace ValheimUI.Agent
             _mapResolution = Config.Bind("Map", "Resolution", 2048, "Side length in cells of the sampled world map layers (256-4096). 2048 matches the game's own map; 4096 gives the sharpest coastlines at deep zoom and takes four times longer to sample once per world.");
             _mapBudgetMs = Config.Bind("Map", "RenderBudgetMs", 4, "Milliseconds per server frame spent rendering the map. Lower values render slower but never stall the game.");
             _mapAutoRender = Config.Bind("Map", "AutoRender", true, "Render the map shortly after the world has loaded instead of on first request.");
-            _serverName = Config.Bind("Chat", "ServerName", "Server", "Name shown as the sender when the manager sends a chat message (the say command).");
-            ServerName = string.IsNullOrEmpty(_serverName.Value) ? "Server" : _serverName.Value;
+            _serverName = Config.Bind("Chat", "ServerName", "", "Name shown as the sender when the manager sends a chat message (the say command). Empty uses the game's server name (-name).");
+            _serverNameOverride = _serverName;
             _cacheDir = System.IO.Path.Combine(Paths.CachePath, "valheimui-agent");
 
             if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null)
@@ -191,7 +217,7 @@ namespace ValheimUI.Agent
                 if (now - _lastCatalog > 30f)
                 {
                     _lastCatalog = now;
-                    try { _catalogJson = Catalog.Build(ServerName); }
+                    try { _catalogJson = Catalog.Build(ResolveServerName()); }
                     catch (Exception e) { Logger.LogWarning("agent catalog failed: " + e.Message); }
                 }
             }

@@ -97,9 +97,28 @@ namespace ValheimUI.Agent
             "Hildir1", "Hildir2", "Hildir3", "nomap", "noportals",
         };
 
+        /// <summary>
+        /// World modifiers the game keeps as "name value" global keys. They
+        /// are launch-argument settings, not progression, so pickers hide them.
+        /// </summary>
+        private static readonly HashSet<string> ModifierNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "preset", "combat", "deathpenalty", "resources", "raids", "portals", "activebosses", "playerdamage",
+            "enemydamage", "enemyspeedsize", "enemyleveluprate", "eventrate", "resourcerate", "staminarate",
+            "moverate", "hammertime", "worldlevel", "passivemobs", "playerevents", "fire",
+        };
+
+        /// <summary>True for a known modifier name or one the world currently has a value for.</summary>
+        public static bool IsModifierName(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+            return ModifierNames.Contains(key) || GameState.CurrentModifierNames().Contains(key);
+        }
+
         public static string Build(string serverName)
         {
             var keys = new SortedSet<string>(StringComparer.Ordinal);
+            var current = GameState.CurrentModifierNames();
             foreach (var k in KnownKeys) keys.Add(k);
             try
             {
@@ -108,7 +127,9 @@ namespace ValheimUI.Agent
                 {
                     foreach (var name in Enum.GetNames(t))
                     {
-                        if (name != "None" && name != "Max") keys.Add(name);
+                        if (name == "None" || name == "Max") continue;
+                        if (ModifierNames.Contains(name) || current.Contains(name)) continue;
+                        keys.Add(name);
                     }
                 }
             }

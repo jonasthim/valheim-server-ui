@@ -198,6 +198,7 @@ namespace ValheimUI.Agent
                     if (i > 0) sb.Append(',');
                     bool discovered = HasBossPinNear(pins, l.Pos) || i == spawnEikthyr;
                     sb.Append("{\"name\":").Append(JsonWriter.Quote(l.Name))
+                        .Append(",\"label\":").Append(JsonWriter.Quote(LabelFor(l.Name)))
                         .Append(",\"x\":").Append(F(l.Pos.x))
                         .Append(",\"y\":").Append(F(l.Pos.y))
                         .Append(",\"z\":").Append(F(l.Pos.z))
@@ -222,6 +223,21 @@ namespace ValheimUI.Agent
             public string Name;
             public Vector3 Pos;
             public bool Boss;
+        }
+
+        /// <summary>Display names for the location prefabs players know by another name.</summary>
+        private static readonly Dictionary<string, string> Labels = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            { "Eikthyrnir", "Eikthyr" }, { "GDKing", "The Elder" }, { "Bonemass", "Bonemass" }, { "Dragonqueen", "Moder" },
+            { "GoblinKing", "Yagluth" }, { "Mistlands_DvergrBossEntrance1", "The Queen" }, { "FaderLocation", "Fader" },
+            { "StartTemple", "Sacrificial Stones" }, { "Vendor_BlackForest", "Haldor" }, { "Hildir_camp", "Hildir" },
+            { "BogWitch_Camp", "Bog Witch" },
+        };
+
+        private static string LabelFor(string prefab)
+        {
+            string label;
+            return prefab != null && Labels.TryGetValue(prefab, out label) ? label : (prefab ?? "");
         }
 
         /// <summary>Location prefabs whose altars the map shows as bosses.</summary>

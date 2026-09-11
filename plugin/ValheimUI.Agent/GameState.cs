@@ -34,7 +34,10 @@ namespace ValheimUI.Agent
         public bool IsNight;
         public string Weather = "";
         public double TimeSeconds;
+        /// <summary>Plain progression keys (defeated_eikthyr, nomap, ...).</summary>
         public List<string> GlobalKeys = new List<string>();
+        /// <summary>World modifiers the game keeps in the same list as "name value" (preset hard, playerdamage 85, ...).</summary>
+        public List<KeyValuePair<string, string>> Modifiers = new List<KeyValuePair<string, string>>();
         public List<PlayerSnapshot> Players = new List<PlayerSnapshot>();
         /// <summary>The running random event (raid) as JSON, or null.</summary>
         public string EventJson;
@@ -65,6 +68,9 @@ namespace ValheimUI.Agent
             w.Name("global_keys").BeginArray();
             foreach (var k in GlobalKeys) w.Value(k);
             w.EndArray();
+            w.Name("modifiers").BeginObject();
+            foreach (var m in Modifiers) w.Prop(m.Key, m.Value);
+            w.EndObject();
             w.Name("players").BeginArray();
             foreach (var p in Players)
             {
@@ -116,6 +122,49 @@ namespace ValheimUI.Agent
     internal static class GameState
     {
         /// <summary>A random event as {name, remaining_seconds, position}, or "null".</summary>
+        /// <summary>
+        /// The game stores world modifiers in the global-key list as
+        /// "name value" strings next to the real progression keys. Splits
+        /// them so a UI never offers "playerdamage 85" as a removable key.
+        /// </summary>
+        public static void SplitGlobalKeys(IEnumerable<string> raw, List<string> keys, List<KeyValuePair<string, string>> modifiers)
+        {
+            if (raw == null) return;
+            foreach (var entry in raw)
+            {
+                if (string.IsNullOrEmpty(entry)) continue;
+                int sp = entry.IndexOf(' ');
+                if (sp < 0)
+                {
+                    keys.Add(entry);
+                    continue;
+                }
+                var name = entry.Substring(0, sp).Trim();
+                var value = entry.Substring(sp + 1).Trim();
+                if (name.Length == 0) continue;
+                modifiers.Add(new KeyValuePair<string, string>(name, value));
+            }
+        }
+
+        /// <summary>Names of the modifiers currently set in the world, lower-cased.</summary>
+        public static HashSet<string> CurrentModifierNames()
+        {
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var zs = ZoneSystem.instance;
+                if (zs == null) return set;
+                var keys = new List<string>();
+                var mods = new List<KeyValuePair<string, string>>();
+                SplitGlobalKeys(zs.GetGlobalKeys(), keys, mods);
+                foreach (var m in mods) set.Add(m.Key);
+            }
+            catch (Exception)
+            {
+            }
+            return set;
+        }
+
         public static string EventJson(RandomEvent ev)
         {
             if (ev == null) return "null";
@@ -164,8 +213,7 @@ namespace ValheimUI.Agent
             var zs = ZoneSystem.instance;
             if (zs != null)
             {
-                var keys = zs.GetGlobalKeys();
-                if (keys != null) s.GlobalKeys.AddRange(keys);
+                SplitGlobalKeys(zs.GetGlobalKeys(), s.GlobalKeys, s.Modifiers);
             }
             try
             {

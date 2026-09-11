@@ -681,27 +681,39 @@ Every request but `/v1/health` carries `Authorization: Bearer <token>`.
 
 | Verb | Parameters | `data` |
 |---|---|---|
-| `time` | one of `fraction=<0..1>` (time of day, forward only, next day if behind), `skip=morning` (the game's own skip, what sleeping does), `seconds=<1..86400>` | `{"day","day_fraction","time_seconds"}` |
-| `say` | body = text (≤ 200); `?name=` (default `[Chat] ServerName`) | none; an in-game shout from that name |
-| `setkey` / `removekey` | `key=<[A-Za-z0-9_]{1,64}>` | `{"global_keys":[…]}` |
-| `event` | `name=<catalog event>`, optional `x=&z=` (else a connected player's position, else the centre) | `{"event":{"name","remaining_seconds","position":{x,y,z}}}` |
+| `time` | one of `fraction=<0..1>` (time of day, forward only, next day if behind), `skip=morning` (the game's own skip, what sleeping does), `seconds=<1..86400>` | `{"day","day_fraction","time_seconds","settling"}`: the time the world settles at; `settling` is true for the morning skip, which glides the clock there over a few seconds |
+| `say` | body = text (≤ 200); `?name=` (default: the game's server name, or `[Chat] ServerName` when set) | none; an in-game shout from that name |
+| `setkey` / `removekey` | `key=<[A-Za-z0-9_]{1,64}>`; a world modifier name is refused | `{"global_keys":[…],"modifiers":{…}}` |
+| `event` | `name=<catalog event>`, optional `x=&z=` (else a connected player's position; with nobody online and no `x`/`z` the command is refused, since events only spawn around players) | `{"event":{"name","remaining_seconds","position":{x,y,z}}}` |
 | `eventstop` | none | `{"event":null}` |
 
-`GET /v1/status` → `world.event` is the same object or `null`. `GET
+`GET /v1/status` → `world.event` is the same object or `null`; `global_keys`
+carries only plain progression keys and the new `modifiers` object carries
+the world modifiers the game stores in the same list as `"name value"`
+strings (`{"preset":"hard","playerdamage":"85",…}`), so a UI never offers
+`playerdamage 85` as a removable key. `GET
 /v1/chat` → `{"messages":[{"seq","at","type":"shout"|"normal","sender","text","position"}],"next"}`
 (ring buffer of 500, memory only; the observer is the same routed-RPC prefix
 that records pings, reading the sender name first and the text last so both
 the plain-name and the `UserInfo` wire forms parse). `GET /v1/catalog` →
 `{"global_keys":[…],"events":[{"name","duration_seconds"}],"server_name"}`,
 keys from the game's `GlobalKeys` enum (by reflection) merged with a known
-list, events from `RandEventSystem.m_events`, built on the main thread and
-refreshed every 30 s. Time and events are server-authoritative (`ZNet.
+list and minus modifier names, events from `RandEventSystem.m_events`,
+`server_name` the game's own server name (`-name`) unless `[Chat] ServerName`
+overrides it, built on the main thread and refreshed every 30 s. Time and events are server-authoritative (`ZNet.
 SetNetTime`, `RandEventSystem`), so every client follows; weather is not
 (clients derive it from world time), which is why there is no weather verb.
-`GET /v1/map/objects` `locations[]` carry `boss` and include every boss
-altar the world generated (from `ZoneSystem.GetLocationList`, which the
-icon list never included); the Eikthyr altar nearest the start temple counts
-as `discovered` once spawn is explored, matching the runestone there.
+`GET /v1/map/objects` `locations[]` carry `boss`, a display `label`
+(`Eikthyrnir` → Eikthyr, `GDKing` → The Elder, `Dragonqueen` → Moder,
+`GoblinKing` → Yagluth, `Mistlands_DvergrBossEntrance1` → The Queen,
+`FaderLocation` → Fader, `StartTemple` → Sacrificial Stones, traders by
+name) and include every boss altar the world generated (from
+`ZoneSystem.GetLocationList`, which the icon list never included). A world
+has several altars per boss and all of them work, so they are not
+deduplicated: the UI draws each record that passes the explored/discovered
+filter (the manager already strips the rest for viewers), keyed by position.
+The Eikthyr altar nearest the start temple counts as `discovered` once
+spawn is explored, matching the runestone there.
 
 **Manager side** (`internal/agent`).
 

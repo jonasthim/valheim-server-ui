@@ -415,10 +415,16 @@ Troubleshooting:
 
 World controls the agent offers (agent 1.11; the manager surfaces them on
 the World card and a chat panel): moving the clock forward (`time`), a chat
-line spoken as the server (`say`, name from `[Chat] ServerName` in the
-plugin config), granting or revoking global keys (progression: raids,
-trader stock, biome events), and starting or stopping a random event. All
-of these affect every player at once and are audited like other commands.
+line spoken as the server (`say`, under the server's name unless `[Chat]
+ServerName` in the plugin config overrides it), granting or revoking global
+keys (progression: raids, trader stock, biome events), and starting or
+stopping a random event. World modifiers (`preset`, `playerdamage`, …) are
+launch settings from Instance → Config, not keys: the agent reports them
+separately and refuses to set or remove them as keys. Skipping to morning
+glides the clock there over a few seconds, as sleeping does; an event needs
+a player online (or an explicit position), because raids only spawn around
+players. All of these affect every player at once and are audited like
+other commands.
 Weather cannot be set from the server: clients derive it from the world
 time, so the card only shows it. The chat feed keeps shouts and normal
 chat in memory for the session, never whispers.
