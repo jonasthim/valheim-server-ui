@@ -239,10 +239,18 @@ func (t *Thunderstore) Refresh(ctx context.Context) error {
 		body = gz
 	}
 
-	data, err := io.ReadAll(body)
+	// Cap the (decompressed) index so a hostile or compromised mirror — the
+	// registry indexURL is operator-configurable — cannot OOM the manager with
+	// a huge body or a gzip bomb. The real index is tens of MB.
+	limited := io.LimitReader(body, maxIndexBytes+1)
+	data, err := io.ReadAll(limited)
 	if err != nil {
 		t.recordFailure()
 		return domain.Wrap(domain.CodeUpstreamError, "read thunderstore index", err)
+	}
+	if int64(len(data)) > maxIndexBytes {
+		t.recordFailure()
+		return domain.Ef(domain.CodeUpstreamError, "thunderstore index exceeds %d bytes", maxIndexBytes)
 	}
 
 	var raws []rawPackage
@@ -674,6 +682,10 @@ func (t *Thunderstore) Download(ctx context.Context, owner, name, version string
 	}
 	return dest, nil
 }
+
+// maxIndexBytes caps the decompressed registry index read (the real index is
+// tens of MB); it bounds memory against a hostile or gzip-bombed mirror.
+const maxIndexBytes = 256 << 20
 
 // maxPackageBytes caps a single Thunderstore package download when the index
 // does not declare a size (Valheim packs are a few hundred MB at most).

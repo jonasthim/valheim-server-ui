@@ -25,7 +25,7 @@ const WorldsTab = lazy(() => import('./WorldsTab').then((m) => ({ default: m.Wor
 const BackupsTab = lazy(() => import('./BackupsTab').then((m) => ({ default: m.BackupsTab })))
 const ModsTab = lazy(() => import('./ModsTab').then((m) => ({ default: m.ModsTab })))
 const SchedulesTab = lazy(() => import('./SchedulesTab').then((m) => ({ default: m.SchedulesTab })))
-import { PageHeader, StatusPill } from '../../ui'
+import { LoadError, PageHeader, StatusPill } from '../../ui'
 import { stateColor, stateLabel } from './instanceHelpers'
 
 const TAB_ICONS: Record<InstanceTab, typeof IconLayoutDashboard> = {
@@ -49,6 +49,15 @@ export function InstancePage() {
   const inst = useInstance(id)
   const state = inst.data?.status.state
   const config = inst.data?.config
+
+  if (inst.isError) {
+    return (
+      <Stack>
+        <PageHeader eyebrow={`Instance · ${id}`} title={id} />
+        <LoadError error={inst.error} title="Instance unavailable" onRetry={() => inst.refetch()} />
+      </Stack>
+    )
+  }
 
   return (
     <Stack>

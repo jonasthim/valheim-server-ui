@@ -129,10 +129,13 @@ func (c *Client) InstallOrUpdate(ctx context.Context, installDir string, out io.
 
 	const maxAttempts = 2
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		var buf bytes.Buffer
-		var w io.Writer = &buf
+		// A validate can stream tens of MB; retain only the tail, which carries
+		// the success/failure/flake markers and the lines worth surfacing,
+		// while `out` (the job log) still receives the full stream.
+		buf := &tailWriter{cap: maxSteamOutputTail}
+		var w io.Writer = buf
 		if out != nil {
-			w = io.MultiWriter(out, &buf)
+			w = io.MultiWriter(out, buf)
 		}
 		runErr := c.run(ctx, c.path, args, w)
 		output := buf.String()
@@ -277,3 +280,28 @@ func envWithout(environ []string, names ...string) []string {
 func diskWriteHint(home, installDir string) string {
 	return fmt.Sprintf("steamcmd reported a disk write failure. This usually means it could not write to HOME (%s) or the install directory (%s) rather than a full disk: check ownership by the valheim user, free space, and that the systemd unit allows writes there (ReadWritePaths / ProtectHome)", home, installDir)
 }
+
+// maxSteamOutputTail bounds how much steamcmd output InstallOrUpdate retains
+// in memory: enough for the end-of-run markers and the lines surfaced on
+// failure, without holding a whole verbose `validate` stream.
+const maxSteamOutputTail = 1 << 20 // 1 MiB
+
+// tailWriter keeps only the last `cap` bytes written to it, discarding older
+// output. It is not safe for concurrent writers; steamcmd output is written by
+// a single goroutine (c.run's copy loop).
+type tailWriter struct {
+	cap int
+	buf []byte
+}
+
+func (t *tailWriter) Write(p []byte) (int, error) {
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.cap {
+		// Keep the last cap bytes; copy into a fresh slice so the discarded
+		// head can be collected rather than pinned by the backing array.
+		t.buf = append([]byte(nil), t.buf[len(t.buf)-t.cap:]...)
+	}
+	return len(p), nil
+}
+
+func (t *tailWriter) String() string { return string(t.buf) }

@@ -7,7 +7,7 @@ import { api, ApiError } from '../../api/client'
 import type { User } from '../../api/types'
 import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
-import { EmptyState, PageHeader, SectionCard, StatusPill } from '../../ui'
+import { EmptyState, LoadError, PageHeader, SectionCard, StatusPill } from '../../ui'
 import { CreateUserModal } from './CreateUserModal'
 import { EditUserModal } from './EditUserModal'
 import { SetPasswordModal } from './SetPasswordModal'
@@ -88,7 +88,18 @@ export function UsersPage() {
                     </Table.Td>
                   </Table.Tr>
                 ))}
-              {!usersQ.isLoading && users.length === 0 && (
+              {usersQ.isError && (
+                <Table.Tr>
+                  <Table.Td colSpan={7}>
+                    <LoadError
+                      error={usersQ.error}
+                      title="Could not load users"
+                      onRetry={() => usersQ.refetch()}
+                    />
+                  </Table.Td>
+                </Table.Tr>
+              )}
+              {!usersQ.isLoading && !usersQ.isError && users.length === 0 && (
                 <Table.Tr>
                   <Table.Td colSpan={7}>
                     <EmptyState icon={<IconUsers size={22} />} title="No users yet." />

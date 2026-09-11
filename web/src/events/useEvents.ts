@@ -1,6 +1,6 @@
 // Single SSE connection per app; dispatches events into React Query caches and
 // to local subscribers (console log lines). See openapi.yaml → /events.
-import { useEffect } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { API_BASE } from '../api/client'
 import type { AgentInfo, InstanceStatus, Job, UpdateInfo } from '../api/types'
@@ -28,6 +28,39 @@ export function onEvent<K extends keyof typeof listeners>(
   }
 }
 
+// safeParse decodes one SSE frame, logging and skipping a malformed one rather
+// than throwing inside the event handler (an uncaught throw there would break
+// live updates silently).
+function safeParse<T>(e: Event): T | null {
+  try {
+    return JSON.parse((e as MessageEvent).data) as T
+  } catch (err) {
+    console.warn('SSE: ignoring malformed event frame', err)
+    return null
+  }
+}
+
+// --- connection status store (so the shell can show "live updates offline") ---
+let connected = false
+const connListeners = new Set<() => void>()
+function setConnected(v: boolean) {
+  if (connected === v) return
+  connected = v
+  connListeners.forEach((fn) => fn())
+}
+
+/** Subscribe to whether the SSE stream is currently connected. */
+export function useSSEConnected(): boolean {
+  return useSyncExternalStore(
+    (fn) => {
+      connListeners.add(fn)
+      return () => connListeners.delete(fn)
+    },
+    () => connected,
+    () => false,
+  )
+}
+
 let source: EventSource | null = null
 let refs = 0
 
@@ -39,14 +72,17 @@ export function useEvents(enabled: boolean) {
     refs++
     if (!source) {
       source = new EventSource(`${API_BASE}/events`, { withCredentials: true })
+      source.onopen = () => setConnected(true)
       source.addEventListener('instance.status', (e) => {
-        const st = JSON.parse((e as MessageEvent).data) as InstanceStatus
+        const st = safeParse<InstanceStatus>(e)
+        if (!st) return
         qc.setQueryData(['instances', st.instance_id, 'status'], { status: st })
         qc.invalidateQueries({ queryKey: ['instances', 'list'] })
         qc.invalidateQueries({ queryKey: ['instances', st.instance_id, 'detail'] })
       })
       source.addEventListener('job.updated', (e) => {
-        const job = JSON.parse((e as MessageEvent).data) as Job
+        const job = safeParse<Job>(e)
+        if (!job) return
         qc.setQueryData(['jobs', job.id], { job })
         qc.invalidateQueries({ queryKey: ['jobs', 'list'] })
         if (job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled') {
@@ -55,7 +91,8 @@ export function useEvents(enabled: boolean) {
         }
       })
       source.addEventListener('update.available', (e) => {
-        const info = JSON.parse((e as MessageEvent).data) as UpdateInfo
+        const info = safeParse<UpdateInfo>(e)
+        if (!info) return
         qc.invalidateQueries({ queryKey: ['instances', info.instance_id] })
         qc.invalidateQueries({ queryKey: ['system'] })
       })
@@ -65,15 +102,18 @@ export function useEvents(enabled: boolean) {
         qc.invalidateQueries({ queryKey: ['system'] })
       })
       source.addEventListener('instance.log', (e) => {
-        const ev = JSON.parse((e as MessageEvent).data) as LogEvent
+        const ev = safeParse<LogEvent>(e)
+        if (!ev) return
         listeners['instance.log'].forEach((fn) => fn(ev))
       })
       source.addEventListener('job.log', (e) => {
-        const ev = JSON.parse((e as MessageEvent).data) as JobLogEvent
+        const ev = safeParse<JobLogEvent>(e)
+        if (!ev) return
         listeners['job.log'].forEach((fn) => fn(ev))
       })
       source.addEventListener('agent.status', (e) => {
-        const ev = JSON.parse((e as MessageEvent).data) as AgentStatusEvent
+        const ev = safeParse<AgentStatusEvent>(e)
+        if (!ev) return
         // The stream omits hidden players' positions; operators get them from
         // the next GET, which useAgent() also polls.
         qc.setQueryData<AgentInfo | undefined>(['instances', ev.instance_id, 'agent'], (prev) =>
@@ -81,12 +121,15 @@ export function useEvents(enabled: boolean) {
         )
       })
       source.addEventListener('instance.players', (e) => {
-        const ev = JSON.parse((e as MessageEvent).data) as PlayersEvent
+        const ev = safeParse<PlayersEvent>(e)
+        if (!ev) return
         listeners['instance.players'].forEach((fn) => fn(ev))
         qc.invalidateQueries({ queryKey: ['instances', ev.instance_id, 'players'] })
       })
       source.onerror = () => {
-        // EventSource reconnects on its own; refresh state when it comes back.
+        // EventSource reconnects on its own; mark offline and refresh state
+        // when it comes back (onopen flips it back to connected).
+        setConnected(false)
         qc.invalidateQueries({ queryKey: ['instances'] })
       }
     }
@@ -95,6 +138,7 @@ export function useEvents(enabled: boolean) {
       if (refs === 0 && source) {
         source.close()
         source = null
+        setConnected(false)
       }
     }
   }, [enabled, qc])

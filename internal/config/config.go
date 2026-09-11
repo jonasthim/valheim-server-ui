@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -82,6 +83,11 @@ func applyEnv(c *Config) {
 			b, err := strconv.ParseBool(v)
 			if err == nil {
 				*dst = b
+			} else {
+				// A malformed boolean (e.g. "ture") previously no-op'd silently,
+				// which hides a misconfigured security-relevant flag. Warn and
+				// keep the existing value.
+				slog.Warn("config: ignoring malformed boolean env var", "var", "VALHEIM_UI_"+key, "value", v)
 			}
 		}
 	}

@@ -3,6 +3,7 @@ package instance
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -781,5 +782,45 @@ func TestSteamJobs_EnqueueUpdate_RealSupervisor_StopStart(t *testing.T) {
 	}
 	if inst.InstalledBuildID != "30000002" {
 		t.Errorf("expected installed_buildid 30000002 after update, got %q", inst.InstalledBuildID)
+	}
+}
+
+// TestSteamJobs_EnqueueUpdate_RestartsAfterFailure covers the reliability fix:
+// a previously-running instance must be brought back even when the update
+// fails after it has been stopped (here the pre-update backup errors). The old
+// install is intact, so leaving the server offline would be the worse outcome.
+func TestSteamJobs_EnqueueUpdate_RestartsAfterFailure(t *testing.T) {
+	env := newJobsTestEnv(t, func(context.Context, string, *jobs.Logger) error {
+		return fmt.Errorf("simulated backup failure")
+	})
+	ctx := context.Background()
+	cfg := validConfig(2456)
+	cfg.BackupBeforeUpdate = true
+	if _, err := env.svc.Create(ctx, "main", "Main", cfg, false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	markInstalled(t, env.svc, "main")
+	env.sup.setStatus("main", supervisor.Status{State: supervisor.StateRunning, PID: 1})
+
+	job, err := env.sj.EnqueueUpdate(ctx, "main", "op", true)
+	if err != nil {
+		t.Fatalf("EnqueueUpdate: %v", err)
+	}
+	final, err := env.runner.WaitFor(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("WaitFor: %v", err)
+	}
+	if final.Status != domain.JobFailed {
+		t.Fatalf("expected the update to fail, got %v", final.Status)
+	}
+	// It was stopped for the update, and restarted on the way out despite the failure.
+	if len(env.sup.stopCalls) == 0 {
+		t.Fatal("instance should have been stopped for the update")
+	}
+	if len(env.sup.startCalls) == 0 {
+		t.Fatal("instance must be restarted after a failed update, not left offline")
+	}
+	if st, _ := env.svc.Status(ctx, "main"); st.State != domain.StateRunning {
+		t.Fatalf("instance should be running again after the failed update, got %s", st.State)
 	}
 }

@@ -231,9 +231,10 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 				s.mu.Unlock()
 			}
 			s.mu.Lock()
+			unsupported := ms.unsupported
 			needExplored := !ms.fogUnsupported && (ms.explored == nil || now.Sub(ms.exploredAt) > exploredTTL)
 			s.mu.Unlock()
-			if needExplored && !ms.unsupported {
+			if needExplored && !unsupported {
 				ei, err := c.ExploredInfo(ctx)
 				s.mu.Lock()
 				switch {
@@ -244,7 +245,7 @@ func (s *Service) Map(ctx context.Context, id string, includeHidden bool) (*doma
 				}
 				s.mu.Unlock()
 			}
-			if needObjects && !ms.unsupported {
+			if needObjects && !unsupported {
 				if objs, err := c.MapObjects(ctx); err == nil {
 					s.mu.Lock()
 					ms.objects, ms.objectsAt = objs, now
@@ -761,9 +762,10 @@ func (s *Service) ExploredPNG(ctx context.Context, id string) (path string, info
 		seed = ms.info.Seed
 	}
 	cachedVersion := ms.maskVersion
+	fogUnsupported := ms.fogUnsupported
 	s.mu.Unlock()
 
-	if connected && !ms.fogUnsupported {
+	if connected && !fogUnsupported {
 		c, cerr := s.client(paths, in.Config.Port)
 		if cerr == nil {
 			ei, ierr := c.ExploredInfo(ctx)

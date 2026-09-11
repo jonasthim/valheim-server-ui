@@ -6,7 +6,7 @@ import { useAuth } from '../../auth/useAuth'
 import { api } from '../../api/client'
 import type { Instance } from '../../api/types'
 import { fmtBytes, fmtPercent } from '../../lib/format'
-import { EmptyState, PageHeader, StatTile } from '../../ui'
+import { EmptyState, LoadError, PageHeader, StatTile } from '../../ui'
 import { useCheckAppUpdate, useSystemInfo } from '../system'
 import { SystemStrip } from './SystemStrip'
 import { InstanceCard } from './InstanceCard'
@@ -122,7 +122,15 @@ export function DashboardPage() {
           </SimpleGrid>
         )}
 
-        {!instancesQuery.isLoading && instances.length === 0 && (
+        {instancesQuery.isError && (
+          <LoadError
+            error={instancesQuery.error}
+            title="Could not load your instances"
+            onRetry={() => instancesQuery.refetch()}
+          />
+        )}
+
+        {!instancesQuery.isLoading && !instancesQuery.isError && instances.length === 0 && (
           <EmptyState
             icon={<IconServer2 size={22} />}
             title="No instances yet"

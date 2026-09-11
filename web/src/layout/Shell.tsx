@@ -36,7 +36,7 @@ import { useAuth } from '../auth/useAuth'
 import { useEvents } from '../events/useEvents'
 import { ActivityIndicator } from '../features/jobs/ActivityIndicator'
 import { JobDrawerHost } from '../features/jobs/JobDrawerHost'
-import { useSystemInfo } from '../features/system'
+import { LiveStatusBadge, useSystemInfo } from '../features/system'
 import { BrandMark, ErrorBoundary } from '../ui'
 import classes from './Shell.module.css'
 
@@ -147,6 +147,7 @@ export function Shell() {
             </Link>
           </Group>
           <Group gap="xs" wrap="nowrap">
+            <LiveStatusBadge />
             <ActivityIndicator />
             <ColorSchemeToggle />
           </Group>

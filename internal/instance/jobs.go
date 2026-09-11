@@ -166,6 +166,7 @@ func (j *SteamJobs) EnqueueUpdate(ctx context.Context, instanceID, requestedBy s
 			return domain.Ef(domain.CodeInstanceRunning, "instance %q is running; retry with stop_if_running", instanceID)
 		}
 
+		restarted := false
 		if wasRunning {
 			log.Printf("stopping instance for update")
 			if _, err := j.svc.Stop(ctx, instanceID); err != nil {
@@ -174,6 +175,24 @@ func (j *SteamJobs) EnqueueUpdate(ctx context.Context, instanceID, requestedBy s
 			if err := j.waitStopped(ctx, instanceID); err != nil {
 				return err
 			}
+			// The old install stays runnable, so any failure below (backup,
+			// steamcmd, build-id) must not leave a previously-running server
+			// offline. Bring it back on the way out unless the happy path
+			// already started it. Uncancellable + bounded so a cancelled or
+			// timed-out job still recovers the server.
+			defer func() {
+				if restarted {
+					return
+				}
+				rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopPollTimeout)
+				defer cancel()
+				if _, rerr := j.svc.Start(rctx, instanceID); rerr != nil {
+					log.Printf("could not restart instance after a failed update: %v", rerr)
+					j.log.Warn("steamjobs: restart after failed update", "instance", instanceID, "err", rerr)
+				} else {
+					log.Printf("restarted instance after a failed update (install left intact)")
+				}
+			}()
 		}
 
 		inst, err := j.svc.Get(ctx, instanceID)
@@ -199,7 +218,6 @@ func (j *SteamJobs) EnqueueUpdate(ctx context.Context, instanceID, requestedBy s
 			return err
 		}
 
-		restarted := false
 		if wasRunning {
 			log.Printf("starting instance after update")
 			if _, err := j.svc.Start(ctx, instanceID); err != nil {

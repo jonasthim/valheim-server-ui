@@ -5,3 +5,4 @@ export { useSystemInfo, useCheckAppUpdate, useUpgradeApp, useUpgradeInFlight, us
 export { AppUpdateBanner } from './AppUpdateBanner'
 export { ReleaseNotesModal } from './ReleaseNotesModal'
 export { ManagerRestartOverlay } from './ManagerRestartOverlay'
+export { LiveStatusBadge } from './LiveStatusBadge'

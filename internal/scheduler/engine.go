@@ -77,15 +77,18 @@ func (s *Service) reload(ctx context.Context) {
 		id := r.ID
 		next.Schedule(sched, cron.FuncJob(func() { s.fireSchedule(id) }))
 	}
-	next.Start()
-
 	s.mu.Lock()
 	old := s.cronEng
 	s.cronEng = next
 	s.mu.Unlock()
+	// Stop the old engine before starting the new one. Overlapping engines
+	// would let a schedule firing in the window fire on both and double-enqueue
+	// (schedule jobs are not Exclusive); the sub-second gap this leaves instead
+	// can only miss a fire exactly on a cron boundary, which is harmless.
 	if old != nil {
 		old.Stop()
 	}
+	next.Start()
 }
 
 // fireSchedule runs the schedule scheduled to fire now. It never lets a

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -35,14 +36,21 @@ type Logger struct {
 	instanceID string
 	bus        domain.Publisher
 
+	log     *slog.Logger
 	mu      sync.Mutex
 	f       *os.File
 	lineBuf bytes.Buffer // partial line buffered by the Writer() adapter
 	summary map[string]any
+	// writeErrWarned ensures a failing log file (e.g. a full disk) is reported
+	// once, not on every line, and not silently swallowed.
+	writeErrWarned bool
 }
 
 // newLogger creates (or appends to) <dir>/<id>.log with mode 0640.
-func newLogger(dir, id, instanceID string, bus domain.Publisher) (*Logger, error) {
+func newLogger(dir, id, instanceID string, bus domain.Publisher, log *slog.Logger) (*Logger, error) {
+	if log == nil {
+		log = slog.Default()
+	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create jobs dir: %w", err)
 	}
@@ -51,7 +59,7 @@ func newLogger(dir, id, instanceID string, bus domain.Publisher) (*Logger, error
 	if err != nil {
 		return nil, fmt.Errorf("open job log %s: %w", path, err)
 	}
-	return &Logger{id: id, instanceID: instanceID, bus: bus, f: f}, nil
+	return &Logger{id: id, instanceID: instanceID, bus: bus, log: log, f: f}, nil
 }
 
 // Printf formats and appends one line.
@@ -67,7 +75,15 @@ func (l *Logger) writeLine(line string) {
 	f := l.f
 	l.mu.Unlock()
 	if f != nil {
-		_, _ = io.WriteString(f, full+"\n")
+		if _, err := io.WriteString(f, full+"\n"); err != nil {
+			l.mu.Lock()
+			warn := !l.writeErrWarned
+			l.writeErrWarned = true
+			l.mu.Unlock()
+			if warn {
+				l.log.Warn("jobs: job log write failed; further lines may be lost", "job", l.id, "err", err)
+			}
+		}
 	}
 	if l.bus != nil {
 		l.bus.Publish(domain.Event{

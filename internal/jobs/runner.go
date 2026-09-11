@@ -359,7 +359,7 @@ func (r *Runner) runJob(id string) {
 		cancel()
 	}
 
-	logger, err := newLogger(r.jobsDir, id, rec.spec.InstanceID, r.bus)
+	logger, err := newLogger(r.jobsDir, id, rec.spec.InstanceID, r.bus, r.log)
 	if err != nil {
 		cancel()
 		r.finish(rec, domain.JobFailed, fmt.Sprintf("open job log: %v", err), nil)

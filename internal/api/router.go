@@ -155,6 +155,15 @@ func realIP(next http.Handler) http.Handler {
 			// the loopback proxy itself appended. X-Real-IP is deliberately
 			// ignored because not every documented proxy overwrites it, and a
 			// client-supplied value would end up in the audit log.
+			//
+			// SECURITY: this is correct only if the reverse proxy in front of
+			// the manager *appends* the real client IP to X-Forwarded-For (the
+			// documented deploy behind nginx/Caddy does). A pass-through proxy
+			// that forwards a client-supplied X-Forwarded-For unchanged would
+			// let a client forge the audited source IP. Impact is limited to
+			// audit-log integrity — never authorization — but operators fronting
+			// the manager with a custom proxy must ensure it appends, not
+			// forwards, this header (see docs/RUNBOOK.md).
 			fwd := ""
 			if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 				parts := strings.Split(xff, ",")

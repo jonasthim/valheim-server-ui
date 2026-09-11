@@ -120,6 +120,12 @@ func (s *Service) tick(ctx context.Context) {
 		return
 	}
 	seen := map[string]bool{}
+	type pollTarget struct {
+		id    string
+		port  int
+		paths domain.InstancePaths
+	}
+	var targets []pollTarget
 	for i := range list {
 		in := &list[i]
 		seen[in.ID] = true
@@ -129,8 +135,25 @@ func (s *Service) tick(ctx context.Context) {
 			s.setDisconnected(in.ID, "")
 			continue
 		}
-		s.poll(ctx, in.ID, in.Config.Port, paths)
+		targets = append(targets, pollTarget{in.ID, in.Config.Port, paths})
 	}
+	// Poll instances concurrently (bounded): one unresponsive agent can burn
+	// several seconds of status/explored timeouts, which would otherwise stall
+	// every other instance's updates and disconnect detection within the tick.
+	const maxConcurrentPolls = 8
+	sem := make(chan struct{}, maxConcurrentPolls)
+	var wg sync.WaitGroup
+	for _, tgt := range targets {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(tgt pollTarget) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			s.poll(ctx, tgt.id, tgt.port, tgt.paths)
+		}(tgt)
+	}
+	wg.Wait()
+
 	s.mu.Lock()
 	for id := range s.states {
 		if !seen[id] {
