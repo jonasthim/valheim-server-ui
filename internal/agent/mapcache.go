@@ -623,12 +623,7 @@ func (s *Service) basePNG(ctx context.Context, id string) (path string, info *do
 						if err := os.MkdirAll(dir, 0o750); err != nil {
 							return "", mi, fmt.Errorf("agent: map cache dir: %w", err)
 						}
-						tmp := cached + ".tmp"
-						if err := os.WriteFile(tmp, png, 0o640); err != nil { //nolint:gosec // cache file
-							return "", mi, fmt.Errorf("agent: write map: %w", err)
-						}
-						if err := os.Rename(tmp, cached); err != nil {
-							_ = os.Remove(tmp)
+						if err := installFile(cached, png); err != nil {
 							return "", mi, fmt.Errorf("agent: install map: %w", err)
 						}
 						if mi.Layers {
@@ -800,12 +795,7 @@ func (s *Service) ExploredPNG(ctx context.Context, id string) (path string, info
 					if err := os.MkdirAll(dir, 0o750); err != nil {
 						return "", ei, fmt.Errorf("agent: map cache dir: %w", err)
 					}
-					tmp := cached + ".tmp"
-					if err := os.WriteFile(tmp, png, 0o640); err != nil { //nolint:gosec // cache file
-						return "", ei, fmt.Errorf("agent: write mask: %w", err)
-					}
-					if err := os.Rename(tmp, cached); err != nil {
-						_ = os.Remove(tmp)
+					if err := installFile(cached, png); err != nil {
 						return "", ei, fmt.Errorf("agent: install mask: %w", err)
 					}
 					s.mu.Lock()
@@ -832,4 +822,38 @@ func (s *Service) ExploredPNG(ctx context.Context, id string) (path string, info
 		return newest, nil, nil
 	}
 	return "", nil, domain.E(domain.CodeConflict, "no exploration data yet")
+}
+
+// installFile writes data next to path under a unique temporary name and
+// renames it into place, so two callers fetching the same file at once (the
+// tick's fog rebuild and a request, say) never share a temp file. When the
+// rename loses to another writer that already installed the file, the
+// result is the same file, so that counts as success.
+func installFile(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("cache dir: %w", err)
+	}
+	f, err := os.CreateTemp(dir, filepath.Base(path)+".*.tmp")
+	if err != nil {
+		return fmt.Errorf("temp file: %w", err)
+	}
+	tmp := f.Name()
+	if _, err := f.Write(data); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("close: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		}
+		return fmt.Errorf("rename: %w", err)
+	}
+	return nil
 }
