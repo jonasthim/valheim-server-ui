@@ -167,26 +167,29 @@ export function OverviewTab({ id }: { id: string }) {
           icon={<IconUsers size={16} />}
           accent={status.players_online > 0 ? 'var(--vh-moss)' : undefined}
         />
-        <StatTile
-          label="Join code"
-          value={status.join_code ? <Text ff="monospace" fw={650} size="lg">{status.join_code}</Text> : '—'}
-          hint="share with friends"
-          icon={
-            status.join_code ? (
-              <CopyButton value={status.join_code}>
-                {({ copied, copy }) => (
-                  <Tooltip label={copied ? 'Copied' : 'Copy'}>
-                    <ActionIcon size="sm" variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label="Copy join code">
-                      {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-                    </ActionIcon>
-                  </Tooltip>
-                )}
-              </CopyButton>
-            ) : (
-              <IconKey size={16} />
-            )
-          }
-        />
+        {/* Join code is issued only by Valheim's crossplay networking. */}
+        {instance.config.crossplay && (
+          <StatTile
+            label="Join code"
+            value={status.join_code ? <Text ff="monospace" fw={650} size="lg">{status.join_code}</Text> : '—'}
+            hint="share with friends"
+            icon={
+              status.join_code ? (
+                <CopyButton value={status.join_code}>
+                  {({ copied, copy }) => (
+                    <Tooltip label={copied ? 'Copied' : 'Copy'}>
+                      <ActionIcon size="sm" variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label="Copy join code">
+                        {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </CopyButton>
+              ) : (
+                <IconKey size={16} />
+              )
+            }
+          />
+        )}
         <StatTile
           label="CPU"
           value={fmtPercent(status.cpu_percent)}
@@ -394,15 +397,17 @@ export function OverviewTab({ id }: { id: string }) {
             <Text size="xs" c="dimmed">
               The query port (server browser / A2S) is port+1 ({instance.config.port + 1}).
             </Text>
-            <Group gap="xs" align="center">
-              <IconPlugConnected size={16} style={{ opacity: 0.7 }} />
-              <Text size="sm" c="dimmed">
-                Join code
-              </Text>
-              <Text size="sm" ff="monospace" fw={600}>
-                {status.join_code ?? '—'}
-              </Text>
-            </Group>
+            {instance.config.crossplay && (
+              <Group gap="xs" align="center">
+                <IconPlugConnected size={16} style={{ opacity: 0.7 }} />
+                <Text size="sm" c="dimmed">
+                  Join code
+                </Text>
+                <Text size="sm" ff="monospace" fw={600}>
+                  {status.join_code ?? '—'}
+                </Text>
+              </Group>
+            )}
           </Stack>
         </SectionCard>
       </SimpleGrid>
