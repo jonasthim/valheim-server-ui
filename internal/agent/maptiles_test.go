@@ -67,17 +67,17 @@ func TestTiles_RenderCacheAndFog(t *testing.T) {
 		t.Fatalf("island centre should be green: %d %d %d", r>>8, g>>8, b>>8)
 	}
 	tilePath := filepath.Join(TileDir(paths), "42-64-v1-builtin", "0", "0", "0.png")
-	st1, err := os.Stat(tilePath)
-	if err != nil {
+	if _, err := os.Stat(tilePath); err != nil {
 		t.Fatal("tile must be cached on disk")
 	}
 	again, _, _, err := s.TilePNG(ctx, "main", 0, 0, 0, false)
 	if err != nil || !bytes.Equal(again, data) {
 		t.Fatal("cached tile must serve the same bytes")
 	}
-	if st2, _ := os.Stat(tilePath); !st1.ModTime().Equal(st2.ModTime()) {
-		t.Fatal("cached tile must not be rewritten")
-	}
+	// The no-rewrite assertion is deferred to after pre-warm finishes (below):
+	// while pre-warm is still running it renders the low-zoom tiles — 0/0/0
+	// included — in the background, and such a write landing between two stats
+	// here is what used to make this flaky.
 
 	// Fogged: the mask explores only the top-left cell, so the bottom-right
 	// quarter tile at z=1 is parchment while the top-left one shows terrain
@@ -128,6 +128,24 @@ func TestTiles_RenderCacheAndFog(t *testing.T) {
 			t.Fatal("pre-warm did not render level 1")
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+
+	// Now that pre-warm has finished, nothing renders 0/0/0 in the background,
+	// so a cache hit must serve the tile without rewriting it on disk (the
+	// cache cap is 1 GB, so these few tiles never prune).
+	before, err := os.Stat(tilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.TilePNG(ctx, "main", 0, 0, 0, false); err != nil {
+		t.Fatalf("cached tile: %v", err)
+	}
+	after, err := os.Stat(tilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("a cache hit must not rewrite the tile")
 	}
 }
 
