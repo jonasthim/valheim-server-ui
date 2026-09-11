@@ -1,8 +1,12 @@
 .viewport {
   position: relative;
-  width: 100%;
+  /* Cap the width to the height budget so the box stays a true square: the
+     map coordinate space is square (sized from clientWidth), so a non-square
+     box (which max-height would produce) left a parchment band below a hard
+     horizontal seam when panned/zoomed. */
+  width: min(100%, 78vh);
   aspect-ratio: 1 / 1;
-  max-height: 78vh;
+  margin-inline: auto;
   overflow: hidden;
   /* parchment, so the unexplored edge continues while tiles load */
   background: #b9ad8c;
