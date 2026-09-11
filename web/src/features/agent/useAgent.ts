@@ -4,7 +4,7 @@
 // key (see events/useEvents.ts).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { AgentCommandRequest, AgentCommandResult, AgentInfo, Job } from '../../api/types'
+import type { AgentCatalog, AgentChat, AgentCommandRequest, AgentCommandResult, AgentInfo, Job } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
 
 export function agentKey(id: string) {
@@ -21,12 +21,18 @@ export function useAgent(id: string) {
   })
 }
 
-const COMMAND_LABELS: Record<AgentCommandRequest['command'], string> = {
+const COMMAND_LABELS: Record<NonNullable<AgentCommandRequest['command']>, string> = {
   save: 'World save requested',
   kick: 'Player kicked',
   ban: 'Player banned',
   unban: 'Player unbanned',
   broadcast: 'Message sent to all players',
+  time: 'World time changed',
+  say: 'Message sent to chat',
+  setkey: 'Global key set',
+  removekey: 'Global key removed',
+  event: 'Event started',
+  eventstop: 'Event stopped',
 }
 
 /** POST /instances/{id}/agent/commands. */
@@ -43,6 +49,27 @@ export function useAgentCommand(id: string) {
       }
     },
     onError: (err) => notifyError(err, 'Command failed'),
+  })
+}
+
+/** GET /instances/{id}/agent/catalog: the key and event pickers. Cached; the
+ * catalog changes rarely, so refetch only on demand. */
+export function useAgentCatalog(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['instances', id, 'agent', 'catalog'],
+    queryFn: () => api.get<AgentCatalog>(`/instances/${id}/agent/catalog`),
+    enabled: !!id && enabled,
+    staleTime: 60_000,
+  })
+}
+
+/** GET /instances/{id}/agent/chat, polled while the panel is open. */
+export function useAgentChat(id: string, enabled: boolean) {
+  return useQuery({
+    queryKey: ['instances', id, 'agent', 'chat'],
+    queryFn: () => api.get<AgentChat>(`/instances/${id}/agent/chat?limit=100`),
+    enabled: !!id && enabled,
+    refetchInterval: enabled ? 5_000 : false,
   })
 }
 

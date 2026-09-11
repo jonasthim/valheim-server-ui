@@ -109,9 +109,37 @@ func fakeAgent(t *testing.T, token string, status string) *httptest.Server {
 			_, _ = w.Write([]byte(`{"ok":true,"message":"kicked ` + r.URL.Query().Get("target") + `"}`))
 		case "broadcast":
 			_, _ = w.Write([]byte(`{"ok":true,"message":"broadcast ` + strings.TrimSpace(string(body)) + `"}`))
+		case "time":
+			// Echo the mapped query so the client's field mapping is asserted.
+			q := r.URL.Query()
+			_, _ = w.Write([]byte(`{"ok":true,"message":"time","data":{"skip":"` + q.Get("skip") +
+				`","fraction":"` + q.Get("fraction") + `","seconds":"` + q.Get("seconds") + `"}}`))
+		case "say":
+			_, _ = w.Write([]byte(`{"ok":true,"message":"said as ` + r.URL.Query().Get("name") +
+				`: ` + strings.TrimSpace(string(body)) + `"}`))
+		case "setkey", "removekey":
+			_, _ = w.Write([]byte(`{"ok":true,"message":"` + name + ` ` + r.URL.Query().Get("key") + `"}`))
+		case "event":
+			q := r.URL.Query()
+			_, _ = w.Write([]byte(`{"ok":true,"message":"event ` + q.Get("name") +
+				` at ` + q.Get("x") + `,` + q.Get("z") + `"}`))
+		case "eventstop":
+			_, _ = w.Write([]byte(`{"ok":true,"message":"event stopped"}`))
 		default:
 			w.WriteHeader(404)
 		}
+	})
+	mux.HandleFunc("/v1/catalog", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(w, r) {
+			return
+		}
+		_, _ = w.Write([]byte(`{"global_keys":["defeated_eikthyr"],"events":[{"name":"army_eikthyr","duration_seconds":90}],"server_name":"Midgard"}`))
+	})
+	mux.HandleFunc("/v1/chat", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(w, r) {
+			return
+		}
+		_, _ = w.Write([]byte(`{"next":5,"messages":[{"seq":5,"at":"2026-09-10T12:00:00Z","type":"shout","sender":"Bjorn","text":"hi"}]}`))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -150,6 +178,49 @@ func TestClient_StatusAndCommands(t *testing.T) {
 	bad := NewClientForURL(srv.URL, "wrong", nil)
 	if _, err := bad.Status(context.Background()); err == nil {
 		t.Fatal("expected an error with the wrong token")
+	}
+}
+
+func f64(v float64) *float64 { return &v }
+
+func TestClient_NewVerbsCatalogChat(t *testing.T) {
+	srv := fakeAgent(t, "secret", sampleStatus)
+	c := NewClientForURL(srv.URL, "secret", nil)
+	ctx := context.Background()
+
+	// time: fraction maps to the query and Data carries it back.
+	res, err := c.Command(ctx, domain.AgentCommandRequest{Command: "time", Fraction: f64(0.25)})
+	if err != nil || !res.OK || !strings.Contains(string(res.Data), `"fraction":"0.25"`) {
+		t.Fatalf("time fraction: %+v %v", res, err)
+	}
+	// time: skip=morning maps through.
+	res, err = c.Command(ctx, domain.AgentCommandRequest{Command: "time", Skip: "morning"})
+	if err != nil || !strings.Contains(string(res.Data), `"skip":"morning"`) {
+		t.Fatalf("time skip: %+v %v", res, err)
+	}
+	// say: name -> query, message -> body.
+	res, err = c.Command(ctx, domain.AgentCommandRequest{Command: "say", Name: "Odin", Message: "hello"})
+	if err != nil || res.Message != "said as Odin: hello" {
+		t.Fatalf("say: %+v %v", res, err)
+	}
+	// setkey: key -> query.
+	res, err = c.Command(ctx, domain.AgentCommandRequest{Command: "setkey", Key: "defeated_gdking"})
+	if err != nil || res.Message != "setkey defeated_gdking" {
+		t.Fatalf("setkey: %+v %v", res, err)
+	}
+	// event: name + x/z -> query (name from the Event field).
+	res, err = c.Command(ctx, domain.AgentCommandRequest{Command: "event", Event: "army_eikthyr", X: f64(10), Z: f64(-5)})
+	if err != nil || res.Message != "event army_eikthyr at 10,-5" {
+		t.Fatalf("event: %+v %v", res, err)
+	}
+
+	cat, err := c.Catalog(ctx)
+	if err != nil || cat.ServerName != "Midgard" || len(cat.Events) != 1 || cat.Events[0].Name != "army_eikthyr" {
+		t.Fatalf("catalog: %+v %v", cat, err)
+	}
+	ch, err := c.Chat(ctx, 0, 50)
+	if err != nil || ch.Next != 5 || len(ch.Messages) != 1 || ch.Messages[0].Sender != "Bjorn" {
+		t.Fatalf("chat: %+v %v", ch, err)
 	}
 }
 

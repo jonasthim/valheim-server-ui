@@ -2,11 +2,13 @@
 // keys straight from the running server through the agent, with the save
 // and broadcast actions.
 import { Badge, Button, Group, SimpleGrid, Stack, Text, Tooltip } from '@mantine/core'
-import { IconDeviceFloppy, IconMoon, IconSun } from '@tabler/icons-react'
+import { IconDeviceFloppy, IconMoon, IconSun, IconSwords } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatTile, StatusPill } from '../../ui'
 import { BroadcastButton } from './BroadcastButton'
+import { ChatButton } from './ChatButton'
+import { WorldControls } from './WorldControls'
 import { fmtWorldTime, useAgent, useAgentCommand } from './useAgent'
 
 const MAX_KEYS = 12
@@ -26,6 +28,8 @@ export function WorldCard({ id }: { id: string }) {
   // array reads so a world with no global keys (or no players) still renders.
   const globalKeys = st?.global_keys ?? []
   const players = st?.players ?? []
+  const modifiers = Object.entries(st?.modifiers ?? {})
+  const event = st?.world?.event
 
   return (
     <SectionCard
@@ -51,8 +55,10 @@ export function WorldCard({ id }: { id: string }) {
                 </Button>
               </Tooltip>
               <BroadcastButton id={id} disabled={!info.connected} />
+              <WorldControls id={id} status={st} disabled={!info.connected} />
             </>
           )}
+          <ChatButton id={id} disabled={!info.connected} canSay={canOperate} />
         </Group>
       }
     >
@@ -87,6 +93,31 @@ export function WorldCard({ id }: { id: string }) {
               accent={players.length > 0 ? 'var(--vh-moss)' : undefined}
             />
           </SimpleGrid>
+          {event && (
+            <Group gap="xs" align="center">
+              <IconSwords size={16} color="var(--vh-rust, #b4551d)" />
+              <Text size="sm" fw={600}>
+                Event: {event.name}
+              </Text>
+              <Text size="sm" c="dimmed">
+                {Math.max(0, Math.round(event.remaining_seconds / 60))} min remaining
+              </Text>
+            </Group>
+          )}
+          {modifiers.length > 0 && (
+            <div>
+              <Text size="xs" c="dimmed" mb={4}>
+                World modifiers
+              </Text>
+              <Group gap={6}>
+                {modifiers.map(([k, v]) => (
+                  <Badge key={k} variant="outline" color="gray" size="sm">
+                    {k}: {v}
+                  </Badge>
+                ))}
+              </Group>
+            </div>
+          )}
           <div>
             <Text size="xs" c="dimmed" mb={4}>
               World keys ({globalKeys.length})

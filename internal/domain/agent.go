@@ -33,7 +33,7 @@ const JobAgentInstall JobType = "agent_install"
 const ModSourceBundled ModSource = "bundled"
 
 // AgentCommands are the verbs the plugin accepts.
-var AgentCommands = []string{"save", "kick", "ban", "unban", "broadcast"}
+var AgentCommands = []string{"save", "kick", "ban", "unban", "broadcast", "time", "say", "setkey", "removekey", "event", "eventstop"}
 
 type Vec3 struct {
 	X float64 `json:"x"`
@@ -62,18 +62,31 @@ type AgentWorld struct {
 	IsNight     bool    `json:"is_night"`
 	Weather     string  `json:"weather,omitempty"`
 	TimeSeconds float64 `json:"time_seconds"`
+	WorldUID    int64   `json:"world_uid,omitempty"`
+	// Event is the active random event (raid), or nil when none is running.
+	Event *AgentWorldEvent `json:"event,omitempty"`
+}
+
+// AgentWorldEvent is the running random event (world.event / an event command's data).
+type AgentWorldEvent struct {
+	Name             string  `json:"name"`
+	RemainingSeconds float64 `json:"remaining_seconds"`
+	Position         Vec3    `json:"position"`
 }
 
 // AgentStatus is GET /v1/status as reported by the plugin.
 type AgentStatus struct {
-	AgentVersion  string        `json:"agent_version"`
-	GameVersion   string        `json:"game_version,omitempty"`
-	UptimeSeconds float64       `json:"uptime_seconds"`
-	Ready         bool          `json:"ready"`
-	CapturedAt    time.Time     `json:"captured_at"`
-	World         AgentWorld    `json:"world"`
-	GlobalKeys    []string      `json:"global_keys"`
-	Players       []AgentPlayer `json:"players"`
+	AgentVersion  string     `json:"agent_version"`
+	GameVersion   string     `json:"game_version,omitempty"`
+	UptimeSeconds float64    `json:"uptime_seconds"`
+	Ready         bool       `json:"ready"`
+	CapturedAt    time.Time  `json:"captured_at"`
+	World         AgentWorld `json:"world"`
+	GlobalKeys    []string   `json:"global_keys"`
+	// Modifiers are the world's difficulty modifiers (e.g. preset, playerdamage),
+	// kept separate from GlobalKeys which now carries plain progression keys only.
+	Modifiers map[string]string `json:"modifiers,omitempty"`
+	Players   []AgentPlayer     `json:"players"`
 	// Pings are the map pings of the last few seconds (agents 1.10+).
 	Pings []AgentPing `json:"pings"`
 }
@@ -110,14 +123,56 @@ type AgentEvent struct {
 
 type AgentCommandRequest struct {
 	Command string `json:"command"`
-	Target  string `json:"target,omitempty"`
-	Message string `json:"message,omitempty"`
-	Style   string `json:"style,omitempty"` // broadcast: center|topleft
+	Target  string `json:"target,omitempty"`  // kick/ban/unban: player name or platform id
+	Message string `json:"message,omitempty"` // broadcast/say: the text
+	Style   string `json:"style,omitempty"`   // broadcast: center|topleft
+	// time (exactly one of):
+	Skip     string   `json:"skip,omitempty"`     // "morning" (the game's own skip)
+	Fraction *float64 `json:"fraction,omitempty"` // time of day 0..1
+	Seconds  *float64 `json:"seconds,omitempty"`  // absolute seconds into the day 1..86400
+	// say: the sender name shown in chat (default the server name)
+	Name string `json:"name,omitempty"`
+	// setkey/removekey: the global key
+	Key string `json:"key,omitempty"`
+	// event: the event name (from the catalog) and an optional anchor
+	Event string   `json:"event,omitempty"`
+	X     *float64 `json:"x,omitempty"`
+	Z     *float64 `json:"z,omitempty"`
 }
 
 type AgentCommandResult struct {
-	OK      bool   `json:"ok"`
-	Message string `json:"message"`
+	OK      bool            `json:"ok"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data,omitempty"`
+}
+
+// AgentCatalog is GET /v1/catalog: the pickers for the key and event commands.
+type AgentCatalog struct {
+	GlobalKeys []string        `json:"global_keys"`
+	Events     []AgentEventDef `json:"events"`
+	ServerName string          `json:"server_name,omitempty"`
+}
+
+// AgentEventDef is one random event the world can run.
+type AgentEventDef struct {
+	Name            string  `json:"name"`
+	DurationSeconds float64 `json:"duration_seconds"`
+}
+
+// AgentChat is GET /v1/chat: recent shouts and normal chat (never whispers).
+type AgentChat struct {
+	Messages []AgentChatMessage `json:"messages"`
+	Next     int64              `json:"next"`
+}
+
+// AgentChatMessage is one line in the chat feed.
+type AgentChatMessage struct {
+	Seq      int64     `json:"seq"`
+	At       time.Time `json:"at"`
+	Type     string    `json:"type"` // shout|normal
+	Sender   string    `json:"sender"`
+	Text     string    `json:"text"`
+	Position *Vec3     `json:"position,omitempty"`
 }
 
 // MapInfo is the plugin's render state for the world map (GET /v1/map/info).

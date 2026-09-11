@@ -382,6 +382,20 @@ func (s *Service) Command(ctx context.Context, id string, req domain.AgentComman
 	if !known {
 		return nil, domain.Ef(domain.CodeValidationFailed, "unknown agent command %q", req.Command)
 	}
+	c, err := s.liveClient(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.Command(ctx, req)
+	if err != nil {
+		return nil, domain.Wrap(domain.CodeUpstreamError, "agent command", err)
+	}
+	return res, nil
+}
+
+// liveClient resolves the loopback client for a running, agent-installed
+// instance, or a conflict error explaining why it is unavailable.
+func (s *Service) liveClient(ctx context.Context, id string) (*Client, error) {
 	in, err := s.inst.Get(ctx, id)
 	if err != nil {
 		return nil, err
@@ -394,13 +408,31 @@ func (s *Service) Command(ctx context.Context, id string, req domain.AgentComman
 	if !running {
 		return nil, domain.E(domain.CodeConflict, "the instance is not running")
 	}
-	c, err := s.client(paths, in.Config.Port)
+	return s.client(paths, in.Config.Port)
+}
+
+// Catalog returns the command pickers (global keys and events) for id's agent.
+func (s *Service) Catalog(ctx context.Context, id string) (*domain.AgentCatalog, error) {
+	c, err := s.liveClient(ctx, id)
 	if err != nil {
 		return nil, err
 	}
-	res, err := c.Command(ctx, req)
+	cat, err := c.Catalog(ctx)
 	if err != nil {
-		return nil, domain.Wrap(domain.CodeUpstreamError, "agent command", err)
+		return nil, domain.Wrap(domain.CodeUpstreamError, "agent catalog", err)
 	}
-	return res, nil
+	return cat, nil
+}
+
+// Chat returns recent chat from id's agent after seq, up to limit lines.
+func (s *Service) Chat(ctx context.Context, id string, since int64, limit int) (*domain.AgentChat, error) {
+	c, err := s.liveClient(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	ch, err := c.Chat(ctx, since, limit)
+	if err != nil {
+		return nil, domain.Wrap(domain.CodeUpstreamError, "agent chat", err)
+	}
+	return ch, nil
 }

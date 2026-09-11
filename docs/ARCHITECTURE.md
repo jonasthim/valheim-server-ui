@@ -728,7 +728,12 @@ spawn is explored, matching the runestone there.
   Positions of players who hide on the map are stripped from the bus and from
   viewer responses; operators get them from `GET /instances/{id}/agent`.
 - Commands are forwarded by `POST /instances/{id}/agent/commands` (operator,
-  audited as `agent.command` with the target and message).
+  audited as `agent.command` with the target, message, key or event). The
+  manager validates each verb's arguments before the call, so a bad request is
+  a `422` rather than an `OK=false` round-trip. `GET /instances/{id}/agent/catalog`
+  (viewer) proxies the plugin's key and event pickers, and
+  `GET /instances/{id}/agent/chat?since=&limit=` (viewer) proxies recent chat.
+  All three require the agent installed and the instance running (`409`).
 
 **Distribution.** CI builds the plugin against the real game assemblies
 (anonymous SteamCMD download of the dedicated server, cached weekly) and

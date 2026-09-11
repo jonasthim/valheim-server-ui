@@ -1968,7 +1968,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Run an admin command through the agent (save, kick, ban, unban, broadcast) */
+        /** Run an admin command through the agent (save, kick, ban, unban, broadcast, time, say, setkey, removekey, event, eventstop) */
         post: {
             parameters: {
                 query?: never;
@@ -1996,6 +1996,93 @@ export interface paths {
                 409: components["responses"]["Error"];
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/agent/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /** The pickers the key and event commands choose from (global keys, events, server name) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentCatalog"];
+                    };
+                };
+                /** @description Agent not installed or instance not running */
+                409: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/agent/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /** Recent in-game chat (shouts and normal messages; never whispers) */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Return only messages after this sequence number */
+                    since?: number;
+                    /** @description Maximum messages to return */
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AgentChat"];
+                    };
+                };
+                /** @description Agent not installed or instance not running */
+                409: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3592,6 +3679,18 @@ export interface components {
             weather?: string;
             /** @description World time in seconds */
             time_seconds: number;
+            /**
+             * Format: int64
+             * @description The world's unique id (stable across sessions)
+             */
+            world_uid?: number;
+            event?: components["schemas"]["AgentWorldEvent"];
+        };
+        /** @description The random event (raid) currently running, or absent when none is. */
+        AgentWorldEvent: {
+            name: string;
+            remaining_seconds: number;
+            position: components["schemas"]["Vec3"];
         };
         AgentStatus: {
             agent_version: string;
@@ -3602,7 +3701,12 @@ export interface components {
             /** Format: date-time */
             captured_at: string;
             world: components["schemas"]["AgentWorld"];
+            /** @description Progression keys (boss defeats etc.); world modifiers are split out into modifiers (1.11+) */
             global_keys: string[];
+            /** @description World difficulty modifiers (preset */
+            modifiers?: {
+                [key: string]: string;
+            };
             players: components["schemas"]["AgentPlayer"][];
             /** @description Map pings of the last few seconds (empty from agents before 1.10) */
             pings: components["schemas"]["AgentPing"][];
@@ -3633,16 +3737,35 @@ export interface components {
         };
         AgentCommandRequest: {
             /** @enum {string} */
-            command: "save" | "kick" | "ban" | "unban" | "broadcast";
+            command: "save" | "kick" | "ban" | "unban" | "broadcast" | "time" | "say" | "setkey" | "removekey" | "event" | "eventstop";
             /** @description Player name or platform id (kick */
             target?: string;
-            /** @description Text shown to every player (broadcast) */
+            /** @description Text shown to every player (broadcast */
             message?: string;
             /**
              * @description Where the broadcast appears on screen
              * @enum {string}
              */
             style?: "center" | "topleft";
+            /**
+             * @description time: skip to the next morning (the game's own sleep skip)
+             * @enum {string}
+             */
+            skip?: "morning";
+            /** @description time: set the time of day (0 midnight, 0.5 noon) */
+            fraction?: number;
+            /** @description time: advance the clock by this many seconds */
+            seconds?: number;
+            /** @description say: the sender name shown in chat (default the server name) */
+            name?: string;
+            /** @description setkey/removekey: the global (progression) key, [A-Za-z0-9_]{1,64} */
+            key?: string;
+            /** @description event: the event name from the catalog */
+            event?: string;
+            /** @description event: world x of the event anchor (set both x and z, or neither) */
+            x?: number;
+            /** @description event: world z of the event anchor */
+            z?: number;
         };
         MapInfo: {
             /** @enum {string} */
@@ -3764,6 +3887,39 @@ export interface components {
         AgentCommandResult: {
             ok: boolean;
             message: string;
+            /** @description Command-specific result (time: the new world clock; setkey/removekey/eventstop: the updated keys/event). Shape depends on the command. */
+            data?: unknown;
+        };
+        /** @description The pickers the key and event commands choose from. */
+        AgentCatalog: {
+            /** @description Known progression keys the world recognises */
+            global_keys: string[];
+            events: components["schemas"]["AgentEventDef"][];
+            /** @description The configured server name (the default say sender) */
+            server_name?: string;
+        };
+        AgentEventDef: {
+            name: string;
+            duration_seconds: number;
+        };
+        AgentChat: {
+            messages: components["schemas"]["AgentChatMessage"][];
+            /**
+             * Format: int64
+             * @description Pass as ?since to fetch only newer messages
+             */
+            next: number;
+        };
+        AgentChatMessage: {
+            /** Format: int64 */
+            seq: number;
+            /** Format: date-time */
+            at: string;
+            /** @enum {string} */
+            type: "shout" | "normal";
+            sender: string;
+            text: string;
+            position?: components["schemas"]["Vec3"];
         };
         /** @enum {string} */
         JobType: "install" | "update" | "backup" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "agent_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade";

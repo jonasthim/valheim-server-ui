@@ -165,6 +165,10 @@ type AgentService interface {
 	// includeHidden keeps positions of players hiding on the map.
 	Info(ctx context.Context, instanceID string, includeHidden bool) (*domain.AgentInfo, error)
 	Command(ctx context.Context, instanceID string, req domain.AgentCommandRequest) (*domain.AgentCommandResult, error)
+	// Catalog returns the pickers for the key and event commands.
+	Catalog(ctx context.Context, instanceID string) (*domain.AgentCatalog, error)
+	// Chat returns recent chat after seq, up to limit lines.
+	Chat(ctx context.Context, instanceID string, since int64, limit int) (*domain.AgentChat, error)
 	// Map returns the Map tab data; MapPNG a local path to the image (or
 	// ErrMapRendering-style progress via info); RenderMap forces a render.
 	Map(ctx context.Context, instanceID string, includeHidden bool) (*domain.InstanceMap, error)

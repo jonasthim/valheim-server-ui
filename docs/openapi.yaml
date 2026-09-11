@@ -785,7 +785,7 @@ paths:
     parameters: [{ $ref: '#/components/parameters/instanceId' }]
     post:
       tags: [agent]
-      summary: Run an admin command through the agent (save, kick, ban, unban, broadcast)
+      summary: Run an admin command through the agent (save, kick, ban, unban, broadcast, time, say, setkey, removekey, event, eventstop)
       x-role: operator
       requestBody:
         required: true
@@ -797,6 +797,33 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/AgentCommandResult' }
+        '409': { description: 'Agent not installed or instance not running', $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/agent/catalog:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [agent]
+      summary: The pickers the key and event commands choose from (global keys, events, server name)
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentCatalog' }
+        '409': { description: 'Agent not installed or instance not running', $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/agent/chat:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [agent]
+      summary: Recent in-game chat (shouts and normal messages; never whispers)
+      x-role: viewer
+      parameters:
+        - { name: since, in: query, schema: { type: integer, format: int64 }, description: Return only messages after this sequence number }
+        - { name: limit, in: query, schema: { type: integer }, description: Maximum messages to return }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AgentChat' }
         '409': { description: 'Agent not installed or instance not running', $ref: '#/components/responses/Error' }
   /instances/{instanceId}/agent/install:
     parameters: [{ $ref: '#/components/parameters/instanceId' }]
@@ -1868,6 +1895,17 @@ components:
         is_night: { type: boolean }
         weather: { type: string, description: Environment name (Clear, Rain, Misty, ...) }
         time_seconds: { type: number, description: World time in seconds }
+        world_uid: { type: integer, format: int64, description: The world's unique id (stable across sessions) }
+        event: { $ref: '#/components/schemas/AgentWorldEvent' }
+
+    AgentWorldEvent:
+      type: object
+      description: The random event (raid) currently running, or absent when none is.
+      required: [name, remaining_seconds, position]
+      properties:
+        name: { type: string }
+        remaining_seconds: { type: number }
+        position: { $ref: '#/components/schemas/Vec3' }
 
     AgentStatus:
       type: object
@@ -1879,7 +1917,8 @@ components:
         ready: { type: boolean, description: The world is loaded and the server accepts players }
         captured_at: { type: string, format: date-time }
         world: { $ref: '#/components/schemas/AgentWorld' }
-        global_keys: { type: array, items: { type: string } }
+        global_keys: { type: array, items: { type: string }, description: Progression keys (boss defeats etc.); world modifiers are split out into modifiers (1.11+) }
+        modifiers: { type: object, additionalProperties: { type: string }, description: World difficulty modifiers (preset, combat, ...) as name to value (1.11+) }
         players: { type: array, items: { $ref: '#/components/schemas/AgentPlayer' } }
         pings: { type: array, items: { $ref: '#/components/schemas/AgentPing' }, description: Map pings of the last few seconds (empty from agents before 1.10) }
 
@@ -1911,10 +1950,18 @@ components:
       type: object
       required: [command]
       properties:
-        command: { type: string, enum: [save, kick, ban, unban, broadcast] }
+        command: { type: string, enum: [save, kick, ban, unban, broadcast, time, say, setkey, removekey, event, eventstop] }
         target: { type: string, description: Player name or platform id (kick, ban, unban) }
-        message: { type: string, maxLength: 200, description: Text shown to every player (broadcast) }
+        message: { type: string, maxLength: 200, description: Text shown to every player (broadcast, say) }
         style: { type: string, enum: [center, topleft], description: Where the broadcast appears on screen }
+        skip: { type: string, enum: [morning], description: 'time: skip to the next morning (the game''s own sleep skip)' }
+        fraction: { type: number, minimum: 0, maximum: 1, description: 'time: set the time of day (0 midnight, 0.5 noon)' }
+        seconds: { type: number, minimum: 1, maximum: 86400, description: 'time: advance the clock by this many seconds' }
+        name: { type: string, maxLength: 32, description: 'say: the sender name shown in chat (default the server name)' }
+        key: { type: string, description: 'setkey/removekey: the global (progression) key, [A-Za-z0-9_]{1,64}' }
+        event: { type: string, description: 'event: the event name from the catalog' }
+        x: { type: number, description: 'event: world x of the event anchor (set both x and z, or neither)' }
+        z: { type: number, description: 'event: world z of the event anchor' }
 
     MapInfo:
       type: object
@@ -2025,6 +2072,41 @@ components:
       properties:
         ok: { type: boolean }
         message: { type: string }
+        data: { description: 'Command-specific result (time: the new world clock; setkey/removekey/eventstop: the updated keys/event). Shape depends on the command.' }
+
+    AgentCatalog:
+      type: object
+      description: The pickers the key and event commands choose from.
+      required: [global_keys, events]
+      properties:
+        global_keys: { type: array, items: { type: string }, description: Known progression keys the world recognises }
+        events: { type: array, items: { $ref: '#/components/schemas/AgentEventDef' } }
+        server_name: { type: string, description: The configured server name (the default say sender) }
+
+    AgentEventDef:
+      type: object
+      required: [name, duration_seconds]
+      properties:
+        name: { type: string }
+        duration_seconds: { type: number }
+
+    AgentChat:
+      type: object
+      required: [messages, next]
+      properties:
+        messages: { type: array, items: { $ref: '#/components/schemas/AgentChatMessage' } }
+        next: { type: integer, format: int64, description: Pass as ?since to fetch only newer messages }
+
+    AgentChatMessage:
+      type: object
+      required: [seq, at, type, sender, text]
+      properties:
+        seq: { type: integer, format: int64 }
+        at: { type: string, format: date-time }
+        type: { type: string, enum: [shout, normal] }
+        sender: { type: string }
+        text: { type: string }
+        position: { $ref: '#/components/schemas/Vec3' }
 
     JobType:
       type: string

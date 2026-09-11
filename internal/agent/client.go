@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -104,6 +105,39 @@ func (c *Client) Command(ctx context.Context, req domain.AgentCommandRequest) (*
 	if req.Style != "" {
 		q.Set("style", req.Style)
 	}
+	// The 1.11 verbs carry their arguments as query parameters (the plugin
+	// reads them from PendingCommand.Args); only the free text of say/
+	// broadcast rides in the body.
+	switch req.Command {
+	case "time":
+		if req.Skip != "" {
+			q.Set("skip", req.Skip)
+		}
+		if req.Fraction != nil {
+			q.Set("fraction", strconv.FormatFloat(*req.Fraction, 'f', -1, 64))
+		}
+		if req.Seconds != nil {
+			q.Set("seconds", strconv.FormatFloat(*req.Seconds, 'f', -1, 64))
+		}
+	case "say":
+		if req.Name != "" {
+			q.Set("name", req.Name)
+		}
+	case "setkey", "removekey":
+		if req.Key != "" {
+			q.Set("key", req.Key)
+		}
+	case "event":
+		if req.Event != "" {
+			q.Set("name", req.Event)
+		}
+		if req.X != nil {
+			q.Set("x", strconv.FormatFloat(*req.X, 'f', -1, 64))
+		}
+		if req.Z != nil {
+			q.Set("z", strconv.FormatFloat(*req.Z, 'f', -1, 64))
+		}
+	}
 	var res domain.AgentCommandResult
 	err := c.do(ctx, http.MethodPost, "/v1/commands/"+url.PathEscape(req.Command), q, req.Message, &res)
 	var se *statusError
@@ -114,6 +148,38 @@ func (c *Client) Command(ctx context.Context, req domain.AgentCommandRequest) (*
 		return nil, err
 	}
 	return &res, nil
+}
+
+// Catalog fetches the pickers for the key and event commands.
+func (c *Client) Catalog(ctx context.Context) (*domain.AgentCatalog, error) {
+	var cat domain.AgentCatalog
+	if err := c.do(ctx, http.MethodGet, "/v1/catalog", nil, "", &cat); err != nil {
+		return nil, err
+	}
+	if cat.GlobalKeys == nil {
+		cat.GlobalKeys = []string{}
+	}
+	if cat.Events == nil {
+		cat.Events = []domain.AgentEventDef{}
+	}
+	return &cat, nil
+}
+
+// Chat fetches recent chat (shouts and normal messages) after seq, up to
+// limit lines. A zero since returns the newest window.
+func (c *Client) Chat(ctx context.Context, since int64, limit int) (*domain.AgentChat, error) {
+	q := url.Values{"since": {fmt.Sprint(since)}}
+	if limit > 0 {
+		q.Set("limit", fmt.Sprint(limit))
+	}
+	var ch domain.AgentChat
+	if err := c.do(ctx, http.MethodGet, "/v1/chat", q, "", &ch); err != nil {
+		return nil, err
+	}
+	if ch.Messages == nil {
+		ch.Messages = []domain.AgentChatMessage{}
+	}
+	return &ch, nil
 }
 
 type statusError struct {
