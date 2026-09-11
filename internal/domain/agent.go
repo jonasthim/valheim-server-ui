@@ -129,7 +129,7 @@ type AgentCommandRequest struct {
 	// time (exactly one of):
 	Skip     string   `json:"skip,omitempty"`     // "morning" (the game's own skip)
 	Fraction *float64 `json:"fraction,omitempty"` // time of day 0..1
-	Seconds  *float64 `json:"seconds,omitempty"`  // absolute seconds into the day 1..86400
+	Seconds  *float64 `json:"seconds,omitempty"`  // advance the clock by this many seconds (1..86400)
 	// say: the sender name shown in chat (default the server name)
 	Name string `json:"name,omitempty"`
 	// setkey/removekey: the global key

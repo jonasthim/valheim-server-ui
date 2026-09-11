@@ -254,7 +254,13 @@ func (d *Deps) restartInstance(w http.ResponseWriter, r *http.Request) {
 	// A delay runs the graceful restart as a job: warn connected players,
 	// wait, then restart (immediate when nobody is online). No delay keeps the
 	// instant restart.
-	if req.DelaySeconds > 0 && d.Schedules != nil {
+	if req.DelaySeconds > 0 {
+		if d.Schedules == nil {
+			// Fail loudly rather than silently disconnecting players with an
+			// immediate restart when a warned countdown was asked for.
+			WriteError(w, domain.E(domain.CodeInternal, "delayed restart is unavailable (scheduler not configured)"))
+			return
+		}
 		job, err := d.Schedules.EnqueueRestart(r.Context(), id, req.DelaySeconds, RequestedBy(r))
 		if err != nil {
 			WriteError(w, err)

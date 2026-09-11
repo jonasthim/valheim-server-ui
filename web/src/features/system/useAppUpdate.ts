@@ -82,6 +82,19 @@ export function useManagerRestartWatch(arg: string | undefined | { jobId?: strin
   const qc = useQueryClient()
   const [restarting, setRestarting] = useState(false)
   const started = useRef<string | undefined>(undefined)
+  // The live poll's own cancel flag. Held in a ref so a routine dependency
+  // change (e.g. the job query updating) does NOT tear the poll down — only a
+  // superseding trigger or unmount does. Cancelling on every deps change, with
+  // the single-run guard below, could kill the poll and never start another,
+  // leaving the overlay stuck and the page never reloaded onto the new bundle.
+  const poll = useRef<{ cancelled: boolean } | null>(null)
+
+  // Stop the poll only when the component unmounts.
+  useEffect(() => {
+    return () => {
+      if (poll.current) poll.current.cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     // Begin watching when our own self_upgrade job succeeds, or when the
@@ -95,13 +108,17 @@ export function useManagerRestartWatch(arg: string | undefined | { jobId?: strin
     if (started.current === trigger) return
     started.current = trigger
 
+    // A new trigger supersedes any poll still running for an earlier one.
+    if (poll.current) poll.current.cancelled = true
+    const self = { cancelled: false }
+    poll.current = self
+
     const preVersion = qc.getQueryData<SystemInfo>(['system'])?.version
-    let cancelled = false
     setRestarting(true)
 
     function finish(version?: string) {
-      if (cancelled) return
-      cancelled = true
+      if (self.cancelled) return
+      self.cancelled = true
       setRestarting(false)
       notifySuccess(version ? `Upgraded to ${version}` : 'Manager restarted', 'Upgrade complete')
       window.location.reload()
@@ -109,8 +126,8 @@ export function useManagerRestartWatch(arg: string | undefined | { jobId?: strin
 
     const deadline = Date.now() + 60_000
 
-    async function poll() {
-      while (!cancelled) {
+    async function run() {
+      while (!self.cancelled) {
         try {
           const info = await api.get<SystemInfo>('/system')
           if (!preVersion || info.version !== preVersion) {
@@ -128,11 +145,9 @@ export function useManagerRestartWatch(arg: string | undefined | { jobId?: strin
         await new Promise((resolve) => setTimeout(resolve, 2000))
       }
     }
-    void poll()
-
-    return () => {
-      cancelled = true
-    }
+    void run()
+    // No cleanup here: the poll is torn down only on unmount (effect above) or
+    // when a new trigger supersedes it, so a deps change mid-poll is harmless.
   }, [jobQuery.data, opts.active, qc])
 
   return { restarting }
