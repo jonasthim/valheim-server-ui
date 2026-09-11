@@ -37,6 +37,7 @@ import {
   useManagerRestartWatch,
   useSystemInfo,
   useUpgradeApp,
+  useUpgradeInFlight,
 } from '../system'
 import { DEFAULT_ROLE_OPTIONS } from './options'
 import { RoleMappingEditor } from './RoleMappingEditor'
@@ -85,7 +86,8 @@ export function SettingsPage() {
   const { openJob } = useJobDrawer()
   const [notesOpen, setNotesOpen] = useState(false)
   const [upgradeJobId, setUpgradeJobId] = useState<string | undefined>(undefined)
-  const { restarting } = useManagerRestartWatch(upgradeJobId)
+  const { inFlight: upgradeInFlight, target: upgradeTarget } = useUpgradeInFlight()
+  const { restarting } = useManagerRestartWatch({ jobId: upgradeJobId, active: upgradeInFlight })
   const canAdmin = hasRole('admin')
 
   function confirmUpgradeApp() {
@@ -387,11 +389,15 @@ export function SettingsPage() {
                       type="button"
                       variant="light"
                       leftSection={<IconRocket size={16} />}
-                      disabled={!systemQ.data?.app_update?.update_available || !systemQ.data?.app_update?.can_self_upgrade}
-                      loading={upgradeApp.isPending}
+                      disabled={
+                        !systemQ.data?.app_update?.update_available ||
+                        !systemQ.data?.app_update?.can_self_upgrade ||
+                        upgradeInFlight
+                      }
+                      loading={upgradeApp.isPending || upgradeInFlight}
                       onClick={confirmUpgradeApp}
                     >
-                      Upgrade now
+                      {upgradeInFlight ? `Upgrading${upgradeTarget ? ` to ${upgradeTarget}` : ''}…` : 'Upgrade now'}
                     </Button>
                   </Tooltip>
                 </Group>
@@ -410,7 +416,7 @@ export function SettingsPage() {
       {systemQ.data?.app_update && (
         <ReleaseNotesModal opened={notesOpen} onClose={() => setNotesOpen(false)} appUpdate={systemQ.data.app_update} />
       )}
-      <ManagerRestartOverlay visible={restarting} />
+      <ManagerRestartOverlay visible={restarting || upgradeInFlight} />
     </Stack>
   )
 }

@@ -3325,6 +3325,17 @@ export interface components {
             message?: string;
             /** @description Version kept for rollback */
             previous_version?: string;
+            upgrade?: components["schemas"]["AppUpgradeState"];
+        };
+        /** @description In-flight self-upgrade phase; the UI gates its Upgrade button on this so it survives a page refresh and disables for any active upgrade, not only one this tab started. */
+        AppUpgradeState: {
+            /**
+             * @description running: a self_upgrade job is queued/running; exit_pending: the new binary is in place and the manager is restarting
+             * @enum {string}
+             */
+            state: "idle" | "running" | "exit_pending";
+            /** @description The release being installed */
+            target?: string;
         };
         /** @enum {string} */
         InstanceState: "not_installed" | "stopped" | "starting" | "running" | "stopping" | "failed";

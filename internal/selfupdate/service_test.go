@@ -179,3 +179,35 @@ func TestService_EnqueueUpgrade_RefusesWhenCannotSelfUpgrade(t *testing.T) {
 		t.Fatalf("expected conflict, got %s", de.Code)
 	}
 }
+
+func TestService_ExitPendingLatchRefusesAndReports(t *testing.T) {
+	svc, runner, _, stop := serviceHarness(t, "v2.0.0", "v1.0.0", 0)
+	defer stop()
+
+	job, err := svc.EnqueueUpgrade(context.Background(), "", "alice")
+	if err != nil {
+		t.Fatalf("EnqueueUpgrade: %v", err)
+	}
+	if _, err := runner.WaitFor(context.Background(), job.ID); err != nil {
+		t.Fatalf("WaitFor: %v", err)
+	}
+
+	// The job succeeded and scheduled the exit, so the service is now in the
+	// exit-pending window. A second upgrade must be refused, not orphaned.
+	_, err = svc.EnqueueUpgrade(context.Background(), "", "bob")
+	if err == nil {
+		t.Fatal("expected the post-success EnqueueUpgrade to be refused")
+	}
+	if de := domain.AsError(err); de.Code != domain.CodeConflict {
+		t.Fatalf("expected conflict, got %s", de.Code)
+	}
+
+	// And Info reports the exit-pending state with the target for the UI.
+	info := svc.Info(context.Background())
+	if info.Upgrade == nil || info.Upgrade.State != domain.UpgradeExitPending {
+		t.Fatalf("expected exit_pending state, got %+v", info.Upgrade)
+	}
+	if info.Upgrade.Target != "v2.0.0" {
+		t.Fatalf("expected target v2.0.0, got %q", info.Upgrade.Target)
+	}
+}

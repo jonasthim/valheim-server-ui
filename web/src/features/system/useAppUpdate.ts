@@ -22,6 +22,19 @@ export function useSystemInfo() {
   })
 }
 
+/**
+ * Reads the manager's self-upgrade phase from the polled system info. The
+ * Upgrade button gates on `inFlight` so it stays disabled for the whole
+ * upgrade (surviving a page refresh) and for an upgrade any other tab or the
+ * auto-upgrader started — not only one this tab clicked.
+ */
+export function useUpgradeInFlight(): { inFlight: boolean; state: string; target?: string } {
+  const sys = useSystemInfo()
+  const up = sys.data?.app_update?.upgrade
+  const state = up?.state ?? 'idle'
+  return { inFlight: state === 'running' || state === 'exit_pending', state, target: up?.target }
+}
+
 /** POST /system/update-check → 200 AppUpdateInfo (synchronous, not a job). */
 export function useCheckAppUpdate() {
   const qc = useQueryClient()
@@ -61,17 +74,26 @@ export function useUpgradeApp() {
  * running before the upgrade (or 60s pass), then notifies and reloads the
  * page so the new frontend bundle loads. Pass `undefined` to stay idle.
  */
-export function useManagerRestartWatch(jobId: string | undefined): { restarting: boolean } {
-  const jobQuery = useJob(jobId)
+export function useManagerRestartWatch(arg: string | undefined | { jobId?: string; active?: boolean }): {
+  restarting: boolean
+} {
+  const opts: { jobId?: string; active?: boolean } = typeof arg === 'string' ? { jobId: arg } : (arg ?? {})
+  const jobQuery = useJob(opts.jobId)
   const qc = useQueryClient()
   const [restarting, setRestarting] = useState(false)
-  const watchedJobId = useRef<string | undefined>(undefined)
+  const started = useRef<string | undefined>(undefined)
 
   useEffect(() => {
+    // Begin watching when our own self_upgrade job succeeds, or when the
+    // backend reports an upgrade in flight (a refresh mid-upgrade, or one
+    // another tab / the auto-upgrader started). Either path converges on the
+    // same reconnect-and-verify loop below.
     const job = jobQuery.data?.job
-    if (!job || job.type !== 'self_upgrade' || job.status !== 'succeeded') return
-    if (watchedJobId.current === job.id) return
-    watchedJobId.current = job.id
+    const jobReady = job && job.type === 'self_upgrade' && job.status === 'succeeded'
+    const trigger = jobReady ? job.id : opts.active ? 'state' : undefined
+    if (!trigger) return
+    if (started.current === trigger) return
+    started.current = trigger
 
     const preVersion = qc.getQueryData<SystemInfo>(['system'])?.version
     let cancelled = false
@@ -111,7 +133,7 @@ export function useManagerRestartWatch(jobId: string | undefined): { restarting:
     return () => {
       cancelled = true
     }
-  }, [jobQuery.data, qc])
+  }, [jobQuery.data, opts.active, qc])
 
   return { restarting }
 }

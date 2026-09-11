@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
+	"sync"
 	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
@@ -30,6 +31,15 @@ type Service struct {
 	// from an admin running `systemctl restart valheim-ui` for monitoring
 	// purposes. Overridable so tests never actually exit the test process.
 	exit func(code int)
+
+	// mu guards the exit-pending latch below.
+	mu sync.Mutex
+	// exitPending is set once an upgrade has applied and the process is about
+	// to restart. It is never cleared: the process exits shortly after, and
+	// the new process starts with a fresh (unset) latch.
+	exitPending bool
+	// upgradeTarget is the release the in-flight/just-applied upgrade installs.
+	upgradeTarget string
 }
 
 // ServiceOption configures a Service at construction time.
@@ -64,9 +74,37 @@ func NewService(client *Client, checker *Checker, upgrader *Upgrader, runner *jo
 	return s
 }
 
-// Info returns the checker's last known update info (never nil).
+// Info returns the checker's last known update info (never nil), with the
+// current self-upgrade phase attached so the UI can gate its Upgrade button.
 func (s *Service) Info(_ context.Context) *domain.AppUpdateInfo {
-	return s.checker.Info()
+	info := s.checker.Info()
+	info.Upgrade = s.upgradeState()
+	return info
+}
+
+// upgradeState reports the current self-upgrade phase: exit_pending once an
+// upgrade has applied, running while a self_upgrade job is queued/running,
+// else idle.
+func (s *Service) upgradeState() *domain.AppUpgradeState {
+	s.mu.Lock()
+	exitPending, target := s.exitPending, s.upgradeTarget
+	s.mu.Unlock()
+	if exitPending {
+		return &domain.AppUpgradeState{State: domain.UpgradeExitPending, Target: target}
+	}
+	if active := s.runner.ActiveFor(""); active != nil && active.Type == domain.JobSelfUpgrade {
+		return &domain.AppUpgradeState{State: domain.UpgradeRunning, Target: target}
+	}
+	return &domain.AppUpgradeState{State: domain.UpgradeIdle}
+}
+
+// markExitPending latches the exit-pending state for target. Called once the
+// upgrade has applied, just before the process is scheduled to restart.
+func (s *Service) markExitPending(target string) {
+	s.mu.Lock()
+	s.exitPending = true
+	s.upgradeTarget = target
+	s.mu.Unlock()
 }
 
 // CheckNow forces an immediate release check.
@@ -79,6 +117,12 @@ func (s *Service) CheckNow(ctx context.Context) (*domain.AppUpdateInfo, error) {
 // manager. All refusals use domain.CodeConflict: docs/openapi.yaml only
 // documents 202/409 for POST /system/upgrade.
 func (s *Service) EnqueueUpgrade(ctx context.Context, version, requestedBy string) (*domain.Job, error) {
+	s.mu.Lock()
+	exitPending := s.exitPending
+	s.mu.Unlock()
+	if exitPending {
+		return nil, domain.E(domain.CodeConflict, "a self-upgrade has completed and the manager is restarting")
+	}
 	if active := s.runner.ActiveFor(""); active != nil && active.Type == domain.JobSelfUpgrade {
 		return nil, domain.E(domain.CodeConflict, "a self-upgrade job is already active")
 	}
@@ -108,6 +152,9 @@ func (s *Service) EnqueueUpgrade(ctx context.Context, version, requestedBy strin
 	fromVersion := info.CurrentVersion
 
 	target := *rel
+	s.mu.Lock()
+	s.upgradeTarget = target.Tag
+	s.mu.Unlock()
 	spec := jobs.Spec{
 		Type:        domain.JobSelfUpgrade,
 		InstanceID:  "",
@@ -121,6 +168,11 @@ func (s *Service) EnqueueUpgrade(ctx context.Context, version, requestedBy strin
 		logger.SetSummary("from", fromVersion)
 		logger.SetSummary("to", target.Tag)
 		logger.Printf("restarting manager in 2s; game servers keep running (they are separate systemd units)")
+
+		// Latch exit-pending so a second upgrade request in the brief window
+		// before the process restarts is refused (409) rather than enqueued
+		// and then orphaned by the exit.
+		s.markExitPending(target.Tag)
 
 		// The runner marks this job succeeded and publishes job.updated
 		// right after Func returns below; exiting has to happen strictly

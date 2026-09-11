@@ -1501,6 +1501,15 @@ components:
         reason: { type: string, description: Why self-upgrade is unavailable, when it is }
         message: { type: string, description: 'Human summary of the last check, e.g. "no releases published yet" or "running an untagged build"' }
         previous_version: { type: string, description: Version kept for rollback, if any }
+        upgrade: { $ref: '#/components/schemas/AppUpgradeState' }
+
+    AppUpgradeState:
+      type: object
+      description: In-flight self-upgrade phase; the UI gates its Upgrade button on this so it survives a page refresh and disables for any active upgrade, not only one this tab started.
+      required: [state]
+      properties:
+        state: { type: string, enum: [idle, running, exit_pending], description: 'running: a self_upgrade job is queued/running; exit_pending: the new binary is in place and the manager is restarting' }
+        target: { type: string, description: The release being installed, e.g. v1.12.0 }
 
     InstanceState:
       type: string

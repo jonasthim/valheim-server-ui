@@ -11,7 +11,7 @@ import { fmtAgo } from '../../lib/format'
 import { useJobDrawer } from '../jobs'
 import { ManagerRestartOverlay } from './ManagerRestartOverlay'
 import { ReleaseNotesModal } from './ReleaseNotesModal'
-import { UPGRADE_EXPLANATION, useManagerRestartWatch, useUpgradeApp } from './useAppUpdate'
+import { UPGRADE_EXPLANATION, useManagerRestartWatch, useUpgradeApp, useUpgradeInFlight } from './useAppUpdate'
 
 export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | undefined }) {
   const { hasRole } = useAuth()
@@ -19,7 +19,8 @@ export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | unde
   const upgrade = useUpgradeApp()
   const [notesOpen, setNotesOpen] = useState(false)
   const [jobId, setJobId] = useState<string | undefined>(undefined)
-  const { restarting } = useManagerRestartWatch(jobId)
+  const { inFlight, target } = useUpgradeInFlight()
+  const { restarting } = useManagerRestartWatch({ jobId, active: inFlight })
 
   if (!appUpdate?.update_available) return null
 
@@ -64,11 +65,11 @@ export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | unde
                 <Button
                   size="xs"
                   leftSection={<IconRocket size={14} />}
-                  disabled={!appUpdate.can_self_upgrade}
-                  loading={upgrade.isPending}
+                  disabled={!appUpdate.can_self_upgrade || inFlight}
+                  loading={upgrade.isPending || inFlight}
                   onClick={confirmUpgrade}
                 >
-                  Upgrade
+                  {inFlight ? `Upgrading${target ? ` to ${target}` : ''}…` : 'Upgrade'}
                 </Button>
               </Tooltip>
             )}
@@ -77,7 +78,7 @@ export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | unde
       </Alert>
 
       <ReleaseNotesModal opened={notesOpen} onClose={() => setNotesOpen(false)} appUpdate={appUpdate} />
-      <ManagerRestartOverlay visible={restarting} />
+      <ManagerRestartOverlay visible={restarting || inFlight} />
     </>
   )
 }

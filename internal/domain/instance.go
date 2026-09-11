@@ -431,6 +431,30 @@ type AppUpdateInfo struct {
 	Reason          string     `json:"reason,omitempty"`
 	Message         string     `json:"message,omitempty"` // human summary of the check result
 	PreviousVersion string     `json:"previous_version,omitempty"`
+	// Upgrade reports an in-flight self-upgrade so the UI can keep the Upgrade
+	// button disabled (and survive a page refresh) until the new process has
+	// verified itself. Nil/idle when nothing is upgrading.
+	Upgrade *AppUpgradeState `json:"upgrade,omitempty"`
+}
+
+// UpgradeState is the phase of a manager self-upgrade.
+type UpgradeState string
+
+const (
+	// UpgradeIdle: no self-upgrade is in flight.
+	UpgradeIdle UpgradeState = "idle"
+	// UpgradeRunning: a self_upgrade job is queued or running.
+	UpgradeRunning UpgradeState = "running"
+	// UpgradeExitPending: the new binary is in place and the process is about
+	// to restart. A second upgrade is refused in this window so it cannot be
+	// orphaned by the imminent exit.
+	UpgradeExitPending UpgradeState = "exit_pending"
+)
+
+// AppUpgradeState is the self-upgrade progress exposed on AppUpdateInfo.
+type AppUpgradeState struct {
+	State  UpgradeState `json:"state"`
+	Target string       `json:"target,omitempty"` // the release being installed, e.g. v1.12.0
 }
 
 // GitHubRepo is the source of manager releases.
