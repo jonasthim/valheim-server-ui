@@ -172,20 +172,38 @@ namespace ValheimUI.Agent
             sb.Append("],\"locations\":[");
             try
             {
-                var icons = new Dictionary<Vector3, string>();
-                var zs = ZoneSystem.instance;
-                if (zs != null) zs.GetLocationIcons(icons);
-                bool first = true;
-                foreach (var kv in icons)
+                var locs = CollectLocations();
+                // The Eikthyr altar nearest the start temple is what the runestone
+                // at spawn reveals: it counts as discovered once spawn is explored.
+                Vector3 temple = Vector3.zero;
+                bool haveTemple = false;
+                foreach (var l in locs)
                 {
-                    if (!first) sb.Append(',');
-                    first = false;
-                    sb.Append("{\"name\":").Append(JsonWriter.Quote(kv.Value))
-                        .Append(",\"x\":").Append(F(kv.Key.x))
-                        .Append(",\"y\":").Append(F(kv.Key.y))
-                        .Append(",\"z\":").Append(F(kv.Key.z))
-                        .Append(",\"explored\":").Append(_exploration.IsExplored(kv.Key) ? "true" : "false")
-                        .Append(",\"discovered\":").Append(HasBossPinNear(pins, kv.Key) ? "true" : "false")
+                    if (l.Name == "StartTemple") { temple = l.Pos; haveTemple = true; break; }
+                }
+                int spawnEikthyr = -1;
+                if (haveTemple && _exploration.IsExplored(temple))
+                {
+                    float best = float.MaxValue;
+                    for (int i = 0; i < locs.Count; i++)
+                    {
+                        if (locs[i].Name != "Eikthyrnir") continue;
+                        float d = (locs[i].Pos - temple).sqrMagnitude;
+                        if (d < best) { best = d; spawnEikthyr = i; }
+                    }
+                }
+                for (int i = 0; i < locs.Count; i++)
+                {
+                    var l = locs[i];
+                    if (i > 0) sb.Append(',');
+                    bool discovered = HasBossPinNear(pins, l.Pos) || i == spawnEikthyr;
+                    sb.Append("{\"name\":").Append(JsonWriter.Quote(l.Name))
+                        .Append(",\"x\":").Append(F(l.Pos.x))
+                        .Append(",\"y\":").Append(F(l.Pos.y))
+                        .Append(",\"z\":").Append(F(l.Pos.z))
+                        .Append(",\"boss\":").Append(l.Boss ? "true" : "false")
+                        .Append(",\"explored\":").Append(_exploration.IsExplored(l.Pos) ? "true" : "false")
+                        .Append(",\"discovered\":").Append(discovered ? "true" : "false")
                         .Append('}');
                 }
             }
@@ -198,6 +216,56 @@ namespace ValheimUI.Agent
 
         /// <summary>Boss location icons sit at the altar; a Vegvisir pins the same spot.</summary>
         private const float DiscoverRadius = 80f;
+
+        private sealed class Loc
+        {
+            public string Name;
+            public Vector3 Pos;
+            public bool Boss;
+        }
+
+        /// <summary>Location prefabs whose altars the map shows as bosses.</summary>
+        private static readonly HashSet<string> BossLocations = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Eikthyrnir", "GDKing", "Bonemass", "Dragonqueen", "GoblinKing", "Mistlands_DvergrBossEntrance1", "FaderLocation",
+        };
+
+        /// <summary>
+        /// The game's own location icons (start temple, traders once found)
+        /// plus every boss altar the world generated. The icon list alone
+        /// never carries the altars, which is why Eikthyr was missing before.
+        /// </summary>
+        private static List<Loc> CollectLocations()
+        {
+            var locs = new List<Loc>();
+            var zs = ZoneSystem.instance;
+            if (zs == null) return locs;
+            var icons = new Dictionary<Vector3, string>();
+            zs.GetLocationIcons(icons);
+            foreach (var kv in icons)
+            {
+                locs.Add(new Loc { Name = kv.Value, Pos = kv.Key, Boss = BossLocations.Contains(kv.Value) });
+            }
+            try
+            {
+                foreach (var inst in zs.GetLocationList())
+                {
+                    var loc = inst.m_location;
+                    if (loc == null || string.IsNullOrEmpty(loc.m_prefabName) || !BossLocations.Contains(loc.m_prefabName)) continue;
+                    bool dup = false;
+                    foreach (var l in locs)
+                    {
+                        if ((l.Pos - inst.m_position).sqrMagnitude < 100f) { dup = true; break; }
+                    }
+                    if (!dup) locs.Add(new Loc { Name = loc.m_prefabName, Pos = inst.m_position, Boss = true });
+                }
+            }
+            catch (Exception e)
+            {
+                AgentPlugin.Log?.LogWarning("map: boss altars unavailable (GetLocationList): " + e.Message);
+            }
+            return locs;
+        }
 
         private static bool HasBossPinNear(List<MapPin> pins, Vector3 pos)
         {

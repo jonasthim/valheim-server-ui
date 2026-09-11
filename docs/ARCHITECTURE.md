@@ -667,10 +667,41 @@ Every request but `/v1/health` carries `Authorization: Bearer <token>`.
   the Unity main thread every 500 ms and served as an immutable snapshot.
 - `GET /v1/events?since=N`: ring buffer of `player.join`, `player.leave`,
   `command`.
-- `POST /v1/commands/{save|kick|ban|unban|broadcast}` with `?target=` or a
-  text body: queued to the main thread, answered within 5 s. Broadcast uses
-  the game's own `ShowMessage` routed RPC (how raids are announced), which is
-  stable across chat protocol changes.
+- `POST /v1/commands/{save|kick|ban|unban|broadcast|time|say|setkey|removekey|event|eventstop}`
+  with query parameters or a text body: queued to the main thread, answered
+  within 5 s as `{"ok","message"}` plus an optional `data` object. Broadcast
+  uses the game's own `ShowMessage` routed RPC (how raids are announced),
+  which is stable across chat protocol changes; `say` uses the players'
+  `ChatMessage` RPC so the line lands in the chat window.
+- `GET /v1/chat?since=N&limit=M`: recent shouts and normal chat (never
+  whispers) with `next` to poll from; `GET /v1/catalog`: known global keys,
+  the world's random events and the configured server chat name.
+
+**Control contract (agent 1.11).** What the manager and UI build against:
+
+| Verb | Parameters | `data` |
+|---|---|---|
+| `time` | one of `fraction=<0..1>` (time of day, forward only, next day if behind), `skip=morning` (the game's own skip, what sleeping does), `seconds=<1..86400>` | `{"day","day_fraction","time_seconds"}` |
+| `say` | body = text (≤ 200); `?name=` (default `[Chat] ServerName`) | none; an in-game shout from that name |
+| `setkey` / `removekey` | `key=<[A-Za-z0-9_]{1,64}>` | `{"global_keys":[…]}` |
+| `event` | `name=<catalog event>`, optional `x=&z=` (else a connected player's position, else the centre) | `{"event":{"name","remaining_seconds","position":{x,y,z}}}` |
+| `eventstop` | none | `{"event":null}` |
+
+`GET /v1/status` → `world.event` is the same object or `null`. `GET
+/v1/chat` → `{"messages":[{"seq","at","type":"shout"|"normal","sender","text","position"}],"next"}`
+(ring buffer of 500, memory only; the observer is the same routed-RPC prefix
+that records pings, reading the sender name first and the text last so both
+the plain-name and the `UserInfo` wire forms parse). `GET /v1/catalog` →
+`{"global_keys":[…],"events":[{"name","duration_seconds"}],"server_name"}`,
+keys from the game's `GlobalKeys` enum (by reflection) merged with a known
+list, events from `RandEventSystem.m_events`, built on the main thread and
+refreshed every 30 s. Time and events are server-authoritative (`ZNet.
+SetNetTime`, `RandEventSystem`), so every client follows; weather is not
+(clients derive it from world time), which is why there is no weather verb.
+`GET /v1/map/objects` `locations[]` carry `boss` and include every boss
+altar the world generated (from `ZoneSystem.GetLocationList`, which the
+icon list never included); the Eikthyr altar nearest the start temple counts
+as `discovered` once spawn is explored, matching the runestone there.
 
 **Manager side** (`internal/agent`).
 
@@ -705,7 +736,7 @@ optional ones (`GetBiomeHeight`, `GetForestFactor`, the ZDO table) by
 reflection with fallbacks, so game patches rarely break it; when they do, the
 fix ships with the next manager release and the UI offers the update. Its two
 Harmony patches are read-only prefixes on routed-RPC handling (Vegvisir
-discoveries, map pings) that never alter the call.
+discoveries; map pings and chat) that never alter the call.
 
 ### 20.1 Live map
 

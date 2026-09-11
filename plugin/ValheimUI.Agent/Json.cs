@@ -51,6 +51,8 @@ namespace ValheimUI.Agent
             return this;
         }
         public JsonWriter Null() { BeforeValue(); _sb.Append("null"); return this; }
+        /// <summary>Writes already-serialised JSON as the next value.</summary>
+        public JsonWriter Raw(string json) { BeforeValue(); _sb.Append(json); return this; }
 
         public JsonWriter Prop(string name, string v) => Name(name).Value(v);
         public JsonWriter Prop(string name, bool v) => Name(name).Value(v);

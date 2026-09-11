@@ -36,6 +36,8 @@ namespace ValheimUI.Agent
         public double TimeSeconds;
         public List<string> GlobalKeys = new List<string>();
         public List<PlayerSnapshot> Players = new List<PlayerSnapshot>();
+        /// <summary>The running random event (raid) as JSON, or null.</summary>
+        public string EventJson;
         public DateTime CapturedAt;
 
         public string ToJson(string agentVersion, string gameVersion, double uptimeSeconds, List<Ping> pings = null)
@@ -57,6 +59,8 @@ namespace ValheimUI.Agent
             w.Prop("is_night", IsNight);
             w.Prop("weather", Weather);
             w.Prop("time_seconds", TimeSeconds);
+            w.Name("event");
+            if (string.IsNullOrEmpty(EventJson)) w.Null(); else w.Raw(EventJson);
             w.EndObject();
             w.Name("global_keys").BeginArray();
             foreach (var k in GlobalKeys) w.Value(k);
@@ -111,6 +115,23 @@ namespace ValheimUI.Agent
     /// </summary>
     internal static class GameState
     {
+        /// <summary>A random event as {name, remaining_seconds, position}, or "null".</summary>
+        public static string EventJson(RandomEvent ev)
+        {
+            if (ev == null) return "null";
+            var w = new JsonWriter();
+            w.BeginObject();
+            w.Prop("name", ev.m_name ?? "");
+            w.Prop("remaining_seconds", Math.Max(0.0, (double)(ev.m_duration - ev.m_time)));
+            w.Name("position").BeginObject();
+            w.Prop("x", (double)ev.m_pos.x);
+            w.Prop("y", (double)ev.m_pos.y);
+            w.Prop("z", (double)ev.m_pos.z);
+            w.EndObject();
+            w.EndObject();
+            return w.ToString();
+        }
+
         public static StateSnapshot Capture()
         {
             var s = new StateSnapshot { CapturedAt = DateTime.UtcNow };
@@ -145,6 +166,15 @@ namespace ValheimUI.Agent
             {
                 var keys = zs.GetGlobalKeys();
                 if (keys != null) s.GlobalKeys.AddRange(keys);
+            }
+            try
+            {
+                var rs = RandEventSystem.instance;
+                var ev = rs != null ? rs.GetCurrentRandomEvent() : null;
+                if (ev != null) s.EventJson = EventJson(ev);
+            }
+            catch (Exception)
+            {
             }
 
             foreach (var peer in znet.GetPeers())

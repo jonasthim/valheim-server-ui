@@ -52,14 +52,19 @@ namespace ValheimUI.Agent
 
     /// <summary>
     /// Sees every routed RPC the server handles and records "ChatMessage"
-    /// calls of type Ping (3): the package holds the position, the type and
-    /// the sender's name first, in every game version so far. Read-only: the
-    /// package position is restored and the call proceeds untouched.
+    /// calls: pings (type 3) for the map, shouts (2) and normal chat (1) for
+    /// the chat log; whispers (0) are never kept. The package holds the
+    /// position, the type, then strings: the sender's name first (both the
+    /// old plain-name form and UserInfo's serialized form start with it) and
+    /// the text last. Read-only: the package position is restored and the
+    /// call proceeds untouched.
     /// </summary>
     [HarmonyPatch]
     internal static class ChatPingPatch
     {
-        private const int PingType = 3; // Talker.Type.Ping
+        private const int NormalType = 1;  // Talker.Type.Normal
+        private const int ShoutType = 2;   // Talker.Type.Shout
+        private const int PingType = 3;    // Talker.Type.Ping
         private static readonly int ChatHash = MapObjects.StableHash("ChatMessage");
         private static FieldInfo _hashField;
         private static FieldInfo _paramsField;
@@ -92,10 +97,23 @@ namespace ValheimUI.Agent
                     pkg.SetPos(0);
                     var pos = pkg.ReadVector3();
                     int type = pkg.ReadInt();
-                    if (type != PingType) return;
-                    string name = "";
-                    try { name = pkg.ReadString() ?? ""; } catch (Exception) { }
-                    AgentPlugin.Pings?.Add(name, pos);
+                    if (type != PingType && type != ShoutType && type != NormalType) return;
+                    var strings = new List<string>();
+                    try
+                    {
+                        while (pkg.GetPos() < pkg.Size() && strings.Count < 8) strings.Add(pkg.ReadString() ?? "");
+                    }
+                    catch (Exception)
+                    {
+                    }
+                    string name = strings.Count > 0 ? strings[0] : "";
+                    if (type == PingType)
+                    {
+                        AgentPlugin.Pings?.Add(name, pos);
+                        return;
+                    }
+                    if (strings.Count < 2) return;
+                    AgentPlugin.Chat?.Add(type == ShoutType ? "shout" : "normal", name, strings[strings.Count - 1], pos);
                 }
                 finally
                 {

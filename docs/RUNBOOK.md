@@ -413,6 +413,16 @@ Troubleshooting:
 - **Broadcast shows nothing in-game:** the message uses the raid/sleep banner;
   players in menus or loading screens do not see it.
 
+World controls the agent offers (agent 1.11; the manager surfaces them on
+the World card and a chat panel): moving the clock forward (`time`), a chat
+line spoken as the server (`say`, name from `[Chat] ServerName` in the
+plugin config), granting or revoking global keys (progression: raids,
+trader stock, biome events), and starting or stopping a random event. All
+of these affect every player at once and are audited like other commands.
+Weather cannot be set from the server: clients derive it from the world
+time, so the card only shows it. The chat feed keeps shouts and normal
+chat in memory for the session, never whispers.
+
 ### 14.1 The map
 
 With the agent installed the instance gets a **Map** tab drawn like the

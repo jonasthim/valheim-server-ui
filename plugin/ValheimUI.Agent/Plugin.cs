@@ -37,12 +37,20 @@ namespace ValheimUI.Agent
         private readonly Exploration _explored = new Exploration();
         private readonly Discoveries _discoveries = new Discoveries();
         private readonly Pings _pings = new Pings();
+        private readonly ChatLog _chat = new ChatLog();
         private readonly MapObjects _objects;
+        private ConfigEntry<string> _serverName;
+        private volatile string _catalogJson = "{\"global_keys\":[],\"events\":[],\"server_name\":\"Server\"}";
+        private float _lastCatalog = -1f;
 
         /// <summary>For the Harmony patch that records Vegvisir discoveries.</summary>
         internal static Discoveries Discoveries { get; private set; }
         /// <summary>For the Harmony patch that records map pings.</summary>
         internal static Pings Pings { get; private set; }
+        /// <summary>For the Harmony patch that records chat.</summary>
+        internal static ChatLog Chat { get; private set; }
+        /// <summary>Name the "say" command speaks as ([Chat] ServerName).</summary>
+        internal static string ServerName { get; private set; } = "Server";
         internal static BepInEx.Logging.ManualLogSource Log { get; private set; }
         private float _worldReadyAt = -1f;
         private int _worldSeed;
@@ -65,6 +73,7 @@ namespace ValheimUI.Agent
             _objects = new MapObjects(_explored, _discoveries);
             Discoveries = _discoveries;
             Pings = _pings;
+            Chat = _chat;
         }
 
         private void Awake()
@@ -76,6 +85,8 @@ namespace ValheimUI.Agent
             _mapResolution = Config.Bind("Map", "Resolution", 2048, "Side length in cells of the sampled world map layers (256-4096). 2048 matches the game's own map; 4096 gives the sharpest coastlines at deep zoom and takes four times longer to sample once per world.");
             _mapBudgetMs = Config.Bind("Map", "RenderBudgetMs", 4, "Milliseconds per server frame spent rendering the map. Lower values render slower but never stall the game.");
             _mapAutoRender = Config.Bind("Map", "AutoRender", true, "Render the map shortly after the world has loaded instead of on first request.");
+            _serverName = Config.Bind("Chat", "ServerName", "Server", "Name shown as the sender when the manager sends a chat message (the say command).");
+            ServerName = string.IsNullOrEmpty(_serverName.Value) ? "Server" : _serverName.Value;
             _cacheDir = System.IO.Path.Combine(Paths.CachePath, "valheimui-agent");
 
             if (SystemInfo.graphicsDeviceType != GraphicsDeviceType.Null)
@@ -104,7 +115,9 @@ namespace ValheimUI.Agent
                 () => _map.Png(),
                 () => _objects.Json,
                 () => _explored.InfoJson(),
-                () => _explored.MaskPng());
+                () => _explored.MaskPng(),
+                (since, limit) => _chat.Since(since, limit),
+                () => _catalogJson);
             try
             {
                 _api.Start(_bind.Value, port);
@@ -175,6 +188,12 @@ namespace ValheimUI.Agent
                 }
                 _map.Step(Math.Max(1, _mapBudgetMs.Value));
                 _objects.Step();
+                if (now - _lastCatalog > 30f)
+                {
+                    _lastCatalog = now;
+                    try { _catalogJson = Catalog.Build(ServerName); }
+                    catch (Exception e) { Logger.LogWarning("agent catalog failed: " + e.Message); }
+                }
             }
 
             while (_commands.TryDequeue(out var cmd))

@@ -28,6 +28,8 @@ namespace ValheimUI.Agent
         private readonly Func<string> _mapObjects;
         private readonly Func<string> _exploredInfo;
         private readonly Func<byte[]> _exploredPng;
+        private readonly Func<long, int, string> _chat;
+        private readonly Func<string> _catalog;
 
         private HttpListener _listener;
         private Thread _thread;
@@ -35,10 +37,12 @@ namespace ValheimUI.Agent
 
         public HttpApi(ManualLogSource log, Func<string> status, Func<long, string> events, Action<PendingCommand> enqueue, Func<string> token,
             Func<string> mapInfo, Func<byte[]> mapPng, Func<string> mapObjects,
-            Func<string> exploredInfo, Func<byte[]> exploredPng)
+            Func<string> exploredInfo, Func<byte[]> exploredPng, Func<long, int, string> chat, Func<string> catalog)
         {
             _exploredInfo = exploredInfo;
             _exploredPng = exploredPng;
+            _chat = chat;
+            _catalog = catalog;
             _log = log;
             _status = status;
             _events = events;
@@ -103,6 +107,20 @@ namespace ValheimUI.Agent
                     long since = 0;
                     long.TryParse(req.QueryString["since"] ?? "0", out since);
                     Json(ctx, 200, _events(since));
+                    return;
+                }
+                if (req.HttpMethod == "GET" && path == "/v1/chat")
+                {
+                    long since = 0;
+                    int limit = 200;
+                    long.TryParse(req.QueryString["since"] ?? "0", out since);
+                    int.TryParse(req.QueryString["limit"] ?? "200", out limit);
+                    Json(ctx, 200, _chat(since, limit));
+                    return;
+                }
+                if (req.HttpMethod == "GET" && path == "/v1/catalog")
+                {
+                    Json(ctx, 200, _catalog());
                     return;
                 }
                 if (req.HttpMethod == "GET" && path == "/v1/map/info")
@@ -186,7 +204,8 @@ namespace ValheimUI.Agent
                         return;
                     }
                     var r = cmd.Result ?? new CommandResult { Ok = false, Message = "no result" };
-                    Json(ctx, r.Ok ? 200 : 400, "{\"ok\":" + (r.Ok ? "true" : "false") + ",\"message\":" + JsonWriter.Quote(r.Message) + "}");
+                    var data = string.IsNullOrEmpty(r.DataJson) ? "" : ",\"data\":" + r.DataJson;
+                    Json(ctx, r.Ok ? 200 : 400, "{\"ok\":" + (r.Ok ? "true" : "false") + ",\"message\":" + JsonWriter.Quote(r.Message) + data + "}");
                     return;
                 }
                 Json(ctx, 404, "{\"ok\":false,\"error\":\"not found\"}");
