@@ -136,8 +136,8 @@ func TestChecker_PublishesOncePerVersion(t *testing.T) {
 func TestChecker_AutoUpgradeOnlyWhenEnabledAndEmpty(t *testing.T) {
 	// Disabled: never calls the upgrade hook even though a newer version exists.
 	c, _, calls := checkerHarness(t, "v2.0.0", "v1.0.0", false, 0)
-	if _, err := c.CheckNow(context.Background()); err != nil {
-		t.Fatalf("CheckNow: %v", err)
+	if _, err := c.checkAndMaybeUpgrade(context.Background()); err != nil {
+		t.Fatalf("checkAndMaybeUpgrade: %v", err)
 	}
 	if got := atomic.LoadInt32(calls); got != 0 {
 		t.Fatalf("expected no auto-upgrade when disabled, got %d calls", got)
@@ -145,17 +145,18 @@ func TestChecker_AutoUpgradeOnlyWhenEnabledAndEmpty(t *testing.T) {
 
 	// Enabled but players online: still refuses.
 	c, _, calls = checkerHarness(t, "v2.0.0", "v1.0.0", true, 2)
-	if _, err := c.CheckNow(context.Background()); err != nil {
-		t.Fatalf("CheckNow: %v", err)
+	if _, err := c.checkAndMaybeUpgrade(context.Background()); err != nil {
+		t.Fatalf("checkAndMaybeUpgrade: %v", err)
 	}
 	if got := atomic.LoadInt32(calls); got != 0 {
 		t.Fatalf("expected no auto-upgrade with players online, got %d calls", got)
 	}
 
-	// Enabled and empty: upgrades.
+	// Enabled and empty: the periodic timer path upgrades (CheckNow itself
+	// does not — see TestChecker_CheckNowNeverAutoUpgrades).
 	c, _, calls = checkerHarness(t, "v2.0.0", "v1.0.0", true, 0)
-	if _, err := c.CheckNow(context.Background()); err != nil {
-		t.Fatalf("CheckNow: %v", err)
+	if _, err := c.checkAndMaybeUpgrade(context.Background()); err != nil {
+		t.Fatalf("checkAndMaybeUpgrade: %v", err)
 	}
 	if got := atomic.LoadInt32(calls); got != 1 {
 		t.Fatalf("expected exactly 1 auto-upgrade call, got %d", got)
@@ -164,9 +165,9 @@ func TestChecker_AutoUpgradeOnlyWhenEnabledAndEmpty(t *testing.T) {
 
 func TestChecker_NeverAutoUpgradesFromDev(t *testing.T) {
 	c, _, calls := checkerHarness(t, "v2.0.0", "dev", true, 0)
-	info, err := c.CheckNow(context.Background())
+	info, err := c.checkAndMaybeUpgrade(context.Background())
 	if err != nil {
-		t.Fatalf("CheckNow: %v", err)
+		t.Fatalf("checkAndMaybeUpgrade: %v", err)
 	}
 	if info.CanSelfUpgrade {
 		t.Fatal("expected CanSelfUpgrade to be false for a dev build")
@@ -217,5 +218,22 @@ func TestChecker_PlayersOnlineErrorDoesNotPanic(t *testing.T) {
 	}
 	if upgraded {
 		t.Fatal("expected no auto-upgrade when playersOnline errors")
+	}
+}
+
+// A manual "Check now" (POST /system/update-check → CheckNow) must only
+// report availability, never trigger an upgrade — even with auto-upgrade
+// enabled and nobody online. Auto-upgrade belongs to the periodic timer.
+func TestChecker_CheckNowNeverAutoUpgrades(t *testing.T) {
+	c, _, calls := checkerHarness(t, "v2.0.0", "v1.0.0", true, 0)
+	info, err := c.CheckNow(context.Background())
+	if err != nil {
+		t.Fatalf("CheckNow: %v", err)
+	}
+	if !info.UpdateAvailable {
+		t.Fatal("expected an update to be available")
+	}
+	if got := atomic.LoadInt32(calls); got != 0 {
+		t.Fatalf("manual CheckNow must not auto-upgrade, got %d calls", got)
 	}
 }

@@ -105,17 +105,17 @@ func (c *Checker) Run(ctx context.Context) {
 		if d <= 0 {
 			continue
 		}
-		if _, err := c.CheckNow(ctx); err != nil {
+		if _, err := c.checkAndMaybeUpgrade(ctx); err != nil {
 			c.log.Warn("selfupdate: check failed", "err", err)
 		}
 	}
 }
 
-// CheckNow runs one check immediately, regardless of the configured
-// interval, updates the cached Info, publishes app.update_available the
-// first time a given newer version is seen, and — when auto-upgrade is
-// enabled, self-upgrade is possible and nobody is playing — triggers the
-// upgrade hook.
+// CheckNow runs one check immediately, regardless of the configured interval,
+// updates the cached Info and publishes app.update_available the first time a
+// given newer version is seen. It is read-only: it never triggers an upgrade,
+// so the manual "Check now" button only reports availability. The periodic
+// timer uses checkAndMaybeUpgrade for the auto-upgrade.
 func (c *Checker) CheckNow(ctx context.Context) (*domain.AppUpdateInfo, error) {
 	rel, err := c.client.Latest(ctx)
 	if err != nil {
@@ -136,7 +136,18 @@ func (c *Checker) CheckNow(ctx context.Context) (*domain.AppUpdateInfo, error) {
 			c.bus.Publish(domain.Event{Name: domain.EventAppUpdateAvailable, Data: *info})
 		}
 	}
+	return info, nil
+}
 
+// checkAndMaybeUpgrade is the periodic timer's action: a check followed by an
+// auto-upgrade when it is enabled, self-upgrade is possible and nobody is
+// playing. Auto-upgrade lives here, not in CheckNow, so a manual "Check now"
+// only reports availability and never restarts the manager on its own.
+func (c *Checker) checkAndMaybeUpgrade(ctx context.Context) (*domain.AppUpdateInfo, error) {
+	info, err := c.CheckNow(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if info.UpdateAvailable && info.CanSelfUpgrade && c.autoUpgrade != nil && c.autoUpgrade() {
 		c.maybeAutoUpgrade(ctx, info)
 	}
