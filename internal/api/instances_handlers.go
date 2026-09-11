@@ -231,10 +231,37 @@ func (d *Deps) stopInstance(w http.ResponseWriter, r *http.Request) {
 	WriteJSON(w, http.StatusOK, map[string]any{"status": st})
 }
 
+// maxRestartDelaySeconds caps the graceful-restart warning window at one hour.
+const maxRestartDelaySeconds = 3600
+
 func (d *Deps) restartInstance(w http.ResponseWriter, r *http.Request) {
 	id, err := InstanceID(r)
 	if err != nil {
 		WriteError(w, err)
+		return
+	}
+	var req struct {
+		DelaySeconds int `json:"delay_seconds"`
+	}
+	if err := DecodeOptionalJSON(r, &req); err != nil {
+		WriteError(w, err)
+		return
+	}
+	if req.DelaySeconds < 0 || req.DelaySeconds > maxRestartDelaySeconds {
+		WriteValidation(w, domain.FieldError{Field: "delay_seconds", Message: "between 0 and 3600"})
+		return
+	}
+	// A delay runs the graceful restart as a job: warn connected players,
+	// wait, then restart (immediate when nobody is online). No delay keeps the
+	// instant restart.
+	if req.DelaySeconds > 0 && d.Schedules != nil {
+		job, err := d.Schedules.EnqueueRestart(r.Context(), id, req.DelaySeconds, RequestedBy(r))
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		d.audit(r, "instance.restart", id, job.ID, map[string]any{"delay_seconds": req.DelaySeconds})
+		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 		return
 	}
 	st, err := d.Instances.Restart(r.Context(), id)

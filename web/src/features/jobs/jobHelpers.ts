@@ -27,6 +27,7 @@ const JOB_TYPE_LABELS: Record<JobType, string> = {
   bepinex_install: 'Install BepInEx',
   agent_install: 'Install Valheim UI Agent',
   scheduled_restart: 'Scheduled restart',
+  restart: 'Restart',
   thunderstore_refresh: 'Refresh Thunderstore index',
   self_upgrade: 'Upgrade Valheim Server UI',
 }

@@ -107,6 +107,9 @@ type ScheduleService interface {
 	Update(ctx context.Context, instanceID string, id int64, in domain.ScheduleInput) (*domain.Schedule, error)
 	Delete(ctx context.Context, instanceID string, id int64) error
 	RunNow(ctx context.Context, instanceID string, id int64, requestedBy string) (*domain.Job, error)
+	// EnqueueRestart runs a graceful restart: with players online and
+	// delaySeconds > 0 it warns them and waits, otherwise it restarts at once.
+	EnqueueRestart(ctx context.Context, instanceID string, delaySeconds int, requestedBy string) (*domain.Job, error)
 }
 
 // WP-08

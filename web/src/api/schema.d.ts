@@ -870,6 +870,13 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Restart the instance, optionally warning online players first
+         * @description With no body (or delay_seconds 0) the instance restarts immediately and
+         *     the response is the new status. With delay_seconds > 0 a graceful
+         *     restart job is enqueued: if players are online it broadcasts a shrinking
+         *     countdown, waits, then restarts; if nobody is online it restarts at once.
+         */
         post: {
             parameters: {
                 query?: never;
@@ -879,9 +886,17 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody?: {
+                content: {
+                    "application/json": {
+                        /** @description Warning countdown before the restart (0 = restart now) */
+                        delay_seconds?: number;
+                    };
+                };
+            };
             responses: {
                 200: components["responses"]["InstanceStatusResponse"];
+                202: components["responses"]["JobResponse"];
             };
         };
         delete?: never;
@@ -3933,7 +3948,7 @@ export interface components {
             position?: components["schemas"]["Vec3"];
         };
         /** @enum {string} */
-        JobType: "install" | "update" | "backup" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "agent_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade";
+        JobType: "install" | "update" | "backup" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "agent_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade" | "restart";
         /** @enum {string} */
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";
         Job: {

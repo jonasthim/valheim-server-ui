@@ -119,6 +119,23 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 			}
 			return info.UpdateAvailable, nil
 		},
+		// deps.Agent is wired after the scheduler; the closure reads it at
+		// call time (a restart), by which point it is set.
+		Broadcast: func(ctx context.Context, id, message string) error {
+			if deps.Agent == nil {
+				return nil
+			}
+			res, err := deps.Agent.Command(ctx, id, domain.AgentCommandRequest{
+				Command: "broadcast", Message: message, Style: "center",
+			})
+			if err != nil {
+				return err
+			}
+			if !res.OK {
+				return fmt.Errorf("agent refused broadcast: %s", res.Message)
+			}
+			return nil
+		},
 	}
 	wireScheduler(ctx, deps, inst, runner, playersMgr, hooks)
 

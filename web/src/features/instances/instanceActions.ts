@@ -48,14 +48,24 @@ export function useStopInstance(id: string) {
   })
 }
 
+/**
+ * Restart the instance. delaySeconds 0 (default) restarts immediately and
+ * returns the new status; a positive delay enqueues a graceful restart job
+ * that warns online players over a countdown, and returns { job }.
+ */
 export function useRestartInstance(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: () => api.post<{ status: InstanceStatus }>(`/instances/${id}/restart`),
+    mutationFn: (delaySeconds?: number) =>
+      api.post<{ status?: InstanceStatus; job?: Job }>(
+        `/instances/${id}/restart`,
+        delaySeconds && delaySeconds > 0 ? { delay_seconds: delaySeconds } : undefined,
+      ),
     onSuccess: (res) => {
-      qc.setQueryData(['instances', id, 'status'], res)
+      if (res.status) qc.setQueryData(['instances', id, 'status'], { status: res.status })
       invalidateInstance(qc)
-      notifySuccess('Instance restarting')
+      qc.invalidateQueries({ queryKey: ['jobs'] })
+      notifySuccess(res.job ? 'Restart scheduled; players warned' : 'Instance restarting')
     },
     onError: (err) => notifyError(err, 'Could not restart instance'),
   })

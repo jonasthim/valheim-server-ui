@@ -44,13 +44,13 @@ import {
   useCheckForUpdate,
   useInstallInstance,
   useInstanceStatus,
-  useRestartInstance,
   useSetAutostart,
   useStartInstance,
   useStopInstance,
   useUpdateInstance,
 } from './instanceActions'
 import { canInstall, canRestart, canStart, canStop, stateColor, stateLabel } from './instanceHelpers'
+import { RestartControl } from './RestartControl'
 
 // Owned by WP-11. Props: the instance id.
 export function OverviewTab({ id }: { id: string }) {
@@ -63,7 +63,6 @@ export function OverviewTab({ id }: { id: string }) {
 
   const start = useStartInstance(id)
   const stop = useStopInstance(id)
-  const restart = useRestartInstance(id)
   const install = useInstallInstance(id)
   const checkUpdate = useCheckForUpdate(id)
   const updateNow = useUpdateInstance(id)
@@ -94,25 +93,6 @@ export function OverviewTab({ id }: { id: string }) {
   const status = statusQuery.data?.status ?? instance.status
   const canOperate = hasRole('operator')
   const host = window.location.hostname
-
-  function confirmRestart() {
-    if (status.players_online > 0) {
-      modals.openConfirmModal({
-        title: 'Restart instance',
-        children: (
-          <Text size="sm">
-            {status.players_online} player{status.players_online === 1 ? ' is' : 's are'} currently online. Restart
-            anyway?
-          </Text>
-        ),
-        labels: { confirm: 'Restart', cancel: 'Cancel' },
-        confirmProps: { color: 'orange' },
-        onConfirm: () => restart.mutate(),
-      })
-    } else {
-      restart.mutate()
-    }
-  }
 
   function confirmUpdate() {
     const running = status.state === 'running'
@@ -358,16 +338,11 @@ export function OverviewTab({ id }: { id: string }) {
                 >
                   Stop
                 </Button>
-                <Button
-                  size="xs"
-                  variant="outline"
-                  leftSection={<IconRefresh size={14} />}
-                  disabled={!canRestart(status.state) || restart.isPending}
-                  loading={restart.isPending}
-                  onClick={confirmRestart}
-                >
-                  Restart
-                </Button>
+                <RestartControl
+                  id={id}
+                  disabled={!canRestart(status.state)}
+                  playersOnline={status.players_online}
+                />
                 {canInstall(status.state) && (
                   <Button size="xs" variant="light" loading={install.isPending} onClick={() => install.mutate(undefined, { onSuccess: (res) => openJob(res.job.id) })}>
                     Install

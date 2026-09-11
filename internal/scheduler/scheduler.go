@@ -39,6 +39,10 @@ type Hooks struct {
 	Update func(ctx context.Context, instanceID, requestedBy string, stopIfRunning bool) (*domain.Job, error)
 	// UpdateAvailable reports whether a newer Steam build exists.
 	UpdateAvailable func(ctx context.Context, instanceID string) (bool, error)
+	// Broadcast sends an on-screen message to a running instance's players
+	// through the agent (nil when no agent is configured). Used to warn
+	// players before a graceful restart.
+	Broadcast func(ctx context.Context, instanceID, message string) error
 }
 
 // Service implements api.ScheduleService and the cron engine.
@@ -53,6 +57,9 @@ type Service struct {
 	now    func() time.Time
 	loc    *time.Location
 	parser cron.Parser
+	// sleep waits d or until ctx is cancelled; overridable so restart-countdown
+	// tests run instantly instead of waiting real minutes.
+	sleep func(ctx context.Context, d time.Duration) error
 
 	// baseCtx is cancelled when Run's ctx is done, so cron-fired job waits
 	// (waitAndRecordFailure) never outlive the scheduler.
@@ -88,6 +95,31 @@ func WithLocation(loc *time.Location) Option {
 	}
 }
 
+// realSleep waits d or returns ctx.Err() if the context is cancelled first.
+func realSleep(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// WithSleep overrides the restart-countdown wait (tests only), so a graceful
+// restart can be exercised without waiting real minutes.
+func WithSleep(fn func(ctx context.Context, d time.Duration) error) Option {
+	return func(s *Service) {
+		if fn != nil {
+			s.sleep = fn
+		}
+	}
+}
+
 // New builds the scheduler service. Call Run to start firing schedules.
 func New(db *sql.DB, inst *instance.Service, runner *jobs.Runner, players domain.PlayerCounter, hooks Hooks, log *slog.Logger, opts ...Option) *Service {
 	if log == nil {
@@ -104,6 +136,7 @@ func New(db *sql.DB, inst *instance.Service, runner *jobs.Runner, players domain
 		now:        time.Now,
 		loc:        time.Local,
 		parser:     cron.NewParser(cronParseOptions),
+		sleep:      realSleep,
 		baseCtx:    baseCtx,
 		baseCancel: cancel,
 	}

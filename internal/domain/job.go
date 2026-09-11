@@ -18,6 +18,7 @@ const (
 	JobScheduledRestart    JobType = "scheduled_restart"
 	JobThunderstoreRefresh JobType = "thunderstore_refresh"
 	JobSelfUpgrade         JobType = "self_upgrade"
+	JobRestart             JobType = "restart"
 )
 
 type JobStatus string

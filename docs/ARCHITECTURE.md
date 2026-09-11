@@ -367,8 +367,14 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
   in `server/steamapps/appmanifest_896660.acf`. A global ticker checks every
   `settings.updates.check_interval_minutes` (default 60) and publishes
   `update.available`; applying is only done by schedules or by hand.
-- Valheim has no server-side broadcast, so scheduled restarts cannot warn players
-  without a mod. The UI states this next to the `only_when_empty` toggle.
+- Valheim has no built-in server-side broadcast, but the Valheim UI Agent adds one.
+  A graceful restart (`scheduler.EnqueueRestart`, shared by the manual restart
+  endpoint and scheduled restarts) broadcasts a shrinking countdown to connected
+  players through the agent, waits, then restarts; with nobody online (or no
+  agent) it restarts immediately. The manual restart picks the delay in the UI;
+  scheduled restarts use a fixed default lead (`scheduledRestartLeadSeconds`).
+  `POST /instances/{id}/restart` takes `delay_seconds` (0 = instant, 200 status;
+  >0 = a `restart` job, 202) — see docs/openapi.yaml.
 
 ## 12. Mods
 

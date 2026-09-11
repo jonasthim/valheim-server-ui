@@ -178,19 +178,17 @@ func (s *Service) executeRestart(ctx context.Context, sched scheduleRow, request
 		Title:       "Scheduled restart",
 		RequestedBy: requestedBy,
 	}, func(ctx context.Context, log *jobs.Logger) error {
-		st, err := s.inst.Status(ctx, instanceID)
-		if err != nil {
-			return err
-		}
-		if st.State != domain.StateRunning {
-			log.Printf("instance not running, nothing to restart")
-			return nil
-		}
-		_, err = s.inst.Restart(ctx, instanceID)
-		return err
+		// Reuse the graceful path: it warns players over the default lead and
+		// waits when anyone is online, and restarts immediately otherwise.
+		return s.gracefulRestart(ctx, instanceID, scheduledRestartLeadSeconds, log)
 	})
 	return job, "", err
 }
+
+// scheduledRestartLeadSeconds is the warning lead a scheduled restart gives
+// connected players. Manual restarts pick their own delay in the UI; a
+// schedule has no per-rule delay yet, so it uses this default.
+const scheduledRestartLeadSeconds = 120
 
 func (s *Service) executeUpdate(ctx context.Context, sched scheduleRow, requestedBy string) (*domain.Job, string, error) {
 	avail, err := s.hooks.UpdateAvailable(ctx, sched.InstanceID)
