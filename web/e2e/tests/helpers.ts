@@ -23,7 +23,10 @@ export async function login(page: Page) {
   await expect(page).toHaveURL(/\/$/)
 }
 
-export async function createInstance(page: Page, opts: { id: string; name: string; serverName: string; world: string; port: number }) {
+export async function createInstance(
+  page: Page,
+  opts: { id: string; name: string; serverName: string; world: string; port: number; crossplay?: boolean },
+) {
   await page.goto('/instances/new')
   await page.getByLabel(/display name/i).fill(opts.name)
   await page.getByLabel(/instance id/i).fill(opts.id)
@@ -31,6 +34,10 @@ export async function createInstance(page: Page, opts: { id: string; name: strin
   await page.getByRole('textbox', { name: 'World name' }).fill(opts.world)
   await page.getByRole('textbox', { name: 'Password' }).fill('secret123')
   await page.getByRole('textbox', { name: 'Port' }).fill(String(opts.port))
+  if (opts.crossplay) {
+    // The Overview shows the join code only for crossplay servers.
+    await page.getByLabel(/crossplay/i).check()
+  }
   await page.getByRole('button', { name: /advanced/i }).first().click()
   const installBox = page.getByLabel(/download game files now/i)
   await expect(installBox).toBeVisible()

@@ -7,7 +7,7 @@ test.describe.serial('instance lifecycle with the fake game server', () => {
   })
 
   test('create, start, observe console and players, stop', async ({ page }) => {
-    await createInstance(page, { id: 'main', name: 'Main', serverName: 'E2E Server', world: 'Midgard', port: 2456 })
+    await createInstance(page, { id: 'main', name: 'Main', serverName: 'E2E Server', world: 'Midgard', port: 2456, crossplay: true })
     await expect(page.getByText(/not installed/i).first()).toBeVisible()
 
     fakeInstall('main')
