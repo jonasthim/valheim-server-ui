@@ -227,12 +227,13 @@ func uninstallModHandler(d *Deps) http.HandlerFunc {
 			WriteError(w, err)
 			return
 		}
-		job, err := d.Mods.EnqueueUninstall(r.Context(), id, modID, RequestedBy(r))
+		removeConfigs := r.URL.Query()["remove_config"]
+		job, err := d.Mods.EnqueueUninstall(r.Context(), id, modID, removeConfigs, RequestedBy(r))
 		if err != nil {
 			WriteError(w, err)
 			return
 		}
-		d.audit(r, "mods.uninstall", id, job.ID, map[string]any{"mod_id": modID})
+		d.audit(r, "mods.uninstall", id, job.ID, map[string]any{"mod_id": modID, "remove_configs": removeConfigs})
 		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 	}
 }

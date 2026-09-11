@@ -57,3 +57,19 @@ export function isClientSideSetting(entry: ConfigEntry): boolean {
 export function isKeybindEntry(entry: ConfigEntry): boolean {
   return (entry.type ?? '').toLowerCase().includes('keyboardshortcut')
 }
+
+/** Best-effort match of a mod to the config files it likely owns. Config files
+ * are named by the plugin's BepInEx GUID (e.g. `Azumatt.AzuCraftyBoxes.cfg`,
+ * `MidnightsFX.AchievementEnabler.cfg`), not the Thunderstore owner-name, so we
+ * match a file whose stem equals `<owner>.<name>` or contains `<name>` as a
+ * dot-delimited segment. The user confirms the result, so a loose match is fine. */
+export function matchModConfigs(mod: { owner: string; name: string }, files: { name: string }[]): string[] {
+  const name = mod.name.toLowerCase()
+  const ownerDotName = `${mod.owner}.${mod.name}`.toLowerCase()
+  return files
+    .filter((f) => {
+      const stem = f.name.replace(/\.cfg$/i, '').toLowerCase()
+      return stem === ownerDotName || stem === name || stem.split('.').includes(name)
+    })
+    .map((f) => f.name)
+}

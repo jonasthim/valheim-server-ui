@@ -2416,9 +2416,13 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Uninstall a mod (optionally deleting its config files) */
         delete: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Config file name(s) in BepInEx/config to also delete (repeatable). Config files are otherwise preserved on uninstall. */
+                    remove_config?: string[];
+                };
                 header?: never;
                 path: {
                     instanceId: components["parameters"]["instanceId"];

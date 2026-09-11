@@ -980,7 +980,10 @@ paths:
                   mod: { $ref: '#/components/schemas/Mod' }
     delete:
       tags: [mods]
+      summary: Uninstall a mod (optionally deleting its config files)
       x-role: operator
+      parameters:
+        - { in: query, name: remove_config, description: 'Config file name(s) in BepInEx/config to also delete (repeatable). Config files are otherwise preserved on uninstall.', schema: { type: array, items: { type: string } } }
       responses:
         '202': { $ref: '#/components/responses/JobResponse' }
   /instances/{instanceId}/mods/{modId}/update:

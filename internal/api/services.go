@@ -118,7 +118,7 @@ type ModService interface {
 	EnqueueAgentInstall(ctx context.Context, instanceID string, stopIfRunning bool, requestedBy string) (*domain.Job, error)
 	SetBepInExEnabled(ctx context.Context, instanceID string, enabled bool) (*domain.ModsOverview, error)
 	SetEnabled(ctx context.Context, instanceID string, modID int64, enabled bool) (*domain.Mod, error)
-	EnqueueUninstall(ctx context.Context, instanceID string, modID int64, requestedBy string) (*domain.Job, error)
+	EnqueueUninstall(ctx context.Context, instanceID string, modID int64, removeConfigs []string, requestedBy string) (*domain.Job, error)
 	EnqueueUpdate(ctx context.Context, instanceID string, modID int64, version, requestedBy string) (*domain.Job, error)
 	ListConfigs(ctx context.Context, instanceID string) ([]domain.ConfigFileInfo, error)
 	GetConfig(ctx context.Context, instanceID, file string) (*domain.ConfigFile, error)

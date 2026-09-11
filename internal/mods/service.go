@@ -629,10 +629,16 @@ func (s *Service) SetEnabled(ctx context.Context, instanceID string, modID int64
 	return &m, nil
 }
 
-func (s *Service) EnqueueUninstall(ctx context.Context, instanceID string, modID int64, requestedBy string) (*domain.Job, error) {
+func (s *Service) EnqueueUninstall(ctx context.Context, instanceID string, modID int64, removeConfigs []string, requestedBy string) (*domain.Job, error) {
 	row, err := s.getModRow(ctx, instanceID, modID)
 	if err != nil {
 		return nil, err
+	}
+	// Validate the config names up front so a bad request fails synchronously.
+	for _, name := range removeConfigs {
+		if err := configFileName(name); err != nil {
+			return nil, err
+		}
 	}
 	title := fmt.Sprintf("Uninstall %s-%s", row.Owner, row.Name)
 	return s.runner.Enqueue(ctx, jobs.Spec{Type: domain.JobModUninstall, InstanceID: instanceID, Title: title, RequestedBy: requestedBy},
@@ -644,6 +650,12 @@ func (s *Service) EnqueueUninstall(ctx context.Context, instanceID string, modID
 			}
 			if err := s.deleteModRow(ctx, instanceID, modID); err != nil {
 				return err
+			}
+			if len(removeConfigs) > 0 {
+				log.Printf("removing %d config file(s): %s", len(removeConfigs), strings.Join(removeConfigs, ", "))
+				if err := removeConfigFiles(paths, removeConfigs); err != nil {
+					return err
+				}
 			}
 			return s.finishModJob(ctx, instanceID)
 		})

@@ -10,11 +10,13 @@ import {
   Avatar,
   Badge,
   Button,
+  Checkbox,
   Group,
   List,
   Loader,
   Popover,
   Skeleton,
+  Stack,
   Switch,
   Table,
   Text,
@@ -27,6 +29,8 @@ import { useJobDrawer } from '../jobs'
 import type { Mod } from '../../api/types'
 import { EmptyState, SectionCard } from '../../ui'
 import { useModsOverview, useSetModEnabled, useUninstallMod, useUpdateMod } from './useMods'
+import { useConfigFiles } from './useModConfig'
+import { matchModConfigs } from './helpers'
 
 export function InstalledModsTable({ id }: { id: string }) {
   const { hasRole } = useAuth()
@@ -35,6 +39,7 @@ export function InstalledModsTable({ id }: { id: string }) {
   const setEnabled = useSetModEnabled(id)
   const updateMod = useUpdateMod(id)
   const uninstallMod = useUninstallMod(id)
+  const configFiles = useConfigFiles(id)
   const [updatingAll, setUpdatingAll] = useState(false)
 
   const canOperate = hasRole('operator')
@@ -43,19 +48,23 @@ export function InstalledModsTable({ id }: { id: string }) {
   const updatable = mods.filter((m) => m.update_available)
 
   function confirmUninstall(mod: Mod) {
-    modals.openConfirmModal({
+    const candidates = matchModConfigs(mod, configFiles.data ?? [])
+    modals.open({
       title: 'Uninstall mod',
       children: (
-        <Text size="sm">
-          Uninstall <strong>{mod.name}</strong> ({mod.owner})? Its files will be removed.
-        </Text>
+        <UninstallConfirm
+          mod={mod}
+          candidates={candidates}
+          onCancel={() => modals.closeAll()}
+          onConfirm={(removeConfigs) => {
+            uninstallMod.mutate(
+              { modId: mod.id, removeConfigs },
+              { onSuccess: (res) => openJob(res.job.id) },
+            )
+            modals.closeAll()
+          }}
+        />
       ),
-      labels: { confirm: 'Uninstall', cancel: 'Cancel' },
-      confirmProps: { color: 'red' },
-      onConfirm: () =>
-        uninstallMod.mutate(mod.id, {
-          onSuccess: (res) => openJob(res.job.id),
-        }),
     })
   }
 
@@ -241,5 +250,51 @@ export function InstalledModsTable({ id }: { id: string }) {
         </Table.ScrollContainer>
       )}
     </SectionCard>
+  )
+}
+
+function UninstallConfirm({
+  mod,
+  candidates,
+  onConfirm,
+  onCancel,
+}: {
+  mod: Mod
+  candidates: string[]
+  onConfirm: (removeConfigs: string[]) => void
+  onCancel: () => void
+}) {
+  const [selected, setSelected] = useState<string[]>(candidates)
+  return (
+    <Stack gap="sm">
+      <Text size="sm">
+        Uninstall <strong>{mod.name}</strong> ({mod.owner})? Its files will be removed.
+      </Text>
+      {candidates.length > 0 && (
+        <Stack gap={6}>
+          <Text size="sm" fw={500}>
+            Also delete config files?
+          </Text>
+          <Text size="xs" c="dimmed">
+            Matched by name; uncheck any that belong to another mod. Config files are otherwise kept.
+          </Text>
+          <Checkbox.Group value={selected} onChange={setSelected}>
+            <Stack gap={4}>
+              {candidates.map((c) => (
+                <Checkbox key={c} value={c} label={c} size="sm" />
+              ))}
+            </Stack>
+          </Checkbox.Group>
+        </Stack>
+      )}
+      <Group justify="flex-end" gap="xs" mt="xs">
+        <Button size="xs" variant="default" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button size="xs" color="red" onClick={() => onConfirm(selected)}>
+          Uninstall
+        </Button>
+      </Group>
+    </Stack>
   )
 }

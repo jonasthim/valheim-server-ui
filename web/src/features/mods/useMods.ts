@@ -73,7 +73,10 @@ export function useUpdateMod(id: string) {
 export function useUninstallMod(id: string) {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (modId: number) => api.del<{ job: Job }>(`/instances/${id}/mods/${modId}`),
+    mutationFn: ({ modId, removeConfigs = [] }: { modId: number; removeConfigs?: string[] }) => {
+      const qs = removeConfigs.map((c) => `remove_config=${encodeURIComponent(c)}`).join('&')
+      return api.del<{ job: Job }>(`/instances/${id}/mods/${modId}${qs ? `?${qs}` : ''}`)
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['instances', id, 'mods'] })
       notifySuccess('Uninstall queued')

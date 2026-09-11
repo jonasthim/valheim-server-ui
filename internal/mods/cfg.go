@@ -266,6 +266,22 @@ func configFileName(name string) error {
 	return nil
 }
 
+// removeConfigFiles deletes the named config files from the instance's config
+// dir. Each name is validated as a plain .cfg basename; a missing file is not
+// an error (the mod may never have written it).
+func removeConfigFiles(paths domain.InstancePaths, names []string) error {
+	for _, name := range names {
+		if err := configFileName(name); err != nil {
+			return err
+		}
+		p := filepath.Join(configDir(paths), name)
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("remove config %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
 func configDir(paths domain.InstancePaths) string {
 	return filepath.Join(paths.BepInExDir(), "config")
 }

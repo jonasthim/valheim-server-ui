@@ -5,6 +5,7 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -172,7 +173,7 @@ func TestEnqueueUninstall_RemovesExactlyItsFiles(t *testing.T) {
 		t.Fatal("CoreLib row not found")
 	}
 
-	job2, err := modSvc.EnqueueUninstall(ctx, "main", coreLibID, "tester")
+	job2, err := modSvc.EnqueueUninstall(ctx, "main", coreLibID, nil, "tester")
 	if err != nil {
 		t.Fatalf("EnqueueUninstall: %v", err)
 	}
@@ -642,5 +643,54 @@ func TestEnqueueUpdate_CrossSource_LatestWinsAndSwitchesSource(t *testing.T) {
 	}
 	if after.UpdateAvailable {
 		t.Errorf("no further update should be available, got %+v", after)
+	}
+}
+
+// TestEnqueueUninstall_RemovesRequestedConfigs verifies uninstall deletes only
+// the config files it was told to, leaving others (and validating names).
+func TestEnqueueUninstall_RemovesRequestedConfigs(t *testing.T) {
+	ctx := context.Background()
+	ts, srv := newMiniThunderstore(t)
+	srv.setZip("Alice", "CoreLib", "1.0.0", coreLibZip(t))
+	modSvc, instSvc, _, runner := newTestModsService(t, ts)
+	createTestInstance(t, instSvc, "main")
+
+	job, err := modSvc.EnqueueInstall(ctx, "main", domain.RegistryThunderstoreID, "Alice", "CoreLib", "", "tester")
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	mustSucceed(t, runner, job.ID)
+	rows, _ := modSvc.listModRows(ctx, "main")
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 mod, got %d", len(rows))
+	}
+	modID := rows[0].ID
+
+	cfgDir := configDir(instSvc.Paths("main"))
+	if err := os.MkdirAll(cfgDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range []string{"Alice.CoreLib.cfg", "Other.Keep.cfg"} {
+		if err := os.WriteFile(filepath.Join(cfgDir, n), []byte("x"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ujob, err := modSvc.EnqueueUninstall(ctx, "main", modID, []string{"Alice.CoreLib.cfg"}, "tester")
+	if err != nil {
+		t.Fatalf("uninstall: %v", err)
+	}
+	mustSucceed(t, runner, ujob.ID)
+
+	if _, err := os.Stat(filepath.Join(cfgDir, "Alice.CoreLib.cfg")); !os.IsNotExist(err) {
+		t.Errorf("Alice.CoreLib.cfg should have been removed")
+	}
+	if _, err := os.Stat(filepath.Join(cfgDir, "Other.Keep.cfg")); err != nil {
+		t.Errorf("Other.Keep.cfg should have survived: %v", err)
+	}
+
+	// A bad config name is rejected synchronously.
+	if _, err := modSvc.EnqueueUninstall(ctx, "main", modID, []string{"../evil"}, "tester"); err == nil {
+		t.Errorf("expected validation error for a bad config name")
 	}
 }
