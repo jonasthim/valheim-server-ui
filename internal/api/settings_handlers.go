@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -48,11 +49,39 @@ func putSettingsHandler(d *Deps) http.HandlerFunc {
 			"oidc_enabled":        out.Auth.OIDC.Enabled,
 		}
 		if prevErr == nil {
-			details["changes"] = auditDiff(prev, out) // client_secret is masked by auditDiff
+			// client_secret and every notification channel's secret are
+			// masked by auditDiff itself (sensitiveKeys["secret"]); a
+			// channel's url is masked here too, since for discord/slack/
+			// telegram it embeds a bearer credential just like secret does
+			// (see auth.channelURLEmbedsSecret) — mask it for every type so
+			// the audit log stays simple to reason about.
+			details["changes"] = maskNotifyChannelURLs(auditDiff(prev, out))
 		}
 		d.audit(r, "settings.update", "", "", details)
 		WriteJSON(w, http.StatusOK, d.Settings.Redacted(out))
 	}
+}
+
+// maskNotifyChannelURLs blanks the From/To of any changes entry whose path
+// is a notification channel's url (notifications.channels.<N>.url). Unlike
+// auth.oidc.client_secret and a channel's own secret, the url is not always
+// sensitive (ntfy/webhook/email URLs are plain addresses), but discord/slack
+// webhook paths and a telegram bot token live in the URL itself, so every
+// channel's url is masked here for simplicity — see the security note on
+// auth.channelURLEmbedsSecret.
+func maskNotifyChannelURLs(changes []auditChange) []auditChange {
+	for i := range changes {
+		if !strings.HasPrefix(changes[i].Path, "notifications.channels.") || !strings.HasSuffix(changes[i].Path, ".url") {
+			continue
+		}
+		if changes[i].From != nil {
+			changes[i].From = maskedValue
+		}
+		if changes[i].To != nil {
+			changes[i].To = maskedValue
+		}
+	}
+	return changes
 }
 
 type oidcTestResponse struct {

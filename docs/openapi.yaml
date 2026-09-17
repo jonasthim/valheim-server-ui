@@ -229,6 +229,44 @@ paths:
                   issuer: { type: string }
                   authorization_endpoint: { type: string }
                   error: { type: string }
+  /settings/notifications/{channelId}/test:
+    post:
+      tags: [settings]
+      summary: Send a fixed test message to one configured notification channel
+      x-role: admin
+      parameters:
+        - { in: path, name: channelId, required: true, schema: { type: string } }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /notifications:
+    get:
+      tags: [settings]
+      summary: Notification delivery attempts, newest first (F-1.1)
+      x-role: admin
+      parameters:
+        - { in: query, name: limit, schema: { type: integer, default: 100, maximum: 500 } }
+        - in: query
+          name: before
+          schema: { type: string, format: date-time }
+          description: Cursor; only entries strictly before this timestamp
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries: { type: array, items: { $ref: '#/components/schemas/NotificationLogEntry' } }
   /system:
     get:
       tags: [system]
@@ -1473,9 +1511,75 @@ components:
         sync_roles: { type: boolean, default: true, description: Re-apply role mapping on every login }
         redirect_uri: { type: string, readOnly: true, description: 'Computed from base_url; register this at the provider' }
 
+    NotifyChannelType:
+      type: string
+      enum: [discord, slack, ntfy, telegram, webhook, email]
+
+    AlertKind:
+      type: string
+      enum: [crashed, down, job_failed, game_update, app_update, disk_low, player_join, player_leave]
+
+    NotifyChannel:
+      type: object
+      required: [id, type, name, enabled, events, instances]
+      properties:
+        id: { type: string, readOnly: true }
+        type: { $ref: '#/components/schemas/NotifyChannelType' }
+        name: { type: string, minLength: 1, maxLength: 64 }
+        enabled: { type: boolean, default: true }
+        url:
+          type: string
+          description: |
+            Destination address; shape depends on type: discord/slack must be
+            the provider's own webhook host (https only); telegram is the
+            full Bot API "https://api.telegram.org/bot<token>/sendMessage"
+            URL; ntfy/webhook accept any host (http allowed, e.g. self-hosted
+            ntfy); email uses smtp://[user@]host:port/recipient@example.com.
+            Write-only for discord/slack/telegram, since the URL itself
+            carries the bearer credential: empty on read, and empty on write
+            keeps the stored value (matched by id) — same rule as secret.
+        secret:
+          type: string
+          description: |
+            Write-only: never returned by a read. Telegram: destination chat
+            id. Ntfy/webhook: optional bearer token. Email: SMTP password.
+            Empty on write keeps the stored value for an existing channel
+            (matched by id), same rule as auth.oidc.client_secret.
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/AlertKind' }
+        instances:
+          type: array
+          items: { type: string, pattern: '^[a-z0-9][a-z0-9-]{0,31}$' }
+          description: Instance ids this channel is scoped to; empty means every instance.
+
+    NotifySettings:
+      type: object
+      required: [channels, disk_low_percent]
+      properties:
+        channels: { type: array, items: { $ref: '#/components/schemas/NotifyChannel' } }
+        disk_low_percent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          default: 0
+          description: Free-space threshold (%) that raises disk_low; 0 means "use the default (10)"
+
+    NotificationLogEntry:
+      type: object
+      required: [id, at, channel_id, kind, ok]
+      properties:
+        id: { type: integer }
+        at: { type: string, format: date-time }
+        channel_id: { type: string }
+        kind: { type: string }
+        instance_id: { type: string }
+        ok: { type: boolean }
+        error: { type: string }
+
     Settings:
       type: object
-      required: [auth, updates, thunderstore, app]
+      required: [auth, updates, thunderstore, app, notifications]
       properties:
         auth:
           type: object
@@ -1499,6 +1603,7 @@ components:
           properties:
             update_check_hours: { type: integer, minimum: 0, default: 6, description: 0 disables release polling }
             auto_upgrade: { type: boolean, default: false, description: Install new releases automatically when no players are online on any instance }
+        notifications: { $ref: '#/components/schemas/NotifySettings' }
 
     SystemInfo:
       type: object

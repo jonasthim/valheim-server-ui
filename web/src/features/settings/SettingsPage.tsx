@@ -39,6 +39,7 @@ import {
   useUpgradeApp,
   useUpgradeInFlight,
 } from '../system'
+import { NotificationsCard } from './NotificationsCard'
 import { DEFAULT_ROLE_OPTIONS } from './options'
 import { RoleMappingEditor } from './RoleMappingEditor'
 
@@ -64,6 +65,7 @@ const EMPTY_SETTINGS: Settings = {
   updates: { check_interval_minutes: 60 },
   thunderstore: { index_refresh_hours: 6 },
   app: { update_check_hours: 6, auto_upgrade: false },
+  notifications: { channels: [], disk_low_percent: 0 },
 }
 
 interface OidcTestResult {
@@ -306,6 +308,12 @@ export function SettingsPage() {
               {...form.getInputProps('thunderstore.index_refresh_hours')}
             />
           </SectionCard>
+
+          <NotificationsCard
+            value={form.values.notifications}
+            onChange={(v) => form.setFieldValue('notifications', v)}
+            resetToken={settingsQ.dataUpdatedAt}
+          />
 
           <SectionCard
             title="Application"

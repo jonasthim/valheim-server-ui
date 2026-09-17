@@ -7,6 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
+	"github.com/jonasthim/valheim-server-ui/internal/metrics"
 )
 
 // registerSystemRoutes mounts GET /system and the self-upgrade endpoints
@@ -51,7 +52,7 @@ func systemHandler(d *Deps) http.HandlerFunc {
 				}
 			}
 		}
-		free, total, err := diskUsage(d.Cfg.DataDir)
+		free, total, err := metrics.DiskUsage(d.Cfg.DataDir)
 		if err != nil {
 			d.Log.Warn("system: disk usage", "data_dir", d.Cfg.DataDir, "err", err)
 		}

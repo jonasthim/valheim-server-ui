@@ -140,6 +140,15 @@ type ThunderstoreService interface {
 	EnqueueRefresh(ctx context.Context, requestedBy string) (*domain.Job, error)
 }
 
+// NotifyService is the F-1.1 alerting service (internal/notify).
+type NotifyService interface {
+	// Test sends a fixed test message to channelID, ignoring its Events.
+	Test(ctx context.Context, channelID string) error
+	// Log returns recent delivery attempts, newest first, optionally paged
+	// with a "before" timestamp cursor (nil = no cursor).
+	Log(ctx context.Context, limit int, before *time.Time) ([]domain.NotificationLogEntry, error)
+}
+
 // WP-30
 type SelfUpdateService interface {
 	// Info returns the last known manager release status (never nil).

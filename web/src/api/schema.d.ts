@@ -548,6 +548,88 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings/notifications/{channelId}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a fixed test message to one configured notification channel */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    channelId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            ok: boolean;
+                        };
+                    };
+                };
+                404: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Notification delivery attempts, newest first (F-1.1) */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    /** @description Cursor; only entries strictly before this timestamp */
+                    before?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            entries: components["schemas"]["NotificationLogEntry"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system": {
         parameters: {
             query?: never;
@@ -3301,6 +3383,56 @@ export interface components {
             /** @description Computed from base_url; register this at the provider */
             readonly redirect_uri?: string;
         };
+        /** @enum {string} */
+        NotifyChannelType: "discord" | "slack" | "ntfy" | "telegram" | "webhook" | "email";
+        /** @enum {string} */
+        AlertKind: "crashed" | "down" | "job_failed" | "game_update" | "app_update" | "disk_low" | "player_join" | "player_leave";
+        NotifyChannel: {
+            readonly id: string;
+            type: components["schemas"]["NotifyChannelType"];
+            name: string;
+            /** @default true */
+            enabled: boolean;
+            /**
+             * @description Destination address; shape depends on type: discord/slack must be
+             *     the provider's own webhook host (https only); telegram is the
+             *     full Bot API "https://api.telegram.org/bot<token>/sendMessage"
+             *     URL; ntfy/webhook accept any host (http allowed, e.g. self-hosted
+             *     ntfy); email uses smtp://[user@]host:port/recipient@example.com.
+             *     Write-only for discord/slack/telegram, since the URL itself
+             *     carries the bearer credential: empty on read, and empty on write
+             *     keeps the stored value (matched by id) — same rule as secret.
+             */
+            url?: string;
+            /**
+             * @description Write-only: never returned by a read. Telegram: destination chat
+             *     id. Ntfy/webhook: optional bearer token. Email: SMTP password.
+             *     Empty on write keeps the stored value for an existing channel
+             *     (matched by id), same rule as auth.oidc.client_secret.
+             */
+            secret?: string;
+            events: components["schemas"]["AlertKind"][];
+            /** @description Instance ids this channel is scoped to; empty means every instance. */
+            instances: string[];
+        };
+        NotifySettings: {
+            channels: components["schemas"]["NotifyChannel"][];
+            /**
+             * @description Free-space threshold (%) that raises disk_low; 0 means "use the default (10)"
+             * @default 0
+             */
+            disk_low_percent: number;
+        };
+        NotificationLogEntry: {
+            id: number;
+            /** Format: date-time */
+            at: string;
+            channel_id: string;
+            kind: string;
+            instance_id?: string;
+            ok: boolean;
+            error?: string;
+        };
         Settings: {
             auth: {
                 /** @default true */
@@ -3330,6 +3462,7 @@ export interface components {
                  */
                 auto_upgrade: boolean;
             };
+            notifications: components["schemas"]["NotifySettings"];
         };
         SystemInfo: {
             version: string;

@@ -2,6 +2,11 @@ package auth
 
 import (
 	"context"
+	"fmt"
+	"net/url"
+	"strings"
+
+	"github.com/google/uuid"
 
 	"github.com/jonasthim/valheim-server-ui/internal/api"
 	"github.com/jonasthim/valheim-server-ui/internal/config"
@@ -93,6 +98,9 @@ func (s *Settings) Put(ctx context.Context, in domain.Settings) (domain.Settings
 	if out.Thunderstore.IndexRefreshHours < 1 {
 		fields = append(fields, domain.FieldError{Field: "thunderstore.index_refresh_hours", Message: "must be >= 1"})
 	}
+
+	fields = append(fields, validateNotifications(&out.Notifications, current.Notifications)...)
+
 	if len(fields) > 0 {
 		return domain.Settings{}, domain.Validation(fields)
 	}
@@ -113,11 +121,178 @@ func (s *Settings) TestOIDC(ctx context.Context, issuerURL string) (ok bool, iss
 	return TestOIDCDiscovery(ctx, issuerURL)
 }
 
-// Redacted blanks the OIDC client secret and fills in the computed redirect
-// URI, per the OpenAPI contract for API responses.
+// Redacted blanks the OIDC client secret, every notification channel secret,
+// and the URL of channel types whose URL itself carries a bearer credential
+// (discord/slack webhook paths, a telegram bot token), and fills in the
+// computed redirect URI, per the OpenAPI contract for API responses.
 func (s *Settings) Redacted(in domain.Settings) domain.Settings {
 	out := in
 	out.Auth.OIDC.ClientSecret = ""
 	out.Auth.OIDC.RedirectURI = s.cfg.BaseURL + oidcCallbackPath
+	if len(out.Notifications.Channels) > 0 {
+		chans := make([]domain.NotifyChannel, len(out.Notifications.Channels))
+		copy(chans, out.Notifications.Channels)
+		for i := range chans {
+			chans[i].Secret = ""
+			if channelURLEmbedsSecret(chans[i].Type) {
+				chans[i].URL = ""
+			}
+		}
+		out.Notifications.Channels = chans
+	}
 	return out
+}
+
+// channelURLEmbedsSecret reports whether a channel type's URL itself carries
+// a bearer credential (a Discord/Slack incoming-webhook path, a Telegram bot
+// token) rather than just an endpoint address, so it must be redacted like
+// Secret instead of being shown back to the client. ntfy/webhook/email URLs
+// are plain addresses (their credential, if any, lives in Secret) and stay
+// visible.
+func channelURLEmbedsSecret(t domain.NotifyChannelType) bool {
+	switch t {
+	case domain.NotifyChannelDiscord, domain.NotifyChannelSlack, domain.NotifyChannelTelegram:
+		return true
+	default:
+		return false
+	}
+}
+
+// validNotifyChannelType reports whether t is one of the known channel types.
+func validNotifyChannelType(t domain.NotifyChannelType) bool {
+	for _, known := range domain.NotifyChannelTypes {
+		if t == known {
+			return true
+		}
+	}
+	return false
+}
+
+// validAlertKind reports whether k is one of domain.AllAlertKinds.
+func validAlertKind(k string) bool {
+	for _, known := range domain.AllAlertKinds {
+		if k == known {
+			return true
+		}
+	}
+	return false
+}
+
+// validateNotifications merges (id assignment, "blank secret keeps stored")
+// and validates in place, returning field errors for anything invalid.
+// current is the previously stored notification settings, used to look up a
+// channel's stored secret by id (same rule as auth.oidc.client_secret).
+func validateNotifications(out *domain.NotifySettings, current domain.NotifySettings) []domain.FieldError {
+	currentByID := make(map[string]domain.NotifyChannel, len(current.Channels))
+	for _, ch := range current.Channels {
+		currentByID[ch.ID] = ch
+	}
+
+	var fields []domain.FieldError
+	for i := range out.Channels {
+		ch := &out.Channels[i]
+		prefix := fmt.Sprintf("notifications.channels.%d", i)
+
+		if ch.ID == "" {
+			ch.ID = uuid.NewString()
+		} else if prev, ok := currentByID[ch.ID]; ok {
+			// A blank submitted Secret or URL keeps the stored value (same
+			// rule as auth.oidc.client_secret): Secret is always write-only,
+			// and discord/slack/telegram also blank URL on read since it
+			// embeds a bearer credential (see channelURLEmbedsSecret).
+			if ch.Secret == "" {
+				ch.Secret = prev.Secret
+			}
+			if ch.URL == "" {
+				ch.URL = prev.URL
+			}
+		}
+
+		if !validNotifyChannelType(ch.Type) {
+			fields = append(fields, domain.FieldError{Field: prefix + ".type", Message: "unknown channel type"})
+			continue // URL/host validation below assumes a known type
+		}
+		if l := len(ch.Name); l < 1 || l > 64 {
+			fields = append(fields, domain.FieldError{Field: prefix + ".name", Message: "must be 1-64 characters"})
+		}
+		if err := validateChannelURL(ch); err != "" {
+			fields = append(fields, domain.FieldError{Field: prefix + ".url", Message: err})
+		}
+		for _, ev := range ch.Events {
+			if !validAlertKind(ev) {
+				fields = append(fields, domain.FieldError{Field: prefix + ".events", Message: "unknown alert kind: " + ev})
+				break
+			}
+		}
+		for _, inst := range ch.Instances {
+			if !domain.InstanceIDPattern.MatchString(inst) {
+				fields = append(fields, domain.FieldError{Field: prefix + ".instances", Message: "invalid instance id: " + inst})
+				break
+			}
+		}
+	}
+
+	if out.DiskLowPercent < 0 || out.DiskLowPercent > 100 {
+		fields = append(fields, domain.FieldError{Field: "notifications.disk_low_percent", Message: "must be 0-100"})
+	}
+	return fields
+}
+
+// validateChannelURL checks ch.URL against the shape and host allowlist for
+// ch.Type, returning an empty string when valid. Discord/Slack/Telegram must
+// point at the real provider host over https; ntfy/webhook accept any host
+// and allow http (self-hosted ntfy); email uses a distinct smtp:// shape.
+func validateChannelURL(ch *domain.NotifyChannel) string {
+	if ch.Type == domain.NotifyChannelEmail {
+		return validateEmailURL(ch.URL)
+	}
+
+	u, err := url.Parse(ch.URL)
+	if err != nil || !u.IsAbs() || u.Host == "" {
+		return "must be an absolute URL"
+	}
+	switch u.Scheme {
+	case "https":
+	case "http":
+		if ch.Type != domain.NotifyChannelNtfy && ch.Type != domain.NotifyChannelWebhook {
+			return "must use https://"
+		}
+	default:
+		return "must be an http(s) URL"
+	}
+
+	host := strings.ToLower(u.Hostname())
+	switch ch.Type {
+	case domain.NotifyChannelDiscord:
+		if host != "discord.com" && host != "discordapp.com" {
+			return "discord webhook URLs must point at discord.com or discordapp.com"
+		}
+	case domain.NotifyChannelSlack:
+		if host != "hooks.slack.com" {
+			return "slack webhook URLs must point at hooks.slack.com"
+		}
+	case domain.NotifyChannelTelegram:
+		if host != "api.telegram.org" {
+			return "telegram URLs must point at api.telegram.org"
+		}
+	case domain.NotifyChannelNtfy, domain.NotifyChannelWebhook:
+		// any host
+	}
+	return ""
+}
+
+// validateEmailURL checks the "smtp://[user@]host:port/to@example.com" shape
+// used to configure the email channel: userinfo carries the SMTP username
+// (optional, for servers that allow anonymous relay), host:port is the
+// server address, and the path carries the single recipient address.
+func validateEmailURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "smtp" || u.Hostname() == "" {
+		return "must be smtp://[user@]host:port/recipient@example.com"
+	}
+	to := strings.TrimPrefix(u.Path, "/")
+	if to == "" || !strings.Contains(to, "@") {
+		return "path must be the recipient address, e.g. /ops@example.com"
+	}
+	return ""
 }

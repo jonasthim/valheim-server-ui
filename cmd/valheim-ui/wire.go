@@ -23,6 +23,12 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 		return fmt.Errorf("auth: %w", err)
 	}
 
+	// F-1.1: notification/alerting service; needs deps.Bus (set in serve.go)
+	// and deps.Settings (just wired above).
+	if err := wireNotify(ctx, deps); err != nil {
+		return fmt.Errorf("notify: %w", err)
+	}
+
 	// WP-04: job runner + SteamCMD client.
 	runner, steamClient, err := wireJobs(ctx, deps)
 	if err != nil {

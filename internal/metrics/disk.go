@@ -1,14 +1,14 @@
 //go:build !windows
 
-package api
+package metrics
 
 import (
 	"fmt"
 	"syscall"
 )
 
-// diskUsage returns the free/total bytes of the filesystem containing path.
-func diskUsage(path string) (free, total int64, err error) {
+// DiskUsage returns the free/total bytes of the filesystem containing path.
+func DiskUsage(path string) (free, total int64, err error) {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0, 0, fmt.Errorf("statfs %s: %w", path, err)

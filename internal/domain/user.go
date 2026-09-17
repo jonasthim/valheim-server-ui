@@ -98,6 +98,9 @@ type Settings struct {
 		UpdateCheckHours int  `json:"update_check_hours"` // 0 disables release polling
 		AutoUpgrade      bool `json:"auto_upgrade"`
 	} `json:"app"`
+	// Notifications configures outbound alerting channels (F-1.1). Zero value
+	// means no channels configured.
+	Notifications NotifySettings `json:"notifications"`
 }
 
 // DefaultSettings returns the settings used when the row does not exist yet.

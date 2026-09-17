@@ -134,3 +134,206 @@ func TestSettingsPutInvalidatesOIDCCache(t *testing.T) {
 		t.Fatalf("expected onChange to be called once, got %d", calls)
 	}
 }
+
+func TestSettingsPutNotifications_UnknownTypeRejected(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	in := domain.DefaultSettings()
+	in.Notifications.Channels = []domain.NotifyChannel{{
+		Type: "carrier-pigeon", Name: "Pigeon", URL: "https://example.com/hook", Events: []string{domain.AlertCrashed},
+	}}
+	_, err := s.Put(context.Background(), in)
+	de := domain.AsError(err)
+	if de.Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for an unknown channel type, got %v (%v)", de.Code, err)
+	}
+}
+
+func TestSettingsPutNotifications_DiscordForeignHostRejected(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	in := domain.DefaultSettings()
+	in.Notifications.Channels = []domain.NotifyChannel{{
+		Type: domain.NotifyChannelDiscord, Name: "Alerts", URL: "https://evil.example.com/webhook", Events: []string{domain.AlertCrashed},
+	}}
+	_, err := s.Put(context.Background(), in)
+	de := domain.AsError(err)
+	if de.Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for a discord url on a foreign host, got %v (%v)", de.Code, err)
+	}
+
+	// The real discord.com host (any path) is accepted.
+	in.Notifications.Channels[0].URL = "https://discord.com/api/webhooks/1/abc"
+	if _, err := s.Put(context.Background(), in); err != nil {
+		t.Fatalf("expected a discord.com webhook url to be accepted, got %v", err)
+	}
+}
+
+func TestSettingsPutNotifications_EventsAndInstancesValidated(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	ctx := context.Background()
+
+	badEvent := domain.DefaultSettings()
+	badEvent.Notifications.Channels = []domain.NotifyChannel{{
+		Type: domain.NotifyChannelWebhook, Name: "Hook", URL: "https://example.com/hook", Events: []string{"not-a-real-alert"},
+	}}
+	if _, err := s.Put(ctx, badEvent); domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for an unknown alert kind, got %v", err)
+	}
+
+	badInstance := domain.DefaultSettings()
+	badInstance.Notifications.Channels = []domain.NotifyChannel{{
+		Type: domain.NotifyChannelWebhook, Name: "Hook", URL: "https://example.com/hook",
+		Events: []string{domain.AlertCrashed}, Instances: []string{"Not A Slug!"},
+	}}
+	if _, err := s.Put(ctx, badInstance); domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for an invalid instance slug, got %v", err)
+	}
+
+	badPercent := domain.DefaultSettings()
+	badPercent.Notifications.DiskLowPercent = 101
+	if _, err := s.Put(ctx, badPercent); domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for disk_low_percent > 100, got %v", err)
+	}
+}
+
+func TestSettingsPutNotifications_AssignsIDAndKeepsSecretWhenBlank(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	ctx := context.Background()
+
+	first := domain.DefaultSettings()
+	first.Notifications.Channels = []domain.NotifyChannel{{
+		Type: domain.NotifyChannelDiscord, Name: "Alerts", URL: "https://discord.com/api/webhooks/1/abc",
+		Secret: "s3cr3t", Enabled: true, Events: []string{domain.AlertCrashed},
+	}}
+	out, err := s.Put(ctx, first)
+	if err != nil {
+		t.Fatalf("first Put: %v", err)
+	}
+	if len(out.Notifications.Channels) != 1 || out.Notifications.Channels[0].ID == "" {
+		t.Fatalf("expected a channel with a freshly assigned id, got %+v", out.Notifications.Channels)
+	}
+	if out.Notifications.Channels[0].Secret != "s3cr3t" {
+		t.Fatalf("expected the secret to be stored, got %q", out.Notifications.Channels[0].Secret)
+	}
+	id := out.Notifications.Channels[0].ID
+
+	second := domain.DefaultSettings()
+	second.Notifications.Channels = []domain.NotifyChannel{{
+		ID: id, Type: domain.NotifyChannelDiscord, Name: "Alerts renamed", URL: "https://discord.com/api/webhooks/1/abc",
+		Secret: "", Enabled: true, Events: []string{domain.AlertCrashed},
+	}}
+	out2, err := s.Put(ctx, second)
+	if err != nil {
+		t.Fatalf("second Put: %v", err)
+	}
+	if out2.Notifications.Channels[0].Secret != "s3cr3t" {
+		t.Fatalf("expected the stored secret to be kept, got %q", out2.Notifications.Channels[0].Secret)
+	}
+	if out2.Notifications.Channels[0].ID != id {
+		t.Fatalf("expected the id to be preserved, got %q want %q", out2.Notifications.Channels[0].ID, id)
+	}
+	if out2.Notifications.Channels[0].Name != "Alerts renamed" {
+		t.Fatalf("expected the name to change, got %q", out2.Notifications.Channels[0].Name)
+	}
+
+	stored, err := s.Get(ctx)
+	if err != nil || stored.Notifications.Channels[0].Secret != "s3cr3t" {
+		t.Fatalf("secret not persisted correctly: %+v err=%v", stored, err)
+	}
+}
+
+func TestSettingsRedactedBlanksNotificationSecrets(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	in := domain.DefaultSettings()
+	in.Notifications.Channels = []domain.NotifyChannel{{
+		ID: "c1", Type: domain.NotifyChannelWebhook, Name: "Hook", URL: "https://example.com/hook",
+		Secret: "shh", Events: []string{domain.AlertCrashed},
+	}}
+	out := s.Redacted(in)
+	if out.Notifications.Channels[0].Secret != "" {
+		t.Fatalf("expected the notification channel secret to be blanked, got %q", out.Notifications.Channels[0].Secret)
+	}
+	// The original passed to Redacted must not be mutated (mirrors the OIDC case).
+	if in.Notifications.Channels[0].Secret != "shh" {
+		t.Fatalf("Redacted must not mutate its input, got %q", in.Notifications.Channels[0].Secret)
+	}
+}
+
+// TestSettingsRedactedBlanksURLForTypesThatEmbedASecret covers the security
+// review finding: discord/slack/telegram webhook URLs carry the bearer
+// credential in the URL itself, so Redacted must blank URL too, not just
+// Secret; ntfy (an address, not a credential) must keep its URL visible.
+func TestSettingsRedactedBlanksURLForTypesThatEmbedASecret(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	in := domain.DefaultSettings()
+	in.Notifications.Channels = []domain.NotifyChannel{
+		{ID: "c1", Type: domain.NotifyChannelDiscord, Name: "Discord", URL: "https://discord.com/api/webhooks/1/topsecret", Events: []string{domain.AlertCrashed}},
+		{ID: "c2", Type: domain.NotifyChannelNtfy, Name: "Ntfy", URL: "https://ntfy.sh/my-topic", Events: []string{domain.AlertCrashed}},
+	}
+	out := s.Redacted(in)
+	if out.Notifications.Channels[0].URL != "" {
+		t.Fatalf("expected the discord channel's url to be blanked, got %q", out.Notifications.Channels[0].URL)
+	}
+	if out.Notifications.Channels[1].URL != "https://ntfy.sh/my-topic" {
+		t.Fatalf("expected the ntfy channel's url to stay visible, got %q", out.Notifications.Channels[1].URL)
+	}
+	// The original passed to Redacted must not be mutated.
+	if in.Notifications.Channels[0].URL == "" {
+		t.Fatalf("Redacted must not mutate its input")
+	}
+}
+
+// TestSettingsPutNotifications_BlankURLKeepsStored covers the security
+// review finding: since discord/slack/telegram URLs are never returned by a
+// read, the UI must be able to re-save a channel (rename it, change its
+// events) without re-pasting the URL, exactly like the Secret rule.
+func TestSettingsPutNotifications_BlankURLKeepsStored(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	ctx := context.Background()
+
+	first := domain.DefaultSettings()
+	first.Notifications.Channels = []domain.NotifyChannel{{
+		Type: domain.NotifyChannelDiscord, Name: "Alerts", URL: "https://discord.com/api/webhooks/1/abc",
+		Secret: "", Enabled: true, Events: []string{domain.AlertCrashed},
+	}}
+	out, err := s.Put(ctx, first)
+	if err != nil {
+		t.Fatalf("first Put: %v", err)
+	}
+	id := out.Notifications.Channels[0].ID
+	storedURL := out.Notifications.Channels[0].URL
+	if storedURL == "" {
+		t.Fatalf("expected the url to be stored, got %+v", out.Notifications.Channels[0])
+	}
+
+	second := domain.DefaultSettings()
+	second.Notifications.Channels = []domain.NotifyChannel{{
+		ID: id, Type: domain.NotifyChannelDiscord, Name: "Alerts renamed", URL: "",
+		Enabled: true, Events: []string{domain.AlertCrashed},
+	}}
+	out2, err := s.Put(ctx, second)
+	if err != nil {
+		t.Fatalf("second Put (blank url): %v", err)
+	}
+	if out2.Notifications.Channels[0].URL != storedURL {
+		t.Fatalf("expected the stored url to be kept, got %q want %q", out2.Notifications.Channels[0].URL, storedURL)
+	}
+	if out2.Notifications.Channels[0].Name != "Alerts renamed" {
+		t.Fatalf("expected the name to change, got %q", out2.Notifications.Channels[0].Name)
+	}
+}
+
+// TestSettingsPutNotifications_NewChannelWithBlankURLRejected covers the
+// security review finding: a channel with no id (so nothing stored to fall
+// back to) and a blank URL must still fail validation, not silently save
+// with an empty destination.
+func TestSettingsPutNotifications_NewChannelWithBlankURLRejected(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	in := domain.DefaultSettings()
+	in.Notifications.Channels = []domain.NotifyChannel{{
+		Type: domain.NotifyChannelWebhook, Name: "Hook", URL: "", Events: []string{domain.AlertCrashed},
+	}}
+	_, err := s.Put(context.Background(), in)
+	if domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for a brand-new channel with a blank url, got %v", err)
+	}
+}
