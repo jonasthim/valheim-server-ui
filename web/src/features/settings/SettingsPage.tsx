@@ -27,7 +27,7 @@ import { useAuth } from '../../auth/useAuth'
 import type { Settings } from '../../api/types'
 import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
-import { PageHeader, SectionCard } from '../../ui'
+import { PageHeader, SectionCard, LoadError } from '../../ui'
 import { useJobDrawer } from '../jobs'
 import {
   ManagerRestartOverlay,
@@ -147,6 +147,16 @@ export function SettingsPage() {
         <Skeleton height={40} width={220} />
         <Skeleton height={260} />
         <Skeleton height={100} />
+      </Stack>
+    )
+  }
+  // Never mount the form on a failed load: it would show EMPTY_SETTINGS and a
+  // Save would overwrite the real settings with defaults.
+  if (settingsQ.isError) {
+    return (
+      <Stack gap="lg" maw={760}>
+        <PageHeader eyebrow="Administration" title="Settings" description="Application, update and sign-in configuration." />
+        <LoadError error={settingsQ.error} title="Could not load settings" onRetry={() => settingsQ.refetch()} />
       </Stack>
     )
   }
@@ -343,16 +353,16 @@ export function SettingsPage() {
                   {systemQ.data.app_update?.latest_version && (
                     <Text size="sm" c="dimmed">
                       Latest release {systemQ.data.app_update.latest_version}
-                      {systemQ.data.app_update.checked_at ? ` · checked ${fmtAgo(systemQ.data.app_update.checked_at)}` : ''}
+                      {systemQ.data.app_update.checked_at ? `, checked ${fmtAgo(systemQ.data.app_update.checked_at)}` : ''}
                       {systemQ.data.app_update.release_url && (
                         <>
-                          {' · '}
+                          {', '}
                           <Anchor href={systemQ.data.app_update.release_url} target="_blank" rel="noreferrer">
                             release notes
                           </Anchor>
                         </>
                       )}
-                      {' · '}
+                      {', '}
                       <Anchor component="button" type="button" onClick={() => setNotesOpen(true)}>
                         what's new
                       </Anchor>
