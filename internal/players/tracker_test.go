@@ -46,6 +46,11 @@ type fakeStore struct {
 	mu    sync.Mutex
 	rows  map[[2]string]domain.KnownPlayer
 	order map[string][]string // instanceID -> platform ids in first-seen order
+
+	// sessionCalls records OpenSession/CloseSession/CloseAll invocations in
+	// order, as "open:instance:platform", "close:instance:platform" and
+	// "closeAll:instance", so tests can assert both occurrence and ordering.
+	sessionCalls []string
 }
 
 func newFakeStore() *fakeStore {
@@ -98,6 +103,35 @@ func (s *fakeStore) List(_ context.Context, instanceID string, limit int) ([]dom
 	return out, nil
 }
 
+func (s *fakeStore) OpenSession(_ context.Context, instanceID, platformID string, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessionCalls = append(s.sessionCalls, "open:"+instanceID+":"+platformID)
+	return nil
+}
+
+func (s *fakeStore) CloseSession(_ context.Context, instanceID, platformID string, _ time.Time) (time.Duration, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessionCalls = append(s.sessionCalls, "close:"+instanceID+":"+platformID)
+	return 0, nil
+}
+
+func (s *fakeStore) CloseAll(_ context.Context, instanceID string, _ time.Time) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessionCalls = append(s.sessionCalls, "closeAll:"+instanceID)
+	return nil
+}
+
+func (s *fakeStore) calls() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]string, len(s.sessionCalls))
+	copy(out, s.sessionCalls)
+	return out
+}
+
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError}))
 }
@@ -129,6 +163,21 @@ func TestTracker_ConnectThenSpawnBindsName(t *testing.T) {
 	}
 	if len(kp) != 1 || kp[0].Name != "Bjorn" || kp[0].SessionCount != 1 {
 		t.Fatalf("known players = %#v, want one Bjorn with session_count 1", kp)
+	}
+}
+
+func TestTracker_SpawnThenDisconnectOpensAndClosesSession(t *testing.T) {
+	store := newFakeStore()
+	tr := newTracker("main", &fakePublisher{}, store, testLogger())
+	ctx := context.Background()
+
+	tr.HandleLogEvent(ctx, logs.Connected{ID: "id-1"})
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Bjorn"})
+	tr.HandleLogEvent(ctx, logs.Disconnected{ID: "id-1"})
+
+	calls := store.calls()
+	if len(calls) != 2 || calls[0] != "open:main:id-1" || calls[1] != "close:main:id-1" {
+		t.Fatalf("session calls = %v, want [open:main:id-1 close:main:id-1]", calls)
 	}
 }
 
@@ -367,6 +416,21 @@ func TestTracker_ResetClearsOnlineKeepsJoinCode(t *testing.T) {
 	}
 	if ready {
 		t.Fatalf("ready after reset = true, want false")
+	}
+}
+
+func TestTracker_ResetClosesAllSessions(t *testing.T) {
+	store := newFakeStore()
+	tr := newTracker("main", &fakePublisher{}, store, testLogger())
+	ctx := context.Background()
+	tr.HandleLogEvent(ctx, logs.Connected{ID: "id-1"})
+	tr.HandleLogEvent(ctx, logs.Spawned{Name: "Bjorn"})
+
+	tr.reset()
+
+	calls := store.calls()
+	if len(calls) == 0 || calls[len(calls)-1] != "closeAll:main" {
+		t.Fatalf("session calls = %v, want closeAll:main last", calls)
 	}
 }
 

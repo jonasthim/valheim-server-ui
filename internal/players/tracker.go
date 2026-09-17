@@ -206,6 +206,10 @@ func (t *tracker) onSpawned(ctx context.Context, name string) {
 	defer cancel()
 	if err := t.store.UpdateName(cctx, t.instanceID, boundID, name, time.Now()); err != nil {
 		t.log.Warn("players: record name failed", "instance", t.instanceID, "platform_id", boundID, "err", err)
+		return
+	}
+	if err := t.store.OpenSession(cctx, t.instanceID, boundID, time.Now()); err != nil {
+		t.log.Warn("players: open session failed", "instance", t.instanceID, "platform_id", boundID, "err", err)
 	}
 }
 
@@ -231,6 +235,15 @@ func (t *tracker) onDisconnected(id string) {
 	}
 	t.mu.Unlock()
 	t.publish()
+
+	if t.store == nil {
+		return
+	}
+	cctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+	defer cancel()
+	if _, err := t.store.CloseSession(cctx, t.instanceID, id, time.Now()); err != nil {
+		t.log.Warn("players: close session failed", "instance", t.instanceID, "platform_id", id, "err", err)
+	}
 }
 
 // dropUnboundLocked removes up to n name-only entries, oldest connection
@@ -267,6 +280,15 @@ func (t *tracker) reset() {
 	t.ready = false
 	t.mu.Unlock()
 	t.publish()
+
+	if t.store == nil {
+		return
+	}
+	cctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
+	defer cancel()
+	if err := t.store.CloseAll(cctx, t.instanceID, time.Now()); err != nil {
+		t.log.Warn("players: close all sessions failed", "instance", t.instanceID, "err", err)
+	}
 }
 
 func (t *tracker) onlineList() []domain.OnlinePlayer {

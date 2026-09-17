@@ -82,6 +82,8 @@ type PlayerService interface {
 	Players(ctx context.Context, instanceID string) (*domain.PlayersResponse, error)
 	GetList(ctx context.Context, instanceID string, kind domain.ListKind) (*domain.PlayerList, error)
 	PutList(ctx context.Context, instanceID string, list domain.PlayerList) (*domain.PlayerList, error)
+	// SetNote stores an operator note against a known player (F-2.2).
+	SetNote(ctx context.Context, instanceID, platformID, note string) error
 }
 
 // WP-06

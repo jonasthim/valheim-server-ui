@@ -45,6 +45,7 @@ export function PlayersTab({ id }: { id: string }) {
       />
 
       <KnownPlayersTable
+        id={id}
         players={playersQ.data?.known ?? []}
         isLoading={playersQ.isLoading}
         canManageLists={canManage}

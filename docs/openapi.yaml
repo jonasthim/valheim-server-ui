@@ -587,6 +587,23 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/PlayersResponse' }
+  /instances/{instanceId}/players/{platformId}:
+    parameters:
+      - { $ref: '#/components/parameters/instanceId' }
+      - { $ref: '#/components/parameters/platformId' }
+    put:
+      tags: [players]
+      summary: Set or clear an operator note for a known player
+      x-role: operator
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetPlayerNoteRequest' }
+      responses:
+        '204': { description: Saved }
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
   /instances/{instanceId}/lists/{listKind}:
     parameters:
       - { $ref: '#/components/parameters/instanceId' }
@@ -1447,6 +1464,7 @@ components:
     jobId: { in: path, name: jobId, required: true, schema: { type: string, format: uuid } }
     worldName: { in: path, name: worldName, required: true, schema: { type: string } }
     metricRange: { in: query, name: range, required: true, schema: { type: string, enum: [1h, 24h, 7d, 30d] } }
+    platformId: { in: path, name: platformId, required: true, schema: { type: string } }
 
   responses:
     Error:
@@ -1964,13 +1982,30 @@ components:
 
     KnownPlayer:
       type: object
-      required: [platform_id, first_seen_at, last_seen_at, session_count]
+      required:
+        [
+          platform_id,
+          first_seen_at,
+          last_seen_at,
+          session_count,
+          total_play_seconds,
+          last_session_seconds,
+        ]
       properties:
         platform_id: { type: string }
         name: { type: string }
         first_seen_at: { type: string, format: date-time }
         last_seen_at: { type: string, format: date-time }
         session_count: { type: integer }
+        total_play_seconds: { type: integer, description: Cumulative seconds played across all sessions }
+        last_session_seconds: { type: integer, description: Length of the most recently closed session, in seconds }
+        note: { type: string, description: Short operator note about this player }
+
+    SetPlayerNoteRequest:
+      type: object
+      required: [note]
+      properties:
+        note: { type: string, maxLength: 500 }
 
     PlayersResponse:
       type: object

@@ -1,9 +1,11 @@
-import { ActionIcon, CopyButton, Group, Menu, Skeleton, Table, Text, Tooltip } from '@mantine/core'
-import { IconBan, IconCheck, IconCopy, IconDots, IconShieldCheck, IconUserCheck } from '@tabler/icons-react'
+import { useState } from 'react'
+import { ActionIcon, CopyButton, Group, Menu, Skeleton, Table, Text, TextInput, Tooltip } from '@mantine/core'
+import { IconBan, IconCheck, IconCopy, IconDots, IconPencil, IconShieldCheck, IconUserCheck } from '@tabler/icons-react'
 import type { KnownPlayer, ListKind } from '../../../api/types'
 import { fmtAgo } from '../../../lib/format'
 import { SectionCard } from '../../../ui'
 import { LIST_KIND_ACTION_LABELS } from './constants'
+import { useSetPlayerNote } from './usePlayers'
 import classes from './players.module.css'
 
 const LIST_ICONS: Record<ListKind, typeof IconShieldCheck> = {
@@ -12,17 +14,101 @@ const LIST_ICONS: Record<ListKind, typeof IconShieldCheck> = {
   banned: IconBan,
 }
 
+/** "1h 23m" / "45m" / "<1m" / "0m" for a cumulative playtime in seconds. */
+function fmtPlaytime(totalSeconds: number): string {
+  if (!totalSeconds) return '0m'
+  if (totalSeconds < 60) return '<1m'
+  const totalMinutes = Math.floor(totalSeconds / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`
+}
+
+/**
+ * Inline-editable note cell. Viewers see plain text (or a dimmed dash);
+ * operators can click the text or the pencil to edit, save on Enter/blur,
+ * Escape to cancel.
+ */
+function NoteCell({
+  playerId,
+  note,
+  canEdit,
+  onSave,
+}: {
+  playerId: string
+  note: string
+  canEdit: boolean
+  onSave: (note: string) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(note)
+
+  if (!canEdit) {
+    return note ? <Text size="sm">{note}</Text> : <Text c="dimmed">—</Text>
+  }
+
+  if (editing) {
+    return (
+      <TextInput
+        size="xs"
+        autoFocus
+        maxLength={500}
+        value={value}
+        onChange={(e) => setValue(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          else if (e.key === 'Escape') setEditing(false)
+        }}
+        onBlur={() => {
+          setEditing(false)
+          if (value !== note) onSave(value)
+        }}
+        aria-label={`Note for ${playerId}`}
+      />
+    )
+  }
+
+  return (
+    <Group
+      gap={4}
+      wrap="nowrap"
+      style={{ cursor: 'pointer' }}
+      onClick={() => {
+        setValue(note)
+        setEditing(true)
+      }}
+    >
+      {note ? <Text size="sm">{note}</Text> : <Text c="dimmed">—</Text>}
+      <ActionIcon
+        size="sm"
+        variant="subtle"
+        aria-label={`Edit note for ${playerId}`}
+        onClick={(e) => {
+          e.stopPropagation()
+          setValue(note)
+          setEditing(true)
+        }}
+      >
+        <IconPencil size={14} />
+      </ActionIcon>
+    </Group>
+  )
+}
+
 export function KnownPlayersTable({
+  id,
   players,
   isLoading,
   canManageLists,
   onAddToList,
 }: {
+  id: string
   players: KnownPlayer[]
   isLoading: boolean
   canManageLists: boolean
   onAddToList: (kind: ListKind, playerId: string) => void
 }) {
+  const setNote = useSetPlayerNote(id)
   const sorted = [...players].sort((a, b) => (a.last_seen_at < b.last_seen_at ? 1 : -1))
 
   return (
@@ -49,6 +135,8 @@ export function KnownPlayersTable({
                 <Table.Th>First seen</Table.Th>
                 <Table.Th>Last seen</Table.Th>
                 <Table.Th>Sessions</Table.Th>
+                <Table.Th>Playtime</Table.Th>
+                <Table.Th>Note</Table.Th>
                 {canManageLists && <Table.Th />}
               </Table.Tr>
             </Table.Thead>
@@ -80,6 +168,15 @@ export function KnownPlayersTable({
                   <Table.Td>{fmtAgo(p.first_seen_at)}</Table.Td>
                   <Table.Td>{fmtAgo(p.last_seen_at)}</Table.Td>
                   <Table.Td>{p.session_count}</Table.Td>
+                  <Table.Td>{fmtPlaytime(p.total_play_seconds)}</Table.Td>
+                  <Table.Td>
+                    <NoteCell
+                      playerId={p.platform_id}
+                      note={p.note ?? ''}
+                      canEdit={canManageLists}
+                      onSave={(note) => setNote.mutate({ platformId: p.platform_id, note })}
+                    />
+                  </Table.Td>
                   {canManageLists && (
                     <Table.Td>
                       <Menu withinPortal position="bottom-end">

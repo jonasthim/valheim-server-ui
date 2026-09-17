@@ -12,6 +12,7 @@ import (
 // /instances/{instanceId}/lists/{listKind} (docs/openapi.yaml "players" tag).
 func registerPlayerRoutes(r chi.Router, d *Deps) {
 	r.With(RequireRole(domain.RoleViewer)).Get("/instances/{instanceId}/players", handleGetPlayers(d))
+	r.With(RequireRole(domain.RoleOperator)).Put("/instances/{instanceId}/players/{platformId}", handleSetPlayerNote(d))
 	r.With(RequireRole(domain.RoleViewer)).Get("/instances/{instanceId}/lists/{listKind}", handleGetPlayerList(d))
 	r.With(RequireRole(domain.RoleOperator)).Put("/instances/{instanceId}/lists/{listKind}", handlePutPlayerList(d))
 }
@@ -43,6 +44,38 @@ func handleGetPlayers(d *Deps) http.HandlerFunc {
 			return
 		}
 		WriteJSON(w, http.StatusOK, resp)
+	}
+}
+
+// setPlayerNoteRequest is the PUT /instances/{instanceId}/players/{platformId}
+// body (docs/openapi.yaml SetPlayerNoteRequest).
+type setPlayerNoteRequest struct {
+	Note string `json:"note"`
+}
+
+func handleSetPlayerNote(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		platformID := chi.URLParam(r, "platformId")
+		if d.Players == nil {
+			WriteError(w, domain.E(domain.CodeInternal, "players service not configured"))
+			return
+		}
+		var body setPlayerNoteRequest
+		if err := DecodeJSON(r, &body); err != nil {
+			WriteError(w, err)
+			return
+		}
+		if err := d.Players.SetNote(r.Context(), id, platformID, body.Note); err != nil {
+			WriteError(w, err)
+			return
+		}
+		d.audit(r, "player.note", id, platformID, map[string]any{"note_length": len(body.Note)})
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

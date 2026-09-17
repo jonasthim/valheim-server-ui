@@ -1466,6 +1466,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/players/{platformId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+                platformId: components["parameters"]["platformId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** Set or clear an operator note for a known player */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                    platformId: components["parameters"]["platformId"];
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["SetPlayerNoteRequest"];
+                };
+            };
+            responses: {
+                /** @description Saved */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                404: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/lists/{listKind}": {
         parameters: {
             query?: never;
@@ -4008,6 +4054,15 @@ export interface components {
             /** Format: date-time */
             last_seen_at: string;
             session_count: number;
+            /** @description Cumulative seconds played across all sessions */
+            total_play_seconds: number;
+            /** @description Length of the most recently closed session */
+            last_session_seconds: number;
+            /** @description Short operator note about this player */
+            note?: string;
+        };
+        SetPlayerNoteRequest: {
+            note: string;
         };
         PlayersResponse: {
             online: components["schemas"]["OnlinePlayer"][];
@@ -4612,6 +4667,7 @@ export interface components {
         jobId: string;
         worldName: string;
         metricRange: "1h" | "24h" | "7d" | "30d";
+        platformId: string;
     };
     requestBodies: never;
     headers: never;

@@ -4,7 +4,7 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
-import type { ListKind, PlayerList, PlayersResponse } from '../../../api/types'
+import type { ListKind, PlayerList, PlayersResponse, SetPlayerNoteRequest } from '../../../api/types'
 import { onEvent } from '../../../events/useEvents'
 import { notifyError, notifySuccess } from '../../../lib/notify'
 import { LIST_KIND_LABELS } from './constants'
@@ -41,6 +41,20 @@ export function usePlayers(id: string) {
   }, [id, qc])
 
   return query
+}
+
+/** PUT /instances/{id}/players/{platformId} — sets or clears the operator note. */
+export function useSetPlayerNote(id: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ platformId, note }: { platformId: string } & SetPlayerNoteRequest) =>
+      api.put<void>(`/instances/${id}/players/${platformId}`, { note }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instances', id, 'players'] })
+      notifySuccess('Note saved')
+    },
+    onError: (err) => notifyError(err, 'Could not save note'),
+  })
 }
 
 function listKey(id: string, kind: ListKind) {

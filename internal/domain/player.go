@@ -42,11 +42,14 @@ type OnlinePlayer struct {
 }
 
 type KnownPlayer struct {
-	PlatformID   string    `json:"platform_id"`
-	Name         string    `json:"name,omitempty"`
-	FirstSeenAt  time.Time `json:"first_seen_at"`
-	LastSeenAt   time.Time `json:"last_seen_at"`
-	SessionCount int       `json:"session_count"`
+	PlatformID         string    `json:"platform_id"`
+	Name               string    `json:"name,omitempty"`
+	FirstSeenAt        time.Time `json:"first_seen_at"`
+	LastSeenAt         time.Time `json:"last_seen_at"`
+	SessionCount       int       `json:"session_count"`
+	TotalPlaySeconds   int64     `json:"total_play_seconds"`
+	LastSessionSeconds int64     `json:"last_session_seconds"`
+	Note               string    `json:"note,omitempty"`
 }
 
 type PlayersResponse struct {

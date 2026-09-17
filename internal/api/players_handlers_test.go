@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -218,6 +219,40 @@ func TestPlayersHandler_PutList_ValidationFailure(t *testing.T) {
 		Entries: []domain.PlayerListEntry{{ID: "not valid!!"}},
 	}
 	rec := doJSON(t, h, http.MethodPut, "/api/v1/instances/main/lists/permitted", body)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPlayersHandler_SetNote_SuccessAndAudit(t *testing.T) {
+	h, _, auditor := newPlayersTestRouter(t)
+
+	rec := doJSON(t, h, http.MethodPut, "/api/v1/instances/main/players/76561198000000001",
+		map[string]string{"note": "friendly builder"})
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204; body=%s", rec.Code, rec.Body.String())
+	}
+
+	call, ok := auditor.last()
+	if !ok {
+		t.Fatalf("no audit call recorded for PUT note")
+	}
+	if call.action != "player.note" {
+		t.Errorf("audit action = %q, want player.note", call.action)
+	}
+	if call.instanceID != "main" {
+		t.Errorf("audit instanceID = %q, want main", call.instanceID)
+	}
+	if call.target != "76561198000000001" {
+		t.Errorf("audit target = %q, want the platform id", call.target)
+	}
+}
+
+func TestPlayersHandler_SetNote_TooLongIsValidationError(t *testing.T) {
+	h, _, _ := newPlayersTestRouter(t)
+	longNote := strings.Repeat("a", 501)
+	rec := doJSON(t, h, http.MethodPut, "/api/v1/instances/main/players/76561198000000001",
+		map[string]string{"note": longNote})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want 422; body=%s", rec.Code, rec.Body.String())
 	}

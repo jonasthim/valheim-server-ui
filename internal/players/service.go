@@ -7,12 +7,21 @@ import (
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
+// serviceStore is the persistence surface the players Service needs: the
+// shared PlayerStore (List, for PlayersResponse.Known) plus SetNote, which
+// only the API layer calls — the tracker never does — and so is not part of
+// PlayerStore itself.
+type serviceStore interface {
+	PlayerStore
+	SetNote(ctx context.Context, instanceID, platformID, note string) error
+}
+
 // Service implements api.PlayerService (structurally; this package does not
 // import internal/api to avoid a cycle — wiring happens in
 // cmd/valheim-ui/wire_players.go).
 type Service struct {
 	mgr    *Manager
-	store  PlayerStore
+	store  serviceStore
 	paths  func(string) domain.InstancePaths
 	exists func(context.Context, string) (bool, error)
 }
@@ -20,7 +29,7 @@ type Service struct {
 // NewService builds the players.Service. paths resolves an instance's
 // on-disk layout (for the list files); exists checks the instance exists,
 // returning domain.NotFound("instance") to callers when it does not.
-func NewService(mgr *Manager, store PlayerStore, paths func(string) domain.InstancePaths, exists func(context.Context, string) (bool, error)) *Service {
+func NewService(mgr *Manager, store serviceStore, paths func(string) domain.InstancePaths, exists func(context.Context, string) (bool, error)) *Service {
 	return &Service{mgr: mgr, store: store, paths: paths, exists: exists}
 }
 
@@ -109,4 +118,31 @@ func (s *Service) PutList(ctx context.Context, instanceID string, list domain.Pl
 		return nil, err
 	}
 	return ReadList(file, list.Kind)
+}
+
+// SetNote implements api.PlayerService: stores (or clears, when note is
+// empty) a short operator note against a known player. platformID must have
+// the same shape accepted by the admin/banned/permitted list files; note is
+// capped at 500 characters.
+func (s *Service) SetNote(ctx context.Context, instanceID, platformID, note string) error {
+	if err := s.checkExists(ctx, instanceID); err != nil {
+		return err
+	}
+	var fields []domain.FieldError
+	if !idPattern.MatchString(platformID) {
+		fields = append(fields, domain.FieldError{
+			Field:   "platform_id",
+			Message: "must match ^[A-Za-z0-9_]{1,64}$",
+		})
+	}
+	if len(note) > 500 {
+		fields = append(fields, domain.FieldError{
+			Field:   "note",
+			Message: "must be at most 500 characters",
+		})
+	}
+	if err := domain.Validation(fields); err != nil {
+		return err
+	}
+	return s.store.SetNote(ctx, instanceID, platformID, note)
 }
