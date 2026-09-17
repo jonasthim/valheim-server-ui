@@ -323,7 +323,13 @@ export function NotificationsCard({
                         <Badge color="moss">sent</Badge>
                       ) : (
                         <Tooltip label={entry.error} disabled={!entry.error}>
-                          <Badge color="blood">failed</Badge>
+                          <Badge
+                            color="blood"
+                            tabIndex={entry.error ? 0 : undefined}
+                            aria-label={entry.error ? `Delivery failed: ${entry.error}` : undefined}
+                          >
+                            failed
+                          </Badge>
                         </Tooltip>
                       )}
                     </Table.Td>

@@ -18,6 +18,10 @@
 .viewport:active {
   cursor: grabbing;
 }
+.viewport:focus-visible {
+  outline: 2px solid var(--vh-ember);
+  outline-offset: 2px;
+}
 .surface {
   position: absolute;
   inset: 0;

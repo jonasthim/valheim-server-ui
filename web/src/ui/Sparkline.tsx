@@ -8,9 +8,12 @@ const VIEWBOX_WIDTH = 100
  * Zero-dependency inline-SVG sparkline: a thin trend line with a faint area
  * fill beneath it, scaled to the series' min/max (a flat series draws a
  * mid-line rather than dividing by zero). Wrapped in a Tooltip showing the
- * last value. The SVG itself is decorative (`aria-hidden`); pair it with a
- * visible label so the trend has a name (StatTile and the Overview history
- * rows both do this).
+ * last value, but the tooltip is never the only carrier of that value
+ * (WCAG 1.4.13 / 2.1.1): pass `label` (the trend's name, e.g. "CPU") and the
+ * SVG gets an accessible name of `"<label>: <last value>"` instead of being
+ * `aria-hidden`. Without `label` the SVG stays decorative/`aria-hidden`, so
+ * callers must otherwise show the value themselves (StatTile and the
+ * Overview history rows both pass `label`).
  */
 export function Sparkline({
   values,
@@ -18,12 +21,14 @@ export function Sparkline({
   height = 28,
   color = 'var(--mantine-primary-color-filled)',
   format,
+  label,
 }: {
   values: number[]
   width?: number | string
   height?: number
   color?: string
   format?: (v: number) => string
+  label?: string
 }) {
   if (values.length < 2) return null
 
@@ -47,19 +52,29 @@ export function Sparkline({
   ].join(' ')
 
   const lastValue = values[values.length - 1]
-  const label = format ? format(lastValue) : String(lastValue)
+  const formatted = format ? format(lastValue) : String(lastValue)
+
+  const svg = (
+    <svg
+      viewBox={`0 0 ${VIEWBOX_WIDTH} ${height}`}
+      preserveAspectRatio="none"
+      style={{ width, height, display: 'block' }}
+      aria-hidden={label ? undefined : true}
+    >
+      <path d={area} fill={color} opacity={0.15} stroke="none" />
+      <polyline points={polyline} fill="none" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+    </svg>
+  )
 
   return (
-    <Tooltip label={label}>
-      <svg
-        viewBox={`0 0 ${VIEWBOX_WIDTH} ${height}`}
-        preserveAspectRatio="none"
-        style={{ width, height, display: 'block' }}
-        aria-hidden
-      >
-        <path d={area} fill={color} opacity={0.15} stroke="none" />
-        <polyline points={polyline} fill="none" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-      </svg>
+    <Tooltip label={formatted}>
+      {label ? (
+        <span role="img" aria-label={`${label}: ${formatted}`} style={{ display: 'inline-block', width, height }}>
+          {svg}
+        </span>
+      ) : (
+        svg
+      )}
     </Tooltip>
   )
 }

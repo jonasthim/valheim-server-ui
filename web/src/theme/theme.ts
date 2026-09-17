@@ -124,6 +124,12 @@ const straw: MantineColorsTuple = [
 export const theme = createTheme({
   primaryColor: 'ember',
   primaryShade: { light: 6, dark: 5 },
+  // WCAG 1.4.3: pick dark or light text on filled swatches (buttons, badges,
+  // filled ActionIcons) by the swatch's own luminance instead of always
+  // using the theme's primary-contrast colour. See docs/DESIGN.md
+  // "Accessibility" for the values this was tuned against.
+  autoContrast: true,
+  luminanceThreshold: 0.3,
   colors: {
     ember,
     dark: iron,
@@ -206,6 +212,25 @@ export const cssVariablesResolver: CSSVariablesResolver = (t) => ({
     '--vh-ink': '#1A120A',
     '--vh-elevation': '0 8px 20px -14px rgba(26,18,10,0.35), 0 0 0 1px var(--vh-border)',
     '--vh-accent-soft': 'rgba(232, 149, 10, 0.12)',
+    // WCAG 1.4.3: Mantine's own default (stock gray-6, ~2-3:1 here) is too
+    // light against every light-scheme surface; reuse the already-tuned
+    // --vh-text-soft ink (≥4.7:1 on body/surface/parchment — see
+    // docs/DESIGN.md). Dark scheme's default (our iron[2]) already passes.
+    '--mantine-color-dimmed': 'var(--vh-text-soft)',
+    // WCAG 1.4.3: Mantine's per-colour "outline"/"text" variants default to
+    // shade 6 in light mode (the same shade `primaryShade.light` uses for
+    // filled buttons), which only clears 4.5:1 on our warm --vh-surface /
+    // --vh-surface-2 card backgrounds for ember at shade 9 and blood/gray at
+    // shade 7 — moss needs 9 even for the plain (non-outline) text colour.
+    // Re-pointing to an existing, darker index in the same tuple (no new hex
+    // values); dark scheme's shade-4/5 equivalents already pass. See
+    // docs/DESIGN.md "Accessibility".
+    '--mantine-color-ember-outline': 'var(--mantine-color-ember-9)',
+    '--mantine-color-red-outline': 'var(--mantine-color-red-7)',
+    '--mantine-color-blood-outline': 'var(--mantine-color-blood-7)',
+    '--mantine-color-gray-outline': 'var(--mantine-color-gray-7)',
+    '--mantine-color-green-text': 'var(--mantine-color-green-9)',
+    '--mantine-color-moss-text': 'var(--mantine-color-moss-9)',
   },
   dark: {
     '--mantine-color-body': iron[7],

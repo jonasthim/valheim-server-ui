@@ -3,9 +3,13 @@
 // seeds a realistic state (admin, two instances, one running with a player,
 // a backup, a schedule, an operator user) and screenshots every page.
 //
-//   node web/e2e/screenshots.mjs [--out docs/screenshots] [--scheme dark|light] [--width 1360]
+//   node web/e2e/screenshots.mjs [--out docs/screenshots] [--scheme dark|light] [--width 1360] [--axe]
 //
-// Requires `make build` first (the binary embeds web/dist).
+// Requires `make build` first (the binary embeds web/dist). With --axe, also
+// runs axe-core (WCAG 2.x/2.2 AA tags) against every page after its
+// screenshot, prints a summary and writes <out>/axe-report.json; exits 1 if
+// any violation was found. Requires axe-core installed (not in the lockfile):
+//   cd web && npm install --no-save --no-audit --no-fund axe-core@4.10.3
 import { chromium } from '@playwright/test'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
@@ -20,6 +24,7 @@ const args = Object.fromEntries(
 const out = path.resolve(root, args.out || 'docs/screenshots')
 const scheme = args.scheme || 'dark'
 const width = Number(args.width || 1360)
+const axeMode = process.argv.includes('--axe')
 const port = 18098
 const base = `http://127.0.0.1:${port}`
 const dataDir = path.join(root, 'web', 'e2e', '.data-screens')
@@ -74,16 +79,56 @@ function fakeInstall(id, worlds = []) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+// Set once main() decides whether an axe-flagged violation was found, so the
+// final .then()/.catch() at the bottom of the file can pick the exit code.
+let hadViolations = false
+
 async function main() {
   await waitFor(`${base}/api/v1/auth/status`)
   const browser = await chromium.launch(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {})
-  const context = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: scheme, deviceScaleFactor: 2 })
+  // bypassCSP lets --axe inject axe-core via addScriptTag; the app serves a
+  // strict `script-src 'self'` CSP (internal/api/router.go) that would
+  // otherwise block the inline script. No effect on rendering/screenshots.
+  const context = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: scheme, deviceScaleFactor: 2, bypassCSP: axeMode })
   const page = await context.newPage()
   await page.addInitScript((s) => {
     try {
       window.localStorage.setItem('mantine-color-scheme-value', s)
     } catch {}
   }, scheme)
+
+  // axe-core is loaded once, only in --axe mode, so the script still runs
+  // without it installed when the flag is absent.
+  const axe = axeMode ? (await import('axe-core')).default : null
+  const axeResults = []
+
+  /** Injects axe-core into `targetPage` and runs it against the current
+   *  document, scoped to the WCAG 2.x/2.2 AA tags. Collects violations into
+   *  `axeResults` and prints a short summary line per page. No-op without
+   *  --axe. */
+  async function runAxe(name, targetPage = page) {
+    if (!axe) return
+    await targetPage.addScriptTag({ content: axe.source })
+    const result = await targetPage.evaluate(() =>
+      // `axe` here is the browser global injected by the script tag above,
+      // not the Node-side import — plain .mjs, so no typing needed.
+      axe.run(document, { runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] } }),
+    )
+    const violations = result.violations.map((v) => ({
+      page: name,
+      id: v.id,
+      impact: v.impact,
+      help: v.help,
+      helpUrl: v.helpUrl,
+      nodes: v.nodes.map((n) => ({ target: n.target, summary: n.failureSummary })),
+    }))
+    axeResults.push(...violations)
+    console.log(`axe ${name}: ${violations.length} violation(s)`)
+    for (const v of violations) {
+      console.log(`  ${v.id} ${v.impact} ${v.help}`)
+      for (const n of v.nodes.slice(0, 2)) console.log(`    ${JSON.stringify(n.target)}`)
+    }
+  }
   const api = async (method, p, data) => {
     const res = await page.request.fetch(`${base}/api/v1${p}`, {
       method,
@@ -171,14 +216,18 @@ async function main() {
     ['audit', '/audit'],
     ['account', '/account'],
   ]
-  for (const [name, p] of shots) {
+  async function shot(name, p) {
     await page.goto(`${base}${p}`, { waitUntil: 'networkidle' })
     await sleep(600)
     await page.screenshot({ path: path.join(out, `${name}.png`), fullPage: name !== 'console' })
     console.log('shot', name)
+    await runAxe(name, page)
+  }
+  for (const [name, p] of shots) {
+    await shot(name, p)
   }
   // Mobile dashboard + overview
-  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: scheme, deviceScaleFactor: 2, isMobile: true })
+  const mobile = await browser.newContext({ viewport: { width: 390, height: 844 }, colorScheme: scheme, deviceScaleFactor: 2, isMobile: true, bypassCSP: axeMode })
   const mp = await mobile.newPage()
   await mp.addInitScript((s) => {
     try {
@@ -190,13 +239,15 @@ async function main() {
   await mp.goto(`${base}/`, { waitUntil: 'networkidle' })
   await sleep(600)
   await mp.screenshot({ path: path.join(out, 'mobile-dashboard.png') })
+  await runAxe('mobile-dashboard', mp)
   await mp.goto(`${base}/instances/berra/overview`, { waitUntil: 'networkidle' })
   await sleep(600)
   await mp.screenshot({ path: path.join(out, 'mobile-overview.png') })
+  await runAxe('mobile-overview', mp)
   await mobile.close()
 
   // Login page in a fresh context
-  const anon = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: scheme, deviceScaleFactor: 2 })
+  const anon = await browser.newContext({ viewport: { width, height: 900 }, colorScheme: scheme, deviceScaleFactor: 2, bypassCSP: axeMode })
   const ap = await anon.newPage()
   await ap.addInitScript((s) => {
     try {
@@ -206,14 +257,22 @@ async function main() {
   await ap.goto(`${base}/login`, { waitUntil: 'networkidle' })
   await sleep(400)
   await ap.screenshot({ path: path.join(out, 'login.png') })
+  await runAxe('login', ap)
   await anon.close()
 
   await browser.close()
+
+  if (axe) {
+    fs.writeFileSync(path.join(out, 'axe-report.json'), JSON.stringify(axeResults, null, 2))
+    hadViolations = axeResults.length > 0
+    console.log(`axe: ${axeResults.length} total violation(s) -> ${path.join(out, 'axe-report.json')}`)
+  }
+
   console.log('done ->', out)
 }
 
 main()
-  .then(() => process.exit(0))
+  .then(() => process.exit(hadViolations ? 1 : 0))
   .catch((e) => {
     console.error(e)
     process.exit(1)

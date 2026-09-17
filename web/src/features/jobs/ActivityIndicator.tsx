@@ -31,11 +31,15 @@ export function ActivityIndicator() {
   return (
     <Popover width={320} position="bottom-end" shadow="md" withArrow opened={opened} onChange={set}>
       <Popover.Target>
-        <Indicator label={count} size={16} color="frost" offset={4} disabled={count === 0}>
-          <ActionIcon variant="subtle" color="gray" size="lg" aria-label={`${count} active jobs`} onClick={toggle}>
+        {/* Popover.Target clones its one direct child and adds
+            aria-expanded/aria-haspopup to it (axe aria-allowed-attr):
+            that child must be the actual button, not the decorative
+            Indicator div wrapping it. */}
+        <ActionIcon variant="subtle" color="gray" size="lg" aria-label={`${count} active jobs`} onClick={toggle}>
+          <Indicator label={count} size={16} color="frost" offset={4} disabled={count === 0}>
             <IconActivity size={18} />
-          </ActionIcon>
-        </Indicator>
+          </Indicator>
+        </ActionIcon>
       </Popover.Target>
       <Popover.Dropdown>
         <Stack gap="xs">

@@ -138,6 +138,11 @@ export function Shell() {
 
   return (
     <JobDrawerHost>
+      {/* WCAG 2.4.1: lets keyboard users jump past the header/nav straight
+          to the routed page. Hidden until focused (Shell.module.css). */}
+      <a href="#main-content" className={classes.skipLink}>
+        Skip to content
+      </a>
       <UpgradeFlowHost>
         <AppShell
           header={{ height: 56 }}
@@ -258,7 +263,7 @@ export function Shell() {
             </div>
           </AppShell.Navbar>
 
-          <AppShell.Main className={classes.main}>
+          <AppShell.Main className={classes.main} id="main-content" tabIndex={-1}>
             <div className={classes.content}>
               <ErrorBoundary key={loc.pathname}>
                 <Suspense fallback={<Center h="50vh"><Loader /></Center>}>

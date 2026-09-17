@@ -30,8 +30,11 @@ import { useJob, useCancelJob } from './useJobs'
 import { jobStatusColor, jobTypeLabel, isJobTerminal, isJobCancellable, jobInstancePath } from './jobHelpers'
 
 export function JobDrawer({ jobId, onClose }: { jobId: string | null; onClose: () => void }) {
+  // `title` already gives the dialog its accessible name via Mantine's own
+  // aria-labelledby wiring; a redundant aria-label here lands on the
+  // (roleless) Drawer root div instead (axe aria-prohibited-attr).
   return (
-    <Drawer opened={!!jobId} onClose={onClose} position="right" size="lg" title="Job details" aria-label="Job details">
+    <Drawer opened={!!jobId} onClose={onClose} position="right" size="lg" title="Job details">
       {/* Keying by jobId remounts the body (fresh log/scroll state) instead of
           reaching for an effect to reset state when the drawer switches jobs. */}
       {jobId && <JobDrawerBody key={jobId} jobId={jobId} />}

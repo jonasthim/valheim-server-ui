@@ -76,6 +76,25 @@
 .main {
   min-height: 100dvh;
 }
+/* Skip link (WCAG 2.4.1): off-screen until focused, then pinned at the
+   top-left above the header so keyboard users can jump past the nav. */
+.skipLink {
+  position: absolute;
+  top: 0;
+  left: -9999px;
+  z-index: 1000;
+  padding: 10px 16px;
+  background: var(--vh-surface);
+  color: var(--vh-text);
+  border-radius: 0 0 var(--mantine-radius-md) 0;
+  text-decoration: none;
+  font-weight: 600;
+}
+.skipLink:focus {
+  left: 0;
+  outline: 2px solid var(--vh-ember);
+  outline-offset: -2px;
+}
 .content {
   max-width: 1320px;
   margin: 0 auto;

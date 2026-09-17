@@ -106,7 +106,15 @@ export function WorldsTable({
                       w={320}
                       label="Valheim writes the world metadata immediately and the world data at the first save: every save interval (30 min by default) or when the server stops. Until then the world has no data to back up or download."
                     >
-                      <Badge color="yellow" variant="light" style={{ cursor: 'help' }}>
+                      {/* Focusable with the explanation as its name, so the
+                          tooltip's text is reachable without a pointer. */}
+                      <Badge
+                        color="yellow"
+                        variant="light"
+                        style={{ cursor: 'help' }}
+                        tabIndex={0}
+                        aria-label="Not saved yet: Valheim writes the world data at the first save; until then there is nothing to back up or download."
+                      >
                         Not saved yet
                       </Badge>
                     </Tooltip>

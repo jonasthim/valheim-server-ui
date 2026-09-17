@@ -63,7 +63,13 @@ export function StatTile({
         )}
         {spark && (
           <div style={{ marginTop: 6 }}>
-            <Sparkline values={spark} format={sparkFormat} width="100%" height={compact ? 20 : 24} />
+            <Sparkline
+              values={spark}
+              format={sparkFormat}
+              width="100%"
+              height={compact ? 20 : 24}
+              label={typeof label === 'string' ? label : undefined}
+            />
           </div>
         )}
       </div>

@@ -142,7 +142,11 @@ export function OverviewTab({ id }: { id: string }) {
 
       <Grid gap="md">
         <Grid.Col span={{ base: 12, md: 7 }}>
-          <Paper p="sm" style={{ background: 'var(--vh-parchment)' }}>
+          {/* color: parchment is a light surface in both schemes; without
+              it, text/links here inherit the page's (dark-scheme) cream ink
+              and fail contrast against the tan background (axe
+              color-contrast) — mirrors WorldCard's PARCHMENT_VARS. */}
+          <Paper p="sm" style={{ background: 'var(--vh-parchment)', color: 'var(--vh-ink)' }}>
             <div style={{ width: 'min(100%, 60vh)', aspectRatio: '1', margin: '0 auto' }}>
               {mapImgOk && (
                 <img
@@ -390,8 +394,10 @@ export function OverviewTab({ id }: { id: string }) {
         {!jobsQuery.isLoading && !jobsQuery.isError && jobs.length === 0 && (
           <EmptyState compact title="No jobs yet" description="Backups, updates and restarts will show up here." />
         )}
+        {/* tabIndex: a horizontally-scrolling region needs to be reachable by
+            keyboard when it overflows (axe scrollable-region-focusable). */}
         {jobs.length > 0 && (
-          <Table.ScrollContainer minWidth={480}>
+          <Table.ScrollContainer minWidth={480} scrollAreaProps={{ viewportProps: { tabIndex: 0 } }}>
             <Table verticalSpacing="xs" highlightOnHover>
               <Table.Tbody>
                 {jobs.map((job) => (
@@ -424,8 +430,10 @@ export function OverviewTab({ id }: { id: string }) {
             No events yet.
           </Text>
         )}
+        {/* tabIndex: a horizontally-scrolling region needs to be reachable by
+            keyboard when it overflows (axe scrollable-region-focusable). */}
         {events.length > 0 && (
-          <Table.ScrollContainer minWidth={480}>
+          <Table.ScrollContainer minWidth={480} scrollAreaProps={{ viewportProps: { tabIndex: 0 } }}>
             <Table verticalSpacing="xs" highlightOnHover>
               <Table.Tbody>
                 {events.map((ev) => (
@@ -472,9 +480,14 @@ function HistoryRow({
         {label}
       </Text>
       {values && values.length >= 2 ? (
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Sparkline values={values} format={format} width="100%" height={56} />
-        </div>
+        <>
+          <Text size="sm" fw={600} style={{ flexShrink: 0 }}>
+            {format(values[values.length - 1])}
+          </Text>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <Sparkline values={values} format={format} width="100%" height={56} label={label} />
+          </div>
+        </>
       ) : (
         <Text size="xs" c="dimmed">
           No samples yet.

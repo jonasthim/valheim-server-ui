@@ -80,7 +80,7 @@ function NoteCell({
     >
       {note ? <Text size="sm">{note}</Text> : <Text c="dimmed">—</Text>}
       <ActionIcon
-        size="sm"
+        size="md"
         variant="subtle"
         aria-label={`Edit note for ${playerId}`}
         onClick={(e) => {

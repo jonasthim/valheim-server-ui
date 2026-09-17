@@ -2,7 +2,7 @@
 // on the server (crisp at any zoom); markers are positioned in world
 // fractions so they stay put, and counter-scaled so they keep their screen
 // size. Without tiles (older agents) a single image is shown instead.
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type WheelEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent, type ReactNode, type WheelEvent } from 'react'
 import { ActionIcon, Group, Tooltip } from '@mantine/core'
 import { IconFocusCentered, IconMinus, IconPlus } from '@tabler/icons-react'
 import { MapIcon, type MapIconName } from './MapIcons'
@@ -51,6 +51,10 @@ type Transform = { k: number; tx: number; ty: number }
 const MIN_ZOOM = 1
 /** Without tiles a single image is shown; beyond this it is only pixels. */
 const IMAGE_MAX_ZOOM = 24
+/** Viewport pixels nudged per arrow-key press. */
+const KEY_PAN_STEP = 40
+/** Zoom factor applied per +/- key press, matching the on-screen zoom buttons. */
+const KEY_ZOOM_FACTOR = 1.5
 
 const ICON_SIZE: Record<Marker['kind'], number> = {
   player: 22,
@@ -127,6 +131,54 @@ export function MapView({
     zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - rect.left, e.clientY - rect.top)
   }
 
+  // Same tx/ty shift + clamp the pointer-drag handler below applies, just
+  // driven by a fixed step instead of a pointer delta.
+  const panBy = useCallback(
+    (dx: number, dy: number) => {
+      setT((prev) => clamp({ k: prev.k, tx: prev.tx + dx, ty: prev.ty + dy }))
+    },
+    [clamp],
+  )
+
+  // Keyboard equivalent of the pointer drag (arrows), wheel zoom (+/-) and
+  // the reset button (0) — same state and helpers, no new pan/zoom maths.
+  function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    switch (e.key) {
+      case 'ArrowLeft':
+        e.preventDefault()
+        panBy(KEY_PAN_STEP, 0)
+        break
+      case 'ArrowRight':
+        e.preventDefault()
+        panBy(-KEY_PAN_STEP, 0)
+        break
+      case 'ArrowUp':
+        e.preventDefault()
+        panBy(0, KEY_PAN_STEP)
+        break
+      case 'ArrowDown':
+        e.preventDefault()
+        panBy(0, -KEY_PAN_STEP)
+        break
+      case '+':
+      case '=':
+        e.preventDefault()
+        zoomAt(KEY_ZOOM_FACTOR, center().x, center().y)
+        break
+      case '-':
+      case '_':
+        e.preventDefault()
+        zoomAt(1 / KEY_ZOOM_FACTOR, center().x, center().y)
+        break
+      case '0':
+        e.preventDefault()
+        setT({ k: 1, tx: 0, ty: 0 })
+        break
+      default:
+        break
+    }
+  }
+
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -167,7 +219,19 @@ export function MapView({
   const markerScale: CSSProperties = { transform: `translate(-50%, -50%) scale(${1 / t.k})` }
 
   return (
-    <div className={classes.viewport} ref={ref} onWheel={onWheel} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}>
+    <div
+      className={classes.viewport}
+      ref={ref}
+      onWheel={onWheel}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerUp}
+      onKeyDown={onKeyDown}
+      tabIndex={0}
+      role="application"
+      aria-label="World map; arrow keys pan, plus and minus zoom, 0 resets"
+    >
       <div className={classes.surface} style={surfaceStyle}>
         {tiles ? (
           <TileLayer tiles={tiles} transform={t} viewport={size} onFirstLoad={onImageLoad} />
@@ -194,17 +258,25 @@ export function MapView({
             </div>
           </div>
         ))}
-        {markers.map((m) => (
-          <div key={m.key} className={`${classes.markerAnchor} ${m.kind === 'player' ? classes.glide : ''}`} style={{ left: `${m.u * 100}%`, top: `${m.v * 100}%` }}>
-            <Tooltip label={m.detail ? `${m.label}, ${m.detail}` : m.label} withArrow openDelay={150}>
-              <div className={classes.marker} style={markerScale} data-kind={m.kind} data-pin={m.pin}>
-                <MapIcon name={m.icon} size={ICON_SIZE[m.kind]} checked={m.checked} />
-                {m.caption && m.labelStyle === 'location' && <span className={classes.locationLabel}>{m.caption}</span>}
-                {m.caption && m.labelStyle !== 'location' && <span className={classes.caption}>{m.caption}</span>}
-              </div>
-            </Tooltip>
-          </div>
-        ))}
+        {markers.map((m) => {
+          // The tooltip text, duplicated onto the marker itself (role="img" +
+          // aria-label) so it isn't the only carrier of this information
+          // (WCAG 1.1.1 / 1.4.13) — markers aren't reachable by keyboard, so
+          // this mainly serves screen-reader users browsing by touch/virtual
+          // cursor; MapPlayerList remains the keyboard-reachable text list.
+          const markerLabel = m.detail ? `${m.label}, ${m.detail}` : m.label
+          return (
+            <div key={m.key} className={`${classes.markerAnchor} ${m.kind === 'player' ? classes.glide : ''}`} style={{ left: `${m.u * 100}%`, top: `${m.v * 100}%` }}>
+              <Tooltip label={markerLabel} withArrow openDelay={150}>
+                <div className={classes.marker} style={markerScale} data-kind={m.kind} data-pin={m.pin} role="img" aria-label={markerLabel}>
+                  <MapIcon name={m.icon} size={ICON_SIZE[m.kind]} checked={m.checked} />
+                  {m.caption && m.labelStyle === 'location' && <span className={classes.locationLabel}>{m.caption}</span>}
+                  {m.caption && m.labelStyle !== 'location' && <span className={classes.caption}>{m.caption}</span>}
+                </div>
+              </Tooltip>
+            </div>
+          )
+        })}
       </div>
       {overlay && <div className={classes.overlay}>{overlay}</div>}
       <Group gap={4} className={classes.controls}>

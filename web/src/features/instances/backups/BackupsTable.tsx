@@ -148,7 +148,12 @@ export function BackupsTable({
                       <Group gap={4} wrap="nowrap">
                         {b.remote_status === 'failed' && b.remote_error ? (
                           <Tooltip label={b.remote_error} multiline maw={280}>
-                            <Badge color={REMOTE_STATUS_COLORS[b.remote_status]} variant="light">
+                            <Badge
+                              color={REMOTE_STATUS_COLORS[b.remote_status]}
+                              variant="light"
+                              tabIndex={0}
+                              aria-label={`Off-site copy failed: ${b.remote_error}`}
+                            >
                               {REMOTE_STATUS_LABELS[b.remote_status]}
                             </Badge>
                           </Tooltip>

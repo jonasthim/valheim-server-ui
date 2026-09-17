@@ -92,6 +92,11 @@
   0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-color) 22%, transparent); }
   50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--dot-color) 10%, transparent); }
 }
+@media (prefers-reduced-motion: reduce) {
+  .statusDot[data-pulse] {
+    animation: none;
+  }
+}
 .statusPill {
   display: inline-flex;
   align-items: center;

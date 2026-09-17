@@ -307,7 +307,7 @@ function KeysModal({
                 size="sm"
                 rightSection={
                   <CloseButton
-                    size="xs"
+                    size="md"
                     aria-label={`Remove ${k}`}
                     onClick={() =>
                       modals.openConfirmModal({

@@ -12,7 +12,6 @@ import {
   Table,
   Text,
   TextInput,
-  Tooltip,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useDisclosure } from '@mantine/hooks'
@@ -27,11 +26,6 @@ import { PageHeader, SectionCard, LoadError } from '../../ui'
 import type { APIToken, SessionInfo } from '../../api/types'
 import { useRevokeOtherSessions, useRevokeSession, useSessions } from './useSessions'
 import { useCreateToken, useRevokeToken, useTokens } from './useTokens'
-
-/** Truncates a long string for table display; the full value goes in a Tooltip. */
-function truncate(s: string, n: number): string {
-  return s.length > n ? `${s.slice(0, n)}…` : s
-}
 
 interface PasswordValues {
   current_password: string
@@ -166,9 +160,9 @@ function SessionsCard() {
               {sessions.map((session) => (
                 <Table.Tr key={session.id}>
                   <Table.Td>
-                    <Tooltip label={session.user_agent} disabled={session.user_agent.length <= 60}>
-                      <Text size="sm">{truncate(session.user_agent, 60) || '-'}</Text>
-                    </Tooltip>
+                    <Text size="sm" maw={280} style={{ overflowWrap: 'anywhere' }}>
+                      {session.user_agent || '-'}
+                    </Text>
                   </Table.Td>
                   <Table.Td>{session.ip || '-'}</Table.Td>
                   <Table.Td>{fmtTime(session.created_at)}</Table.Td>

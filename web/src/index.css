@@ -46,10 +46,27 @@ body {
 
 ::selection { background: var(--vh-accent-soft); }
 
-/* Plain links (Text component={Link}) inherit text colour; Mantine Anchor keeps its own. */
-a:not(.mantine-Anchor-root) { color: inherit; }
+/* Plain links (Text component={Link}) inherit text colour; Mantine Anchor
+   keeps its own. WCAG 1.4.3/1.4.1: --vh-frost text fails 4.5:1 against the
+   parchment and card surfaces it sits on in both schemes (axe color-contrast
+   / link-in-text-block), and no shade in the frost tuple clears 4.5:1 on
+   every surface an Anchor can appear on. Inherit the surrounding ink colour
+   (already ≥4.7:1 everywhere, see docs/DESIGN.md) and distinguish links by a
+   permanent underline instead of colour alone. */
+/* :where() keeps this at zero specificity: a plain `<a>` (Text
+   component={Link}) with no other colour rule still inherits, but it no
+   longer outranks a Button/ActionIcon/Badge rendered as `component={Link}` —
+   those set their own `color` (e.g. autoContrast's computed --button-color)
+   on the same `<a>`, and a bare `a:not(.class)` selector has higher
+   specificity than their single-class rule (axe color-contrast: this was
+   silently overriding autoContrast on every button-as-link). */
+a:where(:not(.mantine-Anchor-root)) { color: inherit; }
 a:not(.mantine-Anchor-root):hover { text-decoration: none; }
-.mantine-Anchor-root { color: var(--vh-frost); }
+.mantine-Anchor-root {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 /* Scrollbars: thin and quiet. */
 * { scrollbar-width: thin; scrollbar-color: var(--vh-border-strong) transparent; }
