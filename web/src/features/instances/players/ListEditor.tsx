@@ -1,9 +1,38 @@
 import { useState } from 'react'
 import { ActionIcon, Button, Group, Skeleton, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core'
+import { modals } from '@mantine/modals'
 import { IconPlus, IconTrash } from '@tabler/icons-react'
 import type { ListKind } from '../../../api/types'
 import { usePlayerList, useSavePlayerList } from './usePlayers'
 import { PLATFORM_ID_PATTERN } from './constants'
+
+/** Kind-specific confirm-dialog copy for removing one entry from a list. */
+const REMOVE_CONFIRM_COPY: Record<
+  ListKind,
+  {
+    title: string
+    body: (id: string) => string
+    labels: { confirm: string; cancel: string }
+    confirmProps?: { color: string }
+  }
+> = {
+  banned: {
+    title: 'Unban player',
+    body: (id) => `Unban ${id}? They can rejoin immediately.`,
+    labels: { confirm: 'Unban', cancel: 'Cancel' },
+    confirmProps: { color: 'red' },
+  },
+  admin: {
+    title: 'Remove admin',
+    body: (id) => `Remove admin rights from ${id}?`,
+    labels: { confirm: 'Remove', cancel: 'Cancel' },
+  },
+  permitted: {
+    title: 'Remove from permitted list',
+    body: (id) => `Remove ${id} from the permitted list? While the list is non-empty, only listed players can join.`,
+    labels: { confirm: 'Remove', cancel: 'Cancel' },
+  },
+}
 
 /** Table + inline add row for one of the three list files. Read-only for viewers. */
 export function ListEditor({ id, kind, canEdit }: { id: string; kind: ListKind; canEdit: boolean }) {
@@ -38,7 +67,14 @@ export function ListEditor({ id, kind, canEdit }: { id: string; kind: ListKind; 
   }
 
   function removeEntry(entryId: string) {
-    save.mutate({ kind, entries: entries.filter((e) => e.id !== entryId) })
+    const copy = REMOVE_CONFIRM_COPY[kind]
+    modals.openConfirmModal({
+      title: copy.title,
+      children: <Text size="sm">{copy.body(entryId)}</Text>,
+      labels: copy.labels,
+      confirmProps: copy.confirmProps,
+      onConfirm: () => save.mutate({ kind, entries: entries.filter((e) => e.id !== entryId) }),
+    })
   }
 
   return (

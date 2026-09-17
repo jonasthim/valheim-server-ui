@@ -9,6 +9,7 @@ import {
   Autocomplete,
   Badge,
   Button,
+  CloseButton,
   Group,
   Menu,
   Modal,
@@ -19,6 +20,7 @@ import {
   Stack,
   Text,
 } from '@mantine/core'
+import { modals } from '@mantine/modals'
 import {
   IconAdjustments,
   IconClockHour4,
@@ -304,15 +306,23 @@ function KeysModal({
                 color="straw"
                 size="sm"
                 rightSection={
-                  <Text
-                    component="span"
+                  <CloseButton
                     size="xs"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => removeKey(k)}
                     aria-label={`Remove ${k}`}
-                  >
-                    ✕
-                  </Text>
+                    onClick={() =>
+                      modals.openConfirmModal({
+                        title: 'Remove global key',
+                        children: (
+                          <Text size="sm">
+                            Remove {k}? This reverts the progression it gates for every player on this world.
+                          </Text>
+                        ),
+                        labels: { confirm: 'Remove key', cancel: 'Cancel' },
+                        confirmProps: { color: 'red' },
+                        onConfirm: () => removeKey(k),
+                      })
+                    }
+                  />
                 }
               >
                 {k}
