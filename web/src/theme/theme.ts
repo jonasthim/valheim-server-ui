@@ -1,6 +1,6 @@
 // Design system for Valheim Server UI: a dark-first, modern SaaS look with
 // Valheim accents (ember gold as primary, frost blue, moss green, blood red,
-// spirit purple) on cool "iron" neutrals. See docs/DESIGN.md.
+// spirit purple) on warm timber neutrals. See docs/DESIGN.md.
 import {
   ActionIcon,
   Badge,
