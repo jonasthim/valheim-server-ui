@@ -10,7 +10,7 @@ import { notifyError, notifySuccess } from '../../lib/notify'
 import { SectionCard } from '../../ui'
 import classes from './ConfigTab.module.css'
 import { useInstance } from './useInstance'
-import { useRestartInstance } from './instanceActions'
+import { RestartControl } from './RestartControl'
 import { InstanceConfigForm, type InstanceConfigFormSubmit } from './InstanceConfigForm'
 import { mapConfigFieldErrors } from './instanceHelpers'
 import { DeleteInstanceModal } from './DeleteInstanceModal'
@@ -21,7 +21,6 @@ export function ConfigTab({ id }: { id: string }) {
   const navigate = useNavigate()
   const qc = useQueryClient()
   const inst = useInstance(id)
-  const restart = useRestartInstance(id)
   const [submitting, setSubmitting] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
@@ -80,9 +79,7 @@ export function ConfigTab({ id }: { id: string }) {
         <Alert color="yellow" icon={<IconAlertTriangle size={16} />} title="Restart required to apply">
           <Group justify="space-between" wrap="nowrap">
             <Text size="sm">Configuration changes are saved but will only take effect after a restart.</Text>
-            <Button size="xs" color="yellow" variant="filled" loading={restart.isPending} onClick={() => restart.mutate()}>
-              Restart now
-            </Button>
+            <RestartControl id={id} instanceName={instance.name} playersOnline={instance.status.players_online} color="yellow" />
           </Group>
         </Alert>
       )}

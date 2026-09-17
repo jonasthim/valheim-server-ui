@@ -1,87 +1,16 @@
-import { ActionIcon, Badge, Button, Card, CopyButton, Group, Pill, Stack, Text, Tooltip } from '@mantine/core'
-import { modals } from '@mantine/modals'
+import { ActionIcon, Badge, Card, CopyButton, Group, Pill, Stack, Text, Tooltip } from '@mantine/core'
 import { Link } from 'react-router-dom'
-import {
-  IconCheck,
-  IconCpu,
-  IconCopy,
-  IconDownload,
-  IconPlayerPlay,
-  IconPlayerStop,
-  IconPlug,
-  IconRefresh,
-  IconUsers,
-} from '@tabler/icons-react'
-import { useAuth } from '../../auth/useAuth'
+import { IconCheck, IconCpu, IconCopy, IconPlug, IconUsers } from '@tabler/icons-react'
 import { fmtBytes, fmtPercent } from '../../lib/format'
 import type { Instance } from '../../api/types'
 import { StatusDot, StatusPill } from '../../ui'
 import { useJobDrawer, jobTypeLabel } from '../jobs'
-import {
-  useInstallInstance,
-  useRestartInstance,
-  useStartInstance,
-  useStopInstance,
-  useUpdateInstance,
-  canInstall,
-  canRestart,
-  canStart,
-  canStop,
-  stateColor,
-  stateLabel,
-} from '../instances'
+import { LifecycleControls, stateColor, stateLabel } from '../instances'
 import classes from './InstanceCard.module.css'
 
 export function InstanceCard({ instance }: { instance: Instance }) {
-  const { hasRole } = useAuth()
   const { openJob } = useJobDrawer()
   const { status, config } = instance
-
-  const start = useStartInstance(instance.id)
-  const stop = useStopInstance(instance.id)
-  const restart = useRestartInstance(instance.id)
-  const install = useInstallInstance(instance.id)
-  const updateNow = useUpdateInstance(instance.id)
-
-  const canOperate = hasRole('operator')
-
-  function confirmUpdate() {
-    const running = status.state === 'running'
-    if (running) {
-      modals.openConfirmModal({
-        title: 'Update game files',
-        children: (
-          <Text size="sm">
-            <strong>{instance.name}</strong> is running and will be stopped, updated, and started again. Continue?
-          </Text>
-        ),
-        labels: { confirm: 'Stop and update', cancel: 'Cancel' },
-        confirmProps: { color: 'orange' },
-        onConfirm: () => updateNow.mutate(true, { onSuccess: (res) => openJob(res.job.id) }),
-      })
-    } else {
-      updateNow.mutate(false, { onSuccess: (res) => openJob(res.job.id) })
-    }
-  }
-
-  function confirmRestart() {
-    if (status.players_online > 0) {
-      modals.openConfirmModal({
-        title: 'Restart instance',
-        children: (
-          <Text size="sm">
-            {status.players_online} player{status.players_online === 1 ? ' is' : 's are'} currently online on{' '}
-            <strong>{instance.name}</strong>. Restart anyway?
-          </Text>
-        ),
-        labels: { confirm: 'Restart', cancel: 'Cancel' },
-        confirmProps: { color: 'orange' },
-        onConfirm: () => restart.mutate(),
-      })
-    } else {
-      restart.mutate()
-    }
-  }
 
   return (
     <Card withBorder padding="lg" radius="lg" className={classes.card}>
@@ -169,63 +98,7 @@ export function InstanceCard({ instance }: { instance: Instance }) {
           </Text>
         )}
 
-        {canOperate && (
-          <Group gap="xs" mt={4}>
-            <Button
-              size="xs"
-              leftSection={<IconPlayerPlay size={14} />}
-              disabled={!canStart(status.state)}
-              loading={start.isPending}
-              onClick={() => start.mutate()}
-            >
-              Start
-            </Button>
-            <Button
-              size="xs"
-              color="red"
-              variant="light"
-              leftSection={<IconPlayerStop size={14} />}
-              disabled={!canStop(status.state)}
-              loading={stop.isPending}
-              onClick={() => stop.mutate()}
-            >
-              Stop
-            </Button>
-            <Button
-              size="xs"
-              variant="outline"
-              leftSection={<IconRefresh size={14} />}
-              disabled={!canRestart(status.state)}
-              loading={restart.isPending}
-              onClick={confirmRestart}
-            >
-              Restart
-            </Button>
-            {canInstall(status.state) && (
-              <Button
-                size="xs"
-                variant="light"
-                leftSection={<IconDownload size={14} />}
-                loading={install.isPending}
-                onClick={() => install.mutate(undefined, { onSuccess: (res) => openJob(res.job.id) })}
-              >
-                Install
-              </Button>
-            )}
-            {status.update_available && (
-              <Button
-                size="xs"
-                color="orange"
-                variant="light"
-                leftSection={<IconDownload size={14} />}
-                loading={updateNow.isPending}
-                onClick={confirmUpdate}
-              >
-                Update
-              </Button>
-            )}
-          </Group>
-        )}
+        <LifecycleControls id={instance.id} name={instance.name} status={instance.status} />
       </Stack>
     </Card>
   )

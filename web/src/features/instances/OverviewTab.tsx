@@ -13,7 +13,6 @@ import {
   Text,
   Tooltip,
 } from '@mantine/core'
-import { modals } from '@mantine/modals'
 import { useNavigate } from 'react-router-dom'
 import {
   IconAlertTriangle,
@@ -24,8 +23,6 @@ import {
   IconCopy,
   IconDownload,
   IconKey,
-  IconPlayerPlay,
-  IconPlayerStop,
   IconPlugConnected,
   IconRefresh,
   IconServer2,
@@ -40,17 +37,9 @@ import { useModsOverview } from '../mods/useMods'
 import { WorldCard } from '../agent'
 import { CheckModUpdatesButton } from '../mods/CheckModUpdatesButton'
 import { useInstance } from './useInstance'
-import {
-  useCheckForUpdate,
-  useInstallInstance,
-  useInstanceStatus,
-  useSetAutostart,
-  useStartInstance,
-  useStopInstance,
-  useUpdateInstance,
-} from './instanceActions'
-import { canInstall, canRestart, canStart, canStop, stateColor, stateLabel } from './instanceHelpers'
-import { RestartControl } from './RestartControl'
+import { useCheckForUpdate, useInstanceStatus, useSetAutostart } from './instanceActions'
+import { stateColor, stateLabel } from './instanceHelpers'
+import { LifecycleControls } from './LifecycleControls'
 
 // Owned by WP-11. Props: the instance id.
 export function OverviewTab({ id }: { id: string }) {
@@ -61,11 +50,7 @@ export function OverviewTab({ id }: { id: string }) {
   const modsOverview = useModsOverview(id)
   const { openJob } = useJobDrawer()
 
-  const start = useStartInstance(id)
-  const stop = useStopInstance(id)
-  const install = useInstallInstance(id)
   const checkUpdate = useCheckForUpdate(id)
-  const updateNow = useUpdateInstance(id)
   const setAutostart = useSetAutostart(id)
 
   const jobsQuery = useJobs({ instance: id, limit: 5 })
@@ -93,25 +78,6 @@ export function OverviewTab({ id }: { id: string }) {
   const status = statusQuery.data?.status ?? instance.status
   const canOperate = hasRole('operator')
   const host = window.location.hostname
-
-  function confirmUpdate() {
-    const running = status.state === 'running'
-    if (running) {
-      modals.openConfirmModal({
-        title: 'Update game files',
-        children: (
-          <Text size="sm">
-            The instance is running and will be stopped, updated, and started again. Continue?
-          </Text>
-        ),
-        labels: { confirm: 'Stop and update', cancel: 'Cancel' },
-        confirmProps: { color: 'orange' },
-        onConfirm: () => updateNow.mutate(true, { onSuccess: (res) => openJob(res.job.id) }),
-      })
-    } else {
-      updateNow.mutate(false, { onSuccess: (res) => openJob(res.job.id) })
-    }
-  }
 
   const jobs = jobsQuery.data ?? []
   const latestBuildId = checkUpdate.data?.latest_buildid ?? systemInfo.data?.latest_buildid
@@ -236,11 +202,6 @@ export function OverviewTab({ id }: { id: string }) {
                 >
                   Check for updates
                 </Button>
-                {gameUpdate && (
-                  <Button size="xs" color="orange" loading={updateNow.isPending} onClick={confirmUpdate}>
-                    Update now
-                  </Button>
-                )}
               </Group>
             )}
           </Group>
@@ -316,40 +277,7 @@ export function OverviewTab({ id }: { id: string }) {
                 {status.detail}
               </Alert>
             )}
-            {canOperate && (
-              <Group>
-                <Button
-                  size="xs"
-                  leftSection={<IconPlayerPlay size={14} />}
-                  disabled={!canStart(status.state) || start.isPending}
-                  loading={start.isPending}
-                  onClick={() => start.mutate()}
-                >
-                  Start
-                </Button>
-                <Button
-                  size="xs"
-                  color="red"
-                  variant="outline"
-                  leftSection={<IconPlayerStop size={14} />}
-                  disabled={!canStop(status.state) || stop.isPending}
-                  loading={stop.isPending}
-                  onClick={() => stop.mutate()}
-                >
-                  Stop
-                </Button>
-                <RestartControl
-                  id={id}
-                  disabled={!canRestart(status.state)}
-                  playersOnline={status.players_online}
-                />
-                {canInstall(status.state) && (
-                  <Button size="xs" variant="light" loading={install.isPending} onClick={() => install.mutate(undefined, { onSuccess: (res) => openJob(res.job.id) })}>
-                    Install
-                  </Button>
-                )}
-              </Group>
-            )}
+            <LifecycleControls id={id} name={instance.name} status={status} />
           </Stack>
         </SectionCard>
 

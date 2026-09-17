@@ -20,10 +20,16 @@ export function RestartControl({
   id,
   disabled,
   playersOnline,
+  instanceName,
+  color,
+  variant = 'outline',
 }: {
   id: string
   disabled?: boolean
   playersOnline: number
+  instanceName?: string
+  color?: string
+  variant?: string
 }) {
   const restart = useRestartInstance(id)
   const { openJob } = useJobDrawer()
@@ -40,6 +46,11 @@ export function RestartControl({
         title: 'Restart instance',
         children: (
           <Text size="sm">
+            {instanceName && (
+              <>
+                Restart <strong>{instanceName}</strong>?{' '}
+              </>
+            )}
             {playersOnline} player{playersOnline === 1 ? ' is' : 's are'} currently online and will be disconnected
             immediately. Restart now, or pick a delay to warn them first.
           </Text>
@@ -59,7 +70,8 @@ export function RestartControl({
         <Menu.Target>
           <Button
             size="xs"
-            variant="outline"
+            variant={variant}
+            color={color}
             leftSection={<IconRefresh size={14} />}
             rightSection={<IconChevronDown size={14} />}
             disabled={disabled}

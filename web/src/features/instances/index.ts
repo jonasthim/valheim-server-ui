@@ -30,6 +30,7 @@ export {
 export { InstanceConfigForm } from './InstanceConfigForm'
 export type { InstanceConfigFormInitial, InstanceConfigFormSubmit, FormHelpers } from './InstanceConfigForm'
 export { DeleteInstanceModal } from './DeleteInstanceModal'
+export { LifecycleControls } from './LifecycleControls'
 export { CreateInstancePage } from './CreateInstancePage'
 export { OverviewTab } from './OverviewTab'
 export { ConsoleTab } from './ConsoleTab'
