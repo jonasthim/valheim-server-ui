@@ -199,7 +199,7 @@ export function OverviewTab({ id }: { id: string }) {
                 </StatusPill>
               </Group>
               <Text size="xs" c="dimmed">
-                Installed build {status.installed_buildid ?? 'unknown'} · latest {latestBuildId ?? 'unknown'}
+                Installed build {status.installed_buildid ?? 'unknown'}, latest {latestBuildId ?? 'unknown'}
                 {latestBuildCheckedAt ? ` (checked ${fmtAgo(latestBuildCheckedAt)})` : ''}
               </Text>
               {gameUpdate && (
@@ -243,7 +243,7 @@ export function OverviewTab({ id }: { id: string }) {
               </Group>
               <Text size="xs" c="dimmed">
                 {bepinex?.installed
-                  ? `BepInEx ${bepinex.version ?? ''}${bepinexUpdate ? ` → ${bepinex.latest_version}` : ''} · ${modUpdateCount} mod${modUpdateCount === 1 ? '' : 's'} with an update`
+                  ? `BepInEx ${bepinex.version ?? ''}${bepinexUpdate ? ` → ${bepinex.latest_version}` : ''}, ${modUpdateCount} mod${modUpdateCount === 1 ? '' : 's'} with an update`
                   : 'Install BepInEx from the Mods tab to run mods.'}
               </Text>
             </div>

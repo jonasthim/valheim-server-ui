@@ -32,7 +32,7 @@ export function InstancePage() {
   if (inst.isError) {
     return (
       <Stack>
-        <PageHeader eyebrow={`Instance · ${id}`} title={id} />
+        <PageHeader eyebrow={`Instance ${id}`} title={id} />
         <LoadError error={inst.error} title="Instance unavailable" onRetry={() => inst.refetch()} />
       </Stack>
     )
@@ -41,7 +41,7 @@ export function InstancePage() {
   return (
     <Stack>
       <PageHeader
-        eyebrow={`Instance · ${id}`}
+        eyebrow={`Instance ${id}`}
         title={inst.data?.name ?? id}
         titleAddon={
           state && (
@@ -50,7 +50,7 @@ export function InstancePage() {
             </StatusPill>
           )
         }
-        description={config ? `${config.name} · world ${config.world} · port ${config.port}` : undefined}
+        description={config ? `World ${config.world} on port ${config.port}` : undefined}
       />
       <Tabs value={tab} onChange={(t) => navigate(`/instances/${id}/${t ?? 'overview'}`)} keepMounted={false}>
         <Box visibleFrom="sm" style={{ overflowX: 'auto' }}>

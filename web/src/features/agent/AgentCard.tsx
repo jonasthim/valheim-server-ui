@@ -30,10 +30,10 @@ export function AgentCard({ id }: { id: string }) {
 
   let state: { color: string; label: string }
   if (!info?.installed) state = { color: 'gray', label: 'not installed' }
-  else if (info.connected) state = { color: 'moss', label: `connected · v${info.installed_version ?? '?'}` }
-  else if (!info.enabled) state = { color: 'gray', label: `installed v${info.installed_version ?? '?'} · BepInEx disabled` }
-  else if (isRunning) state = { color: 'orange', label: `installed v${info.installed_version ?? '?'} · not reachable` }
-  else state = { color: 'gray', label: `installed v${info.installed_version ?? '?'} · server stopped` }
+  else if (info.connected) state = { color: 'moss', label: `connected, v${info.installed_version ?? '?'}` }
+  else if (!info.enabled) state = { color: 'gray', label: `installed v${info.installed_version ?? '?'}, BepInEx disabled` }
+  else if (isRunning) state = { color: 'orange', label: `installed v${info.installed_version ?? '?'}, not reachable` }
+  else state = { color: 'gray', label: `installed v${info.installed_version ?? '?'}, server stopped` }
 
   return (
     <SectionCard

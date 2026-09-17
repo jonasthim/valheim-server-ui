@@ -54,7 +54,7 @@ export function ConfigTab({ id }: { id: string }) {
       const res = await api.patch<{ instance: Instance }>(`/instances/${id}`, payload)
       qc.setQueryData(['instances', id, 'detail'], res.instance)
       await qc.invalidateQueries({ queryKey: ['instances', 'list'] })
-      notifySuccess('Configuration saved')
+      notifySuccess('Changes saved')
     } catch (e) {
       if (e instanceof ApiError) {
         const fields = e.fieldErrors()

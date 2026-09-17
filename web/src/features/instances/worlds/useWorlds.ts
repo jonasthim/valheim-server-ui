@@ -66,7 +66,7 @@ export function useRegenerateWorld(id: string) {
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: worldsKey(id) })
       qc.invalidateQueries({ queryKey: ['instances', id, 'backups'] })
-      notifySuccess('World regeneration started')
+      notifySuccess('World regenerate queued')
       openJob(res.job.id)
     },
     onError: (err) => notifyError(err, 'Could not regenerate world'),

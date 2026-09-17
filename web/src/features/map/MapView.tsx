@@ -196,7 +196,7 @@ export function MapView({
         ))}
         {markers.map((m) => (
           <div key={m.key} className={`${classes.markerAnchor} ${m.kind === 'player' ? classes.glide : ''}`} style={{ left: `${m.u * 100}%`, top: `${m.v * 100}%` }}>
-            <Tooltip label={m.detail ? `${m.label} · ${m.detail}` : m.label} withArrow openDelay={150}>
+            <Tooltip label={m.detail ? `${m.label}, ${m.detail}` : m.label} withArrow openDelay={150}>
               <div className={classes.marker} style={markerScale} data-kind={m.kind} data-pin={m.pin}>
                 <MapIcon name={m.icon} size={ICON_SIZE[m.kind]} checked={m.checked} />
                 {m.caption && m.labelStyle === 'location' && <span className={classes.locationLabel}>{m.caption}</span>}

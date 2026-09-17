@@ -173,8 +173,8 @@ export function WorldCard({ id, variant = 'default' }: { id: string; variant?: '
           </div>
           <Text size="xs" c="dimmed">
             Agent v{st.agent_version}
-            {st.game_version ? ` · game ${st.game_version}` : ''}
-            {info.last_seen ? ` · updated ${fmtAgo(info.last_seen)}` : ''}
+            {st.game_version ? ` on game ${st.game_version}` : ''}
+            {info.last_seen ? `, updated ${fmtAgo(info.last_seen)}` : ''}
           </Text>
         </Stack>
       )}

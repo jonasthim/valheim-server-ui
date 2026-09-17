@@ -38,7 +38,7 @@ export function useStartInstance(id: string) {
     onSuccess: (res) => {
       qc.setQueryData(['instances', id, 'status'], res)
       invalidateInstance(qc)
-      notifySuccess('Instance starting')
+      notifySuccess('Starting…')
     },
     onError: (err) => notifyError(err, 'Could not start instance'),
   })
@@ -51,7 +51,7 @@ export function useStopInstance(id: string) {
     onSuccess: (res) => {
       qc.setQueryData(['instances', id, 'status'], res)
       invalidateInstance(qc)
-      notifySuccess('Instance stopping')
+      notifySuccess('Stopping…')
     },
     onError: (err) => notifyError(err, 'Could not stop instance'),
   })
@@ -74,7 +74,7 @@ export function useRestartInstance(id: string) {
       if (res.status) qc.setQueryData(['instances', id, 'status'], { status: res.status })
       invalidateInstance(qc)
       qc.invalidateQueries({ queryKey: ['jobs'] })
-      notifySuccess(res.job ? 'Restart scheduled; players warned' : 'Instance restarting')
+      notifySuccess(res.job ? 'Restart scheduled; players warned' : 'Restarting…')
     },
     onError: (err) => notifyError(err, 'Could not restart instance'),
   })

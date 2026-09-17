@@ -51,7 +51,7 @@ export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | unde
         <Group justify="space-between" wrap="wrap" gap="sm">
           <Text size="sm" c="dimmed">
             Currently running v{appUpdate.current_version}
-            {appUpdate.checked_at ? ` · checked ${fmtAgo(appUpdate.checked_at)}` : ''}
+            {appUpdate.checked_at ? `, checked ${fmtAgo(appUpdate.checked_at)}` : ''}
           </Text>
           <Group gap="xs">
             <Button size="xs" variant="default" onClick={() => setNotesOpen(true)}>

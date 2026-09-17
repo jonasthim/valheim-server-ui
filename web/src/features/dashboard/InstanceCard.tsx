@@ -48,7 +48,7 @@ export function InstanceCard({ instance }: { instance: Instance }) {
           </Group>
 
           <Text size="sm" c="dimmed" truncate>
-            {config.name} · {config.world}
+            World {config.world}
           </Text>
 
           <Group gap="md" wrap="wrap">
@@ -73,7 +73,7 @@ export function InstanceCard({ instance }: { instance: Instance }) {
                     <IconCpu size={14} />
                   </Text>
                   <Text size="sm">
-                    {fmtPercent(status.cpu_percent)} · {fmtBytes(status.memory_bytes)}
+                    {fmtPercent(status.cpu_percent)}, {fmtBytes(status.memory_bytes)}
                   </Text>
                 </Group>
               </Tooltip>

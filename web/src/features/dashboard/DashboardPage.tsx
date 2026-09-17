@@ -61,7 +61,7 @@ export function DashboardPage() {
           <StatTile
             label="CPU"
             value={host ? fmtPercent(host.cpu_percent) : '—'}
-            hint={host ? `load ${host.load_avg_1.toFixed(2)} · ${host.cpu_count} cores` : undefined}
+            hint={host ? `load ${host.load_avg_1.toFixed(2)}, ${host.cpu_count} cores` : undefined}
             icon={<IconCpu size={16} />}
             accent={host && host.cpu_percent >= 85 ? 'var(--vh-blood)' : undefined}
           />

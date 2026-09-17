@@ -68,7 +68,7 @@ export function ConfigEditor({ id }: { id: string }) {
                   <NavLink
                     key={f.name}
                     label={f.name}
-                    description={`${fmtBytes(f.size_bytes)} · ${fmtAgo(f.modified_at)}`}
+                    description={`${fmtBytes(f.size_bytes)}, ${fmtAgo(f.modified_at)}`}
                     active={f.name === selected}
                     onClick={() => setExplicitSelection(f.name)}
                     styles={{ label: { fontSize: 13, wordBreak: 'break-all' } }}
@@ -269,7 +269,7 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
                   </Alert>
                   {clientSections.map(({ section, entries: sectionEntries }) => (
                     <Stack key={section} gap="xs">
-                      <Text size="xs" fw={600} c="dimmed" tt="uppercase">
+                      <Text size="xs" fw={600} c="dimmed">
                         {section || '(root)'}
                       </Text>
                       {sectionEntries.map(renderEntry)}

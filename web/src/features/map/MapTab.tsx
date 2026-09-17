@@ -329,7 +329,7 @@ export function MapTab({ id }: { id: string }) {
           // Boss pins carry the game's uppercase caption; other pins keep their name in the tooltip.
           caption: p.type === "boss" && p.name ? p.name : undefined,
           labelStyle: "location",
-          detail: parts.length ? parts.join(" · ") : undefined,
+          detail: parts.length ? parts.join(", ") : undefined,
         });
       });
     }
@@ -435,7 +435,7 @@ export function MapTab({ id }: { id: string }) {
             )}
             {info && info.state === "ready" && (
               <Badge variant="outline" color="gray">
-                {info.size} px · seed {info.seed}
+                {info.size} px, seed {info.seed}
               </Badge>
             )}
             {hasRole("operator") && data.connected && data.map_supported && (
@@ -501,7 +501,7 @@ export function MapTab({ id }: { id: string }) {
                   >
                     Fog of war
                     {explored
-                      ? ` · ${explored.percent.toFixed(1)}% explored`
+                      ? `, ${explored.percent.toFixed(1)}% explored`
                       : ""}
                   </Chip>
                 </div>
@@ -525,7 +525,7 @@ export function MapTab({ id }: { id: string }) {
           <Group justify="space-between" gap="xs" wrap="wrap">
             <Text size="xs" c="dimmed">
               {players.length} player{players.length === 1 ? "" : "s"} online
-              {hidden > 0 ? `, ${hidden} hiding their position` : ""} ·{" "}
+              {hidden > 0 ? `, ${hidden} hiding their position` : ""},{" "}
               {data.objects.length} objects
               {data.objects_updated_at
                 ? ` (scanned ${fmtAgo(data.objects_updated_at)})`

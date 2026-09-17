@@ -72,7 +72,7 @@ export function useRestoreBackup(id: string) {
       api.post<{ job: Job }>(`/instances/${id}/backups/${backupId}/restore`, { stop_if_running: stopIfRunning }),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: backupsKey(id) })
-      notifySuccess('Restore started')
+      notifySuccess('Restore queued')
       openJob(res.job.id)
     },
     onError: (err) => notifyError(err, 'Could not start restore'),

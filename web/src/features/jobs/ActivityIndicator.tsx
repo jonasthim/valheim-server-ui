@@ -57,7 +57,7 @@ export function ActivityIndicator() {
                           {job.title || jobTypeLabel(job.type)}
                         </Text>
                         <Text size="xs" c="dimmed" truncate>
-                          {job.instance_id || 'global'} · {fmtAgo(job.started_at ?? job.created_at)}
+                          {job.instance_id || 'global'}, {fmtAgo(job.started_at ?? job.created_at)}
                         </Text>
                       </div>
                       <Group gap={6} wrap="nowrap" style={{ flex: 'none' }}>
@@ -78,7 +78,7 @@ export function ActivityIndicator() {
                           {job.title || jobTypeLabel(job.type)}
                         </Text>
                         <Text size="xs" c="dimmed" truncate>
-                          {job.instance_id || 'global'} · queued {fmtAgo(job.created_at)}
+                          {job.instance_id || 'global'}, queued {fmtAgo(job.created_at)}
                         </Text>
                       </div>
                       <Group gap={6} wrap="nowrap" style={{ flex: 'none' }}>
