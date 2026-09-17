@@ -14,7 +14,10 @@ import (
 
 type ctxKey int
 
-const userKey ctxKey = iota
+const (
+	userKey ctxKey = iota
+	tokenAuthKey
+)
 
 // WithUser stores the authenticated user in the context.
 func WithUser(ctx context.Context, u *domain.User) context.Context {
@@ -25,6 +28,21 @@ func WithUser(ctx context.Context, u *domain.User) context.Context {
 func UserFrom(ctx context.Context) *domain.User {
 	u, _ := ctx.Value(userKey).(*domain.User)
 	return u
+}
+
+// WithTokenAuth marks the context as authenticated via a personal API bearer
+// token (F-2.5) rather than the session cookie, so csrfGuard can skip its
+// browser-only checks and handlers can refuse token-authenticated callers
+// from managing tokens themselves.
+func WithTokenAuth(ctx context.Context) context.Context {
+	return context.WithValue(ctx, tokenAuthKey, true)
+}
+
+// IsTokenAuth reports whether the request was authenticated via a bearer API
+// token rather than the session cookie (F-2.5).
+func IsTokenAuth(ctx context.Context) bool {
+	v, _ := ctx.Value(tokenAuthKey).(bool)
+	return v
 }
 
 // RequireRole rejects requests whose user is missing or below min.
@@ -61,6 +79,14 @@ func csrfGuard(cfg config.Config) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch r.Method {
 			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				next.ServeHTTP(w, r)
+				return
+			}
+			if IsTokenAuth(r.Context()) {
+				// A bearer API token is never sent by a browser tab an
+				// attacker's page could ride along with, so the CSRF header
+				// and Origin/Referer checks (which exist for the cookie) do
+				// not apply (F-2.5).
 				next.ServeHTTP(w, r)
 				return
 			}

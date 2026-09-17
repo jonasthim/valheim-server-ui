@@ -37,6 +37,7 @@ func wireAuth(ctx context.Context, deps *api.Deps) error {
 	deps.Users = authSvc
 	deps.Settings = settingsSvc
 	deps.Sessions = authSvc
+	deps.Tokens = authSvc // F-2.5
 
 	// Purge expired sessions hourly for the life of the server (F-2.7); ctx is
 	// the long-lived context cancelled on shutdown (see serve.go), the same

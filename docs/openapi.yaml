@@ -27,6 +27,28 @@ tags:
   - name: audit
 
 paths:
+  # ---------------------------------------------------------------- health
+  /healthz:
+    # Not under /api/v1: registered on the top-level router (F-2.5) so
+    # uptime monitors and load balancers can call it without a session or
+    # any auth at all.
+    servers:
+      - url: /
+    get:
+      tags: [system]
+      summary: Unauthenticated liveness check for uptime monitors and load balancers (F-2.5)
+      x-role: public
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean }
+
   # ------------------------------------------------------------------ auth
   /auth/status:
     get:
@@ -119,6 +141,64 @@ paths:
       responses:
         '204': { description: Other sessions revoked }
         '401': { $ref: '#/components/responses/Error' }
+  /auth/tokens:
+    get:
+      tags: [auth]
+      summary: List the caller's own personal API tokens (F-2.5)
+      x-role: viewer
+      responses:
+        '200':
+          description: Tokens
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tokens]
+                properties:
+                  tokens:
+                    type: array
+                    items: { $ref: '#/components/schemas/APIToken' }
+        '401': { $ref: '#/components/responses/Error' }
+    post:
+      tags: [auth]
+      summary: Create a personal API token (F-2.5); its secret is shown once and never again
+      x-role: viewer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTokenRequest' }
+      responses:
+        '201':
+          description: Token created
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, secret]
+                properties:
+                  token: { $ref: '#/components/schemas/APIToken' }
+                  secret:
+                    type: string
+                    description: The bearer secret ("vsui_..."), returned only this once
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /auth/tokens/{id}:
+    delete:
+      tags: [auth]
+      summary: Revoke one of the caller's own personal API tokens (F-2.5)
+      x-role: viewer
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        '204': { description: Revoked }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
   /auth/password:
     put:
       tags: [auth]
@@ -1703,6 +1783,32 @@ components:
         ip: { type: string }
         user_agent: { type: string }
         current: { type: boolean, description: Whether this is the session the request was made with }
+
+    APIToken:
+      type: object
+      description: |
+        A personal API token for script/monitor access (F-2.5), authenticated with
+        `Authorization: Bearer vsui_...`. The secret itself is only ever returned once, by
+        the create response; this shape (returned by list/create) never carries it.
+      required: [id, name, prefix, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        prefix: { type: string, description: First 12 characters of the secret, to recognise the token in a list }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+
+    CreateTokenRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        expires_in_days:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          description: 0 = never expires
 
     CreateUserRequest:
       type: object

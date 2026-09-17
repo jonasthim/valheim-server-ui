@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -28,6 +29,13 @@ func registerAuthRoutes(r chi.Router, d *Deps) {
 				r.Get("/sessions", authListSessionsHandler(d))
 				r.Delete("/sessions/{sessionId}", authRevokeSessionHandler(d))
 				r.Post("/sessions/revoke-others", authRevokeOtherSessionsHandler(d))
+			})
+
+			r.Group(func(r chi.Router) {
+				r.Use(requireService(func() bool { return d.Tokens != nil }, "token service not configured"))
+				r.Get("/tokens", authListTokensHandler(d))
+				r.Post("/tokens", authCreateTokenHandler(d))
+				r.Delete("/tokens/{id}", authRevokeTokenHandler(d))
 			})
 		})
 	})
@@ -235,6 +243,97 @@ func authRevokeOtherSessionsHandler(d *Deps) http.HandlerFunc {
 			return
 		}
 		d.audit(r, "auth.session.revoke", "", "others", nil)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+type tokensResponse struct {
+	Tokens []domain.APIToken `json:"tokens"`
+}
+
+// authListTokensHandler is GET /auth/tokens (F-2.5).
+func authListTokensHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		usr := UserFrom(r.Context())
+		if usr == nil {
+			WriteError(w, domain.E(domain.CodeUnauthorized, "authentication required"))
+			return
+		}
+		tokens, err := d.Tokens.ListTokens(r.Context(), usr.ID)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if tokens == nil {
+			tokens = []domain.APIToken{}
+		}
+		WriteJSON(w, http.StatusOK, tokensResponse{Tokens: tokens})
+	}
+}
+
+type createTokenRequest struct {
+	Name          string `json:"name"`
+	ExpiresInDays int    `json:"expires_in_days"`
+}
+
+type createTokenResponse struct {
+	Token  domain.APIToken `json:"token"`
+	Secret string          `json:"secret"`
+}
+
+// authCreateTokenHandler is POST /auth/tokens (F-2.5). A token-authenticated
+// caller is refused: a leaked token must not be usable to mint more tokens.
+func authCreateTokenHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		usr := UserFrom(r.Context())
+		if usr == nil {
+			WriteError(w, domain.E(domain.CodeUnauthorized, "authentication required"))
+			return
+		}
+		if IsTokenAuth(r.Context()) {
+			WriteError(w, domain.E(domain.CodeForbidden, "use a browser session to manage tokens"))
+			return
+		}
+		var in createTokenRequest
+		if err := DecodeJSON(r, &in); err != nil {
+			WriteError(w, err)
+			return
+		}
+		tok, secret, err := d.Tokens.CreateToken(r.Context(), usr.ID, in.Name, in.ExpiresInDays)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		// Audited by name only: the secret must never reach the audit log.
+		d.audit(r, "token.create", "", tok.Name, nil)
+		WriteJSON(w, http.StatusCreated, createTokenResponse{Token: tok, Secret: secret})
+	}
+}
+
+// authRevokeTokenHandler is DELETE /auth/tokens/{id} (F-2.5). Same
+// token-authenticated restriction as authCreateTokenHandler.
+func authRevokeTokenHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		usr := UserFrom(r.Context())
+		if usr == nil {
+			WriteError(w, domain.E(domain.CodeUnauthorized, "authentication required"))
+			return
+		}
+		if IsTokenAuth(r.Context()) {
+			WriteError(w, domain.E(domain.CodeForbidden, "use a browser session to manage tokens"))
+			return
+		}
+		idParam := chi.URLParam(r, "id")
+		id, err := strconv.ParseInt(idParam, 10, 64)
+		if err != nil {
+			WriteError(w, domain.E(domain.CodeValidationFailed, "invalid token id"))
+			return
+		}
+		if err := d.Tokens.RevokeToken(r.Context(), usr.ID, id); err != nil {
+			WriteError(w, err)
+			return
+		}
+		d.audit(r, "token.delete", "", idParam, nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

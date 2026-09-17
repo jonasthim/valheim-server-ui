@@ -1,15 +1,32 @@
-import { Badge, Button, Code, Group, Loader, PasswordInput, Stack, Table, Text, Tooltip } from '@mantine/core'
+import {
+  Badge,
+  Button,
+  Code,
+  CopyButton,
+  Group,
+  Loader,
+  Modal,
+  NumberInput,
+  PasswordInput,
+  Stack,
+  Table,
+  Text,
+  TextInput,
+  Tooltip,
+} from '@mantine/core'
 import { useForm } from '@mantine/form'
+import { useDisclosure } from '@mantine/hooks'
 import { useMutation } from '@tanstack/react-query'
 import { modals } from '@mantine/modals'
-import { IconKey } from '@tabler/icons-react'
+import { IconCheck, IconCopy, IconKey, IconPlus } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { fmtTime } from '../../lib/format'
 import { PageHeader, SectionCard, LoadError } from '../../ui'
-import type { SessionInfo } from '../../api/types'
+import type { APIToken, SessionInfo } from '../../api/types'
 import { useRevokeOtherSessions, useRevokeSession, useSessions } from './useSessions'
+import { useCreateToken, useRevokeToken, useTokens } from './useTokens'
 
 /** Truncates a long string for table display; the full value goes in a Tooltip. */
 function truncate(s: string, n: number): string {
@@ -181,6 +198,181 @@ function SessionsCard() {
   )
 }
 
+interface CreateTokenValues {
+  name: string
+  expires_in_days: number
+}
+
+function CreateTokenModal({ opened, onClose }: { opened: boolean; onClose: () => void }) {
+  const createToken = useCreateToken()
+  const form = useForm<CreateTokenValues>({
+    initialValues: { name: '', expires_in_days: 0 },
+    validate: {
+      name: (v) => (v.trim().length >= 1 && v.length <= 64 ? null : 'Must be 1-64 characters'),
+      expires_in_days: (v) => (v >= 0 && v <= 3650 ? null : 'Must be 0 (never) or 1-3650'),
+    },
+  })
+
+  function handleClose() {
+    form.reset()
+    createToken.reset()
+    onClose()
+  }
+
+  const created = createToken.data
+
+  return (
+    <Modal opened={opened} onClose={handleClose} title="New token" radius="lg" centered>
+      {created ? (
+        <Stack gap="md">
+          <Text size="sm">Copy it now — it is not shown again.</Text>
+          <Code block>{created.secret}</Code>
+          <Group justify="flex-end">
+            <CopyButton value={created.secret}>
+              {({ copied, copy }) => (
+                <Button
+                  variant="default"
+                  leftSection={copied ? <IconCheck size={16} /> : <IconCopy size={16} />}
+                  onClick={copy}
+                >
+                  {copied ? 'Copied' : 'Copy'}
+                </Button>
+              )}
+            </CopyButton>
+            <Button onClick={handleClose}>Done</Button>
+          </Group>
+        </Stack>
+      ) : (
+        <form
+          onSubmit={form.onSubmit((values) =>
+            createToken.mutate(values, {
+              onError: (err) => {
+                if (err instanceof ApiError) {
+                  const fields = err.fieldErrors()
+                  if (Object.keys(fields).length) form.setErrors(fields)
+                }
+              },
+            }),
+          )}
+        >
+          <Stack gap="sm">
+            <TextInput label="Name" autoFocus required {...form.getInputProps('name')} />
+            <NumberInput
+              label="Expires in days"
+              description="0 = never"
+              min={0}
+              max={3650}
+              {...form.getInputProps('expires_in_days')}
+            />
+            <Group justify="flex-end">
+              <Button variant="default" onClick={handleClose}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={createToken.isPending}>
+                Create
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      )}
+    </Modal>
+  )
+}
+
+function TokensCard() {
+  const tokensQ = useTokens()
+  const revokeToken = useRevokeToken()
+  const [modalOpened, { open: openModal, close: closeModal }] = useDisclosure(false)
+  const tokens = tokensQ.data?.tokens ?? []
+
+  function confirmRevoke(token: APIToken) {
+    modals.openConfirmModal({
+      title: 'Revoke token',
+      children: (
+        <Text size="sm">
+          Revoke <strong>{token.name}</strong>? Any script or monitor using it stops working immediately.
+        </Text>
+      ),
+      labels: { confirm: 'Revoke', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: () => revokeToken.mutate(token.id),
+    })
+  }
+
+  return (
+    <SectionCard
+      title="API tokens"
+      actions={
+        <Button variant="default" size="xs" leftSection={<IconPlus size={14} />} onClick={openModal}>
+          New token
+        </Button>
+      }
+    >
+      {tokensQ.isLoading && (
+        <Group justify="center" py="md">
+          <Loader size="sm" />
+        </Group>
+      )}
+      {tokensQ.isError && (
+        <LoadError error={tokensQ.error} title="Could not load tokens" onRetry={() => tokensQ.refetch()} />
+      )}
+      {!tokensQ.isLoading && !tokensQ.isError && (
+        <Stack gap="sm">
+          {tokens.length === 0 ? (
+            <Text size="sm" c="dimmed">
+              No API tokens yet.
+            </Text>
+          ) : (
+            <Table.ScrollContainer minWidth={640}>
+              <Table verticalSpacing="sm">
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>Name</Table.Th>
+                    <Table.Th>Token</Table.Th>
+                    <Table.Th>Created</Table.Th>
+                    <Table.Th>Last used</Table.Th>
+                    <Table.Th>Expires</Table.Th>
+                    <Table.Th />
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {tokens.map((token) => (
+                    <Table.Tr key={token.id}>
+                      <Table.Td>{token.name}</Table.Td>
+                      <Table.Td>
+                        <Code>{token.prefix}…</Code>
+                      </Table.Td>
+                      <Table.Td>{fmtTime(token.created_at)}</Table.Td>
+                      <Table.Td>{token.last_used_at ? fmtTime(token.last_used_at) : 'never'}</Table.Td>
+                      <Table.Td>{token.expires_at ? fmtTime(token.expires_at) : 'never'}</Table.Td>
+                      <Table.Td>
+                        <Button
+                          size="xs"
+                          variant="subtle"
+                          color="red"
+                          loading={revokeToken.isPending && revokeToken.variables === token.id}
+                          onClick={() => confirmRevoke(token)}
+                        >
+                          Revoke
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          )}
+          <Text size="xs" c="dimmed">
+            Scripts and monitors authenticate with <Code>Authorization: Bearer &lt;token&gt;</Code> — no cookie or
+            CSRF header needed.
+          </Text>
+        </Stack>
+      )}
+      <CreateTokenModal opened={modalOpened} onClose={closeModal} />
+    </SectionCard>
+  )
+}
+
 export function AccountPage() {
   const { user, loading } = useAuth()
 
@@ -256,6 +448,7 @@ export function AccountPage() {
         </SectionCard>
 
         <SessionsCard />
+        <TokensCard />
       </Stack>
     </Stack>
   )

@@ -234,3 +234,12 @@ type MetricsHistoryService interface {
 	// time, ascending, as parallel arrays.
 	Series(ctx context.Context, instanceID *string, since time.Time) (domain.MetricSeries, error)
 }
+
+// TokenService lists, creates and revokes the calling user's own personal API
+// tokens (F-2.5). CreateToken returns the plaintext secret alongside the
+// stored (secret-free) token; the secret is never retrievable again.
+type TokenService interface {
+	ListTokens(ctx context.Context, userID int64) ([]domain.APIToken, error)
+	CreateToken(ctx context.Context, userID int64, name string, expiresInDays int) (domain.APIToken, string, error)
+	RevokeToken(ctx context.Context, userID, id int64) error
+}

@@ -82,6 +82,7 @@ type Deps struct {
 	Notify       NotifyService       // F-1.1
 	Agent        AgentService        // server plugin (optional)
 	Sessions     SessionService      // F-2.7
+	Tokens       TokenService        // F-2.5
 	// Metrics is optional; when nil the system endpoint omits host usage.
 	Metrics        HostMetricsSource
 	MetricsHistory MetricsHistoryService // F-1.3
@@ -96,6 +97,11 @@ func NewRouter(d *Deps, spa http.Handler) http.Handler {
 	r.Use(requestLogger(d.Log))
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(5 * time.Minute))
+
+	// GET /healthz is unauthenticated (uptime checks, load balancers): it is
+	// registered on the top-level router, before the /api/v1 group, so
+	// neither Authenticate nor csrfGuard ever runs for it (F-2.5).
+	r.Get("/healthz", healthzHandler)
 
 	r.Route("/api/v1", func(api chi.Router) {
 		if d.Auth != nil {
@@ -133,6 +139,13 @@ func NewRouter(d *Deps, spa http.Handler) http.Handler {
 		r.Handle("/*", spa)
 	}
 	return r
+}
+
+// healthzHandler is GET /healthz (F-2.5): an unauthenticated liveness check
+// for uptime monitors and load balancers.
+func healthzHandler(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 // devFakeAdmin injects a synthetic admin when no Authenticator is configured.

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/jonasthim/valheim-server-ui/internal/api"
@@ -104,6 +105,77 @@ func (f *fakeSessionService) RevokeOtherSessions(_ context.Context, _ *http.Requ
 	f.othersCalled = true
 	f.othersUserID = userID
 	return f.othersErr
+}
+
+// newAuthTestRouterWithTokens is newAuthTestRouter plus a TokenService
+// (F-2.5). Tests that only exercise the handler/route/audit wiring pass a
+// fakeTokenService (isolated from the real CreateToken/HashToken logic,
+// which internal/auth/service_test.go covers separately); the one test that
+// needs a genuine bearer secret to authenticate (token-authenticated create
+// is forbidden) instead passes the same *auth.Service returned for Auth.
+func newAuthTestRouterWithTokens(t *testing.T, tokens api.TokenService) (http.Handler, *auth.Service, *audit.Recorder) {
+	t.Helper()
+	sqldb, err := db.OpenMemory(context.Background())
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	t.Cleanup(func() { _ = sqldb.Close() })
+
+	log := slog.New(slog.DiscardHandler)
+	auditRepo := db.NewAuditRepo(sqldb)
+	recorder := audit.New(auditRepo, log)
+	svc := auth.NewService(sqldb, config.Config{InsecureCookies: true}, log, auth.WithAuditor(recorder))
+	settingsRepo := db.NewSettingsRepo(sqldb)
+	settings := auth.NewSettings(settingsRepo, config.Config{InsecureCookies: true}, nil)
+
+	deps := &api.Deps{
+		Log: log, DB: sqldb, Version: "test",
+		Auth: svc, Audit: recorder, Users: svc, Settings: settings, Tokens: tokens,
+	}
+	return api.NewRouter(deps, nil), svc, recorder
+}
+
+// fakeTokenService is a test double for api.TokenService, mirroring
+// fakeSessionService above.
+type fakeTokenService struct {
+	tokens []domain.APIToken
+
+	createCalled  bool
+	createUserID  int64
+	createName    string
+	createExpires int
+	createResult  domain.APIToken
+	createSecret  string
+	createErr     error
+
+	revokeCalled bool
+	revokeUserID int64
+	revokeID     int64
+	revokeErr    error
+}
+
+func (f *fakeTokenService) ListTokens(_ context.Context, _ int64) ([]domain.APIToken, error) {
+	return f.tokens, nil
+}
+
+func (f *fakeTokenService) CreateToken(_ context.Context, userID int64, name string, expiresInDays int) (domain.APIToken, string, error) {
+	f.createCalled = true
+	f.createUserID = userID
+	f.createName = name
+	f.createExpires = expiresInDays
+	if f.createErr != nil {
+		return domain.APIToken{}, "", f.createErr
+	}
+	tok := f.createResult
+	tok.Name = name
+	return tok, f.createSecret, nil
+}
+
+func (f *fakeTokenService) RevokeToken(_ context.Context, userID, id int64) error {
+	f.revokeCalled = true
+	f.revokeUserID = userID
+	f.revokeID = id
+	return f.revokeErr
 }
 
 // setupAdminCookie creates the first admin account directly through svc and
@@ -222,6 +294,203 @@ func TestAuthSessions_NotConfiguredWhenSessionsNil(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("expected 500 when Sessions is not configured, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAuthTokens_CreateReturns201WithSecretAndAudits(t *testing.T) {
+	fake := &fakeTokenService{createResult: domain.APIToken{ID: 7, Prefix: "vsui_abcdefg"}, createSecret: "vsui_thefullsecretvalue"}
+	h, svc, recorder := newAuthTestRouterWithTokens(t, fake)
+	_, cookie := setupAdminCookie(t, svc)
+
+	req := mutatingRequest(http.MethodPost, "/api/v1/auth/tokens", jsonBody(t, map[string]any{
+		"name": "ci-bot", "expires_in_days": 30,
+	}))
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create token: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Token  domain.APIToken `json:"token"`
+		Secret string          `json:"secret"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !strings.HasPrefix(body.Secret, "vsui_") {
+		t.Fatalf("expected a vsui_ prefixed secret in the response, got %q", body.Secret)
+	}
+	if body.Token.Name != "ci-bot" {
+		t.Fatalf("expected returned token name ci-bot, got %+v", body.Token)
+	}
+	if !fake.createCalled || fake.createName != "ci-bot" || fake.createExpires != 30 {
+		t.Fatalf("unexpected CreateToken call: %+v", fake)
+	}
+
+	entries, err := recorder.List(context.Background(), "", "", 10, 0)
+	if err != nil {
+		t.Fatalf("audit List: %v", err)
+	}
+	found := false
+	for _, e := range entries {
+		if e.Action == "token.create" {
+			found = true
+			if e.Target != "ci-bot" {
+				t.Fatalf("expected the audit target to be the token name, got %q", e.Target)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("expected an audit entry for token.create, got %+v", entries)
+	}
+}
+
+func TestAuthTokens_ListHidesSecret(t *testing.T) {
+	fake := &fakeTokenService{tokens: []domain.APIToken{{ID: 1, Name: "ci", Prefix: "vsui_aaaaaaa"}}}
+	h, svc, _ := newAuthTestRouterWithTokens(t, fake)
+	_, cookie := setupAdminCookie(t, svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/tokens", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list tokens: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "secret") {
+		t.Fatalf("expected the list response to never mention a secret, got %s", rec.Body.String())
+	}
+	var body struct {
+		Tokens []domain.APIToken `json:"tokens"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Tokens) != 1 || body.Tokens[0].Name != "ci" {
+		t.Fatalf("unexpected tokens: %+v", body.Tokens)
+	}
+}
+
+func TestAuthTokens_DeleteReturns204AndAudits(t *testing.T) {
+	fake := &fakeTokenService{}
+	h, svc, recorder := newAuthTestRouterWithTokens(t, fake)
+	usr, cookie := setupAdminCookie(t, svc)
+
+	req := mutatingRequest(http.MethodDelete, "/api/v1/auth/tokens/42", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete token: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !fake.revokeCalled || fake.revokeUserID != usr.ID || fake.revokeID != 42 {
+		t.Fatalf("unexpected RevokeToken call: %+v", fake)
+	}
+
+	entries, err := recorder.List(context.Background(), "", "", 10, 0)
+	if err != nil {
+		t.Fatalf("audit List: %v", err)
+	}
+	found := false
+	for _, e := range entries {
+		if e.Action == "token.delete" && e.Target == "42" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an audit entry for token.delete, got %+v", entries)
+	}
+}
+
+func TestAuthTokens_NotConfiguredWhenTokensNil(t *testing.T) {
+	h, svc := newAuthTestRouter(t)
+	_, cookie := setupAdminCookie(t, svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/tokens", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when Tokens is not configured, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestAuthTokens_TokenAuthenticatedCreateIsForbidden wires the real
+// auth.Service as both Auth and Tokens so a genuine bearer secret
+// authenticates the request (api.IsTokenAuth == true), then asserts the
+// create-token handler itself refuses it: a leaked token must not be usable
+// to mint more tokens. The request deliberately carries no CSRF header, so a
+// 403 with this specific message also proves csrfGuard let it through
+// (IsTokenAuth) rather than rejecting it for a missing header first.
+func TestAuthTokens_TokenAuthenticatedCreateIsForbidden(t *testing.T) {
+	sqldb, err := db.OpenMemory(context.Background())
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	defer func() { _ = sqldb.Close() }()
+	log := slog.New(slog.DiscardHandler)
+	auditRepo := db.NewAuditRepo(sqldb)
+	recorder := audit.New(auditRepo, log)
+	svc := auth.NewService(sqldb, config.Config{InsecureCookies: true}, log, auth.WithAuditor(recorder))
+	settingsRepo := db.NewSettingsRepo(sqldb)
+	settings := auth.NewSettings(settingsRepo, config.Config{InsecureCookies: true}, nil)
+	deps := &api.Deps{
+		Log: log, DB: sqldb, Version: "test",
+		Auth: svc, Audit: recorder, Users: svc, Settings: settings, Tokens: svc,
+	}
+	h := api.NewRouter(deps, nil)
+
+	admin, err := svc.Setup(context.Background(), httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil), "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	_, secret, err := svc.CreateToken(context.Background(), admin.ID, "ci", 0)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/tokens", jsonBody(t, map[string]any{"name": "another"}))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+secret)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for a token-authenticated create, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error body: %v", err)
+	}
+	if body.Error.Code != "forbidden" || !strings.Contains(body.Error.Message, "browser session") {
+		t.Fatalf("expected a forbidden/'use a browser session' error, got %+v", body)
+	}
+}
+
+func TestHealthz_NoAuthRequired(t *testing.T) {
+	h, _ := newAuthTestRouter(t)
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("healthz: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !body.OK {
+		t.Fatalf("expected ok=true, got %+v", body)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("expected Cache-Control: no-store, got %q", cc)
 	}
 }
 

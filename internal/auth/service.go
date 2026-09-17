@@ -2,7 +2,10 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
@@ -20,6 +23,7 @@ var (
 	_ api.Authenticator  = (*Service)(nil)
 	_ api.UserService    = (*Service)(nil)
 	_ api.SessionService = (*Service)(nil)
+	_ api.TokenService   = (*Service)(nil)
 )
 
 // Service implements api.Authenticator, api.UserService and api.SettingsService
@@ -29,6 +33,7 @@ type Service struct {
 	log      *slog.Logger
 	users    *db.Users
 	sessions *db.Sessions
+	tokens   *db.APITokens
 	settings *db.SettingsRepo
 	lockout  *Lockout
 	clock    Clock
@@ -68,6 +73,7 @@ func NewService(sqldb *sql.DB, cfg config.Config, log *slog.Logger, opts ...Opti
 		log:      log,
 		users:    db.NewUsers(sqldb),
 		sessions: db.NewSessions(sqldb),
+		tokens:   db.NewAPITokens(sqldb),
 		settings: db.NewSettingsRepo(sqldb),
 		clock:    time.Now,
 	}
@@ -80,11 +86,25 @@ func NewService(sqldb *sql.DB, cfg config.Config, log *slog.Logger, opts ...Opti
 
 // ---- api.Authenticator ----------------------------------------------------
 
-// Authenticate resolves the session cookie (if any) and stores the user in
-// the request context. It never rejects a request itself; RequireRole does
-// that once a user is required.
+// Authenticate resolves a personal API bearer token or the session cookie (in
+// that order) and stores the user in the request context. It never rejects a
+// request itself; RequireRole does that once a user is required.
 func (s *Service) Authenticate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.Header.Get("Authorization"), bearerAuthPrefix) {
+			// A request whose Authorization header names a personal API
+			// token (F-2.5) is decided here, before any cookie is looked at:
+			// a valid token authenticates as its owner even if a stale or
+			// unrelated session cookie also rides along; an invalid one
+			// (unknown, expired, disabled owner) leaves the request
+			// unauthenticated rather than falling back to the cookie.
+			if usr, ok := s.authenticateBearer(r); ok {
+				next.ServeHTTP(w, r.WithContext(api.WithUser(api.WithTokenAuth(r.Context()), usr)))
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
 		cookie, err := r.Cookie(CookieName)
 		if err != nil || cookie.Value == "" {
 			next.ServeHTTP(w, r)
@@ -470,6 +490,92 @@ func (s *Service) RevokeSession(ctx context.Context, userID int64, sessionID str
 // request carries ("sign out everywhere else").
 func (s *Service) RevokeOtherSessions(ctx context.Context, r *http.Request, userID int64) error {
 	return s.sessions.DeleteByUserExcept(ctx, userID, SessionIDFromRequest(r))
+}
+
+// ---- api.TokenService (F-2.5) -----------------------------------------------
+
+const (
+	tokenSecretPrefix  = "vsui_"
+	bearerAuthPrefix   = "Bearer " + tokenSecretPrefix
+	tokenSecretBytes   = 32
+	tokenPrefixLen     = 12
+	maxTokenNameLen    = 64
+	maxTokenExpiryDays = 3650
+)
+
+// CreateToken mints a personal API token for userID. The plaintext secret is
+// returned once and is never stored or retrievable again; only its sha256
+// hash (HashToken) and a tokenPrefixLen-character prefix (so the owner can
+// recognise it in the list) persist. expiresInDays of 0 means the token never
+// expires.
+func (s *Service) CreateToken(ctx context.Context, userID int64, name string, expiresInDays int) (domain.APIToken, string, error) {
+	if l := len(name); l < 1 || l > maxTokenNameLen {
+		return domain.APIToken{}, "", domain.Validation([]domain.FieldError{
+			{Field: "name", Message: "must be 1-64 characters"},
+		})
+	}
+	if expiresInDays < 0 || expiresInDays > maxTokenExpiryDays {
+		return domain.APIToken{}, "", domain.Validation([]domain.FieldError{
+			{Field: "expires_in_days", Message: "must be 0 (never) or 1-3650"},
+		})
+	}
+	buf := make([]byte, tokenSecretBytes)
+	if _, err := rand.Read(buf); err != nil {
+		return domain.APIToken{}, "", fmt.Errorf("generate api token: %w", err)
+	}
+	secret := tokenSecretPrefix + base64.RawURLEncoding.EncodeToString(buf)
+	hash := HashToken(secret)
+	prefix := secret[:tokenPrefixLen]
+
+	var expiresAt *time.Time
+	if expiresInDays > 0 {
+		t := s.clock().AddDate(0, 0, expiresInDays)
+		expiresAt = &t
+	}
+	tok, err := s.tokens.Create(ctx, userID, name, hash, prefix, expiresAt)
+	if err != nil {
+		return domain.APIToken{}, "", err
+	}
+	return tok, secret, nil
+}
+
+// ListTokens returns userID's API tokens, newest first.
+func (s *Service) ListTokens(ctx context.Context, userID int64) ([]domain.APIToken, error) {
+	return s.tokens.ListByUser(ctx, userID)
+}
+
+// RevokeToken deletes one of userID's own API tokens.
+func (s *Service) RevokeToken(ctx context.Context, userID, id int64) error {
+	return s.tokens.Delete(ctx, userID, id)
+}
+
+// authenticateBearer resolves the personal API token named by r's
+// Authorization header (already confirmed to carry bearerAuthPrefix by the
+// caller). ok is false whenever the token is unknown, expired, or belongs to
+// a disabled user; Authenticate then treats the request as unauthenticated,
+// exactly like a missing or invalid session cookie, rather than rejecting it
+// itself.
+func (s *Service) authenticateBearer(r *http.Request) (usr *domain.User, ok bool) {
+	secret := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	ctx := r.Context()
+	userID, tok, err := s.tokens.GetByHash(ctx, HashToken(secret))
+	if err != nil {
+		return nil, false
+	}
+	now := s.clock()
+	if tok.ExpiresAt != nil && now.After(*tok.ExpiresAt) {
+		return nil, false
+	}
+	usr, err = s.users.Get(ctx, userID)
+	if err != nil || usr.Disabled {
+		return nil, false
+	}
+	// Touch at most once a minute so a busy script does not write on every
+	// request; touchInterval is the same constant the session cookie uses.
+	if tok.LastUsedAt == nil || now.Sub(*tok.LastUsedAt) >= touchInterval {
+		_ = s.tokens.TouchLastUsed(ctx, tok.ID, now)
+	}
+	return usr, true
 }
 
 // RunSessionPurge periodically deletes expired sessions until ctx is done.

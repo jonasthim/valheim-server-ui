@@ -73,6 +73,19 @@ type SessionInfo struct {
 	Current    bool      `json:"current"`
 }
 
+// APIToken is a personal access token for script/monitor access (F-2.5). The
+// bearer secret itself is never stored or returned again after creation; only
+// its sha256 hash and a 12-character prefix (so a user can recognise the
+// token in the list) persist.
+type APIToken struct {
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	Prefix     string     `json:"prefix"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`
+}
+
 // OIDCSettings configures the single external identity provider.
 type OIDCSettings struct {
 	Enabled         bool            `json:"enabled"`

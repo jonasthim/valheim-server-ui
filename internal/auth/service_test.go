@@ -5,8 +5,11 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/jonasthim/valheim-server-ui/internal/api"
 	"github.com/jonasthim/valheim-server-ui/internal/config"
 	"github.com/jonasthim/valheim-server-ui/internal/db"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
@@ -378,6 +381,205 @@ func TestListSessionsMarksExactlyOneCurrent(t *testing.T) {
 	}
 	if currentCount != 1 {
 		t.Fatalf("expected exactly one current session, got %d", currentCount)
+	}
+}
+
+// authedUser drives req through svc.Authenticate and returns the user the
+// middleware put in the context, or nil when the request stays unauthenticated.
+func authedUser(svc *Service, req *http.Request) *domain.User {
+	var got *domain.User
+	h := svc.Authenticate(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got = api.UserFrom(r.Context())
+	}))
+	h.ServeHTTP(httptest.NewRecorder(), req)
+	return got
+}
+
+func TestCreateTokenThenBearerAuthenticatesAsOwner(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin, err := svc.Setup(ctx, httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil), "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	tok, secret, err := svc.CreateToken(ctx, admin.ID, "ci", 0)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	if !strings.HasPrefix(secret, "vsui_") {
+		t.Fatalf("expected vsui_ prefixed secret, got %q", secret)
+	}
+	if tok.Prefix != secret[:12] {
+		t.Fatalf("expected prefix to be the first 12 chars of the secret, got %q for %q", tok.Prefix, secret)
+	}
+	if tok.ExpiresAt != nil {
+		t.Fatalf("expected no expiry for expiresInDays=0, got %v", tok.ExpiresAt)
+	}
+	if tok.LastUsedAt != nil {
+		t.Fatalf("expected nil last_used_at before first use, got %v", tok.LastUsedAt)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+secret)
+	got := authedUser(svc, req)
+	if got == nil || got.ID != admin.ID {
+		t.Fatalf("expected bearer token to authenticate as the owning admin, got %+v", got)
+	}
+
+	// last_used_at is now set.
+	tokens, err := svc.ListTokens(ctx, admin.ID)
+	if err != nil {
+		t.Fatalf("ListTokens: %v", err)
+	}
+	if len(tokens) != 1 || tokens[0].LastUsedAt == nil {
+		t.Fatalf("expected last_used_at to be set after use, got %+v", tokens)
+	}
+}
+
+func TestExpiredTokenDoesNotAuthenticate(t *testing.T) {
+	sqldb, err := db.OpenMemory(context.Background())
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	t.Cleanup(func() { _ = sqldb.Close() })
+	now := time.Now()
+	clock := func() time.Time { return now }
+	svc := NewService(sqldb, config.Config{InsecureCookies: true}, slog.New(slog.DiscardHandler), WithClock(clock))
+	ctx := context.Background()
+
+	admin, err := svc.Setup(ctx, httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil), "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	_, secret, err := svc.CreateToken(ctx, admin.ID, "ci", 1)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	now = now.Add(48 * time.Hour) // two days later, past the 1-day expiry
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+secret)
+	if got := authedUser(svc, req); got != nil {
+		t.Fatalf("expected expired token to not authenticate, got %+v", got)
+	}
+}
+
+func TestRevokedTokenDoesNotAuthenticate(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin, err := svc.Setup(ctx, httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil), "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	tok, secret, err := svc.CreateToken(ctx, admin.ID, "ci", 0)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	if err := svc.RevokeToken(ctx, admin.ID, tok.ID); err != nil {
+		t.Fatalf("RevokeToken: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+secret)
+	if got := authedUser(svc, req); got != nil {
+		t.Fatalf("expected revoked token to not authenticate, got %+v", got)
+	}
+}
+
+func TestDisabledUsersTokenDoesNotAuthenticate(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	_, err := svc.Setup(ctx, httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil), "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	// A second admin so it can be disabled without hitting last-admin protection.
+	second, err := svc.Create(ctx, "second", "correct-password", "", "", domain.RoleAdmin)
+	if err != nil {
+		t.Fatalf("create second admin: %v", err)
+	}
+	_, secret, err := svc.CreateToken(ctx, second.ID, "ci", 0)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	disabled := true
+	if _, err := svc.Update(ctx, second.ID, nil, nil, nil, &disabled); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Header.Set("Authorization", "Bearer "+secret)
+	if got := authedUser(svc, req); got != nil {
+		t.Fatalf("expected disabled user's token to not authenticate, got %+v", got)
+	}
+}
+
+func TestBearerTakesPrecedenceOverCookie(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin, cookie := setupAdminCookieForServiceTest(t, svc)
+	second, err := svc.Create(ctx, "second", "correct-password", "", "", domain.RoleViewer)
+	if err != nil {
+		t.Fatalf("create second user: %v", err)
+	}
+	_, secret, err := svc.CreateToken(ctx, second.ID, "ci", 0)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(cookie)                             // valid session for admin
+	req.Header.Set("Authorization", "Bearer "+secret) // valid token for second
+	got := authedUser(svc, req)
+	if got == nil || got.ID != second.ID {
+		t.Fatalf("expected the bearer token's owner to win over the cookie, got %+v (admin=%d)", got, admin.ID)
+	}
+}
+
+func setupAdminCookieForServiceTest(t *testing.T, svc *Service) (*domain.User, *http.Cookie) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	usr, err := svc.Setup(context.Background(), rec, req, "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == CookieName {
+			return usr, c
+		}
+	}
+	t.Fatalf("expected session cookie from setup")
+	return nil, nil
+}
+
+func TestCreateTokenValidation(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	admin, err := svc.Setup(ctx, httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/", nil), "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	cases := []struct {
+		name          string
+		tokenName     string
+		expiresInDays int
+	}{
+		{"empty name", "", 0},
+		{"name too long", strings.Repeat("x", 65), 0},
+		{"negative expiry", "ci", -1},
+		{"expiry too far in the future", "ci", 3651},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, _, err := svc.CreateToken(ctx, admin.ID, tc.tokenName, tc.expiresInDays); domain.AsError(err).Code != domain.CodeValidationFailed {
+				t.Fatalf("expected validation_failed, got %v", err)
+			}
+		})
 	}
 }
 
