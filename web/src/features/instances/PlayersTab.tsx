@@ -31,6 +31,9 @@ export function PlayersTab({ id }: { id: string }) {
             : undefined
         }
         kickPending={agentCommand.isPending}
+        instanceId={id}
+        agentConnected={!!agent.data?.connected}
+        canOperate={canManage}
       />
 
       <KnownPlayersTable

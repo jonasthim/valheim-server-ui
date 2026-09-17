@@ -1,9 +1,11 @@
 import { Badge, Button, Group, Skeleton, Stack, Table, Text } from '@mantine/core'
-import { modals } from '@mantine/modals'
 import { IconUserOff } from '@tabler/icons-react'
+import { Link } from 'react-router-dom'
 import type { OnlinePlayer, PlayersResponse } from '../../../api/types'
 import { fmtAgo } from '../../../lib/format'
 import { SectionCard, StatusPill } from '../../../ui'
+import { BroadcastButton, ChatButton } from '../../agent'
+import { openConfirmKick } from '../../agent/openConfirmKick'
 import { COUNT_SOURCE_LABELS } from './constants'
 
 export function PlayersOnlinePanel({
@@ -11,22 +13,21 @@ export function PlayersOnlinePanel({
   isLoading,
   onKick,
   kickPending = false,
+  instanceId,
+  agentConnected,
+  canOperate,
 }: {
   data: PlayersResponse | undefined
   isLoading: boolean
   /** Present when the agent is connected and the user may kick. */
   onKick?: (player: OnlinePlayer) => void
   kickPending?: boolean
+  instanceId: string
+  /** Whether the agent is connected; gates Chat sending and enables Broadcast/Chat. */
+  agentConnected?: boolean
+  /** Whether the caller has the operator role; gates Broadcast and in-chat sending. */
+  canOperate?: boolean
 }) {
-  function confirmKick(p: OnlinePlayer) {
-    modals.openConfirmModal({
-      title: `Kick ${p.name}`,
-      children: <Text size="sm">The player is disconnected immediately and can rejoin. Use the banned list to keep them out.</Text>,
-      labels: { confirm: 'Kick', cancel: 'Cancel' },
-      confirmProps: { color: 'red' },
-      onConfirm: () => onKick?.(p),
-    })
-  }
   const online = data?.online ?? []
   const count = data?.online_count ?? online.length
   const source = data?.count_source ?? 'none'
@@ -41,6 +42,11 @@ export function PlayersOnlinePanel({
           <Badge size="sm" color="gray" variant="outline">
             {COUNT_SOURCE_LABELS[source]}
           </Badge>
+          <ChatButton id={instanceId} disabled={!agentConnected} canSay={!!canOperate} />
+          {canOperate && <BroadcastButton id={instanceId} disabled={!agentConnected} />}
+          <Button size="xs" variant="subtle" component={Link} to={`/instances/${instanceId}/map`}>
+            Map
+          </Button>
         </Group>
       }
     >
@@ -85,7 +91,7 @@ export function PlayersOnlinePanel({
                         color="red"
                         leftSection={<IconUserOff size={14} />}
                         disabled={kickPending}
-                        onClick={() => confirmKick(p)}
+                        onClick={() => openConfirmKick({ name: p.name, onConfirm: () => onKick?.(p) })}
                       >
                         Kick
                       </Button>

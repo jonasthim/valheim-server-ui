@@ -25,7 +25,8 @@ import type { ExploredInfo } from "../../api/types";
 import { useAuth } from "../../auth/useAuth";
 import { fmtAgo } from "../../lib/format";
 import { SectionCard, StatusPill } from "../../ui";
-import { AgentSetupNotice, useAgent } from "../agent";
+import { AgentSetupNotice, BroadcastButton, useAgent, useAgentCommand } from "../agent";
+import { MapPlayerList } from "./MapPlayerList";
 import type { MapIconName } from "./MapIcons";
 import {
   MapView,
@@ -162,6 +163,7 @@ export function MapTab({ id }: { id: string }) {
   const map = useInstanceMap(id);
   const agent = useAgent(id);
   const render = useRenderMap(id);
+  const command = useAgentCommand(id);
   const [layers, setLayers] = useState<string[]>(DEFAULT_LAYERS);
   const [fog, setFog] = useState(true);
   const [animate, setAnimateState] = useState(initialAnimate);
@@ -441,6 +443,9 @@ export function MapTab({ id }: { id: string }) {
                 Re-render
               </Button>
             )}
+            {hasRole("operator") && (
+              <BroadcastButton id={id} disabled={!data.connected} />
+            )}
           </Group>
         }
       >
@@ -538,6 +543,16 @@ export function MapTab({ id }: { id: string }) {
           )}
         </Stack>
       </SectionCard>
+      <MapPlayerList
+        id={id}
+        players={players}
+        connected={data.connected}
+        onKick={
+          hasRole("operator")
+            ? (name) => command.mutate({ command: "kick", target: name })
+            : undefined
+        }
+      />
     </Stack>
   );
 }
