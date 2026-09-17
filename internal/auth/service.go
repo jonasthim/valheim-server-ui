@@ -17,8 +17,9 @@ import (
 )
 
 var (
-	_ api.Authenticator = (*Service)(nil)
-	_ api.UserService   = (*Service)(nil)
+	_ api.Authenticator  = (*Service)(nil)
+	_ api.UserService    = (*Service)(nil)
+	_ api.SessionService = (*Service)(nil)
 )
 
 // Service implements api.Authenticator, api.UserService and api.SettingsService
@@ -426,6 +427,67 @@ func SessionIDFromRequest(r *http.Request) string {
 		return ""
 	}
 	return HashToken(cookie.Value)
+}
+
+// ListSessions returns userID's active sessions for the account page, most
+// recently active first, marking the one the request carries as current.
+func (s *Service) ListSessions(ctx context.Context, r *http.Request, userID int64) ([]domain.SessionInfo, error) {
+	rows, err := s.sessions.ListByUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	current := SessionIDFromRequest(r)
+	out := make([]domain.SessionInfo, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, domain.SessionInfo{
+			ID:         row.ID,
+			CreatedAt:  row.CreatedAt,
+			LastSeenAt: row.LastSeenAt,
+			ExpiresAt:  row.ExpiresAt,
+			IP:         row.IP,
+			UserAgent:  row.UserAgent,
+			Current:    row.ID == current,
+		})
+	}
+	return out, nil
+}
+
+// RevokeSession deletes one of userID's own sessions. A session that exists
+// but belongs to a different user answers identically to one that does not
+// exist at all, so a caller cannot use this to probe other users' session ids.
+func (s *Service) RevokeSession(ctx context.Context, userID int64, sessionID string) error {
+	sess, err := s.sessions.Get(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if sess.UserID != userID {
+		return domain.NotFound("session")
+	}
+	return s.sessions.Delete(ctx, sessionID)
+}
+
+// RevokeOtherSessions signs userID out of every session except the one the
+// request carries ("sign out everywhere else").
+func (s *Service) RevokeOtherSessions(ctx context.Context, r *http.Request, userID int64) error {
+	return s.sessions.DeleteByUserExcept(ctx, userID, SessionIDFromRequest(r))
+}
+
+// RunSessionPurge periodically deletes expired sessions until ctx is done.
+// Not required for correctness (Get and Authenticate re-validate expiry on
+// every use) but keeps the table from growing without bound.
+func (s *Service) RunSessionPurge(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := s.sessions.DeleteExpired(ctx, s.clock()); err != nil {
+				s.log.Warn("purge expired sessions", "err", err)
+			}
+		}
+	}
 }
 
 // remoteIP is the client address after the router's realIP middleware has

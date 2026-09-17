@@ -79,6 +79,46 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/UserResponse' }
         '401': { $ref: '#/components/responses/Error' }
+  /auth/sessions:
+    get:
+      tags: [auth]
+      summary: List the caller's own active sessions (F-2.7)
+      x-role: viewer
+      responses:
+        '200':
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions]
+                properties:
+                  sessions:
+                    type: array
+                    items: { $ref: '#/components/schemas/SessionInfo' }
+        '401': { $ref: '#/components/responses/Error' }
+  /auth/sessions/{sessionId}:
+    delete:
+      tags: [auth]
+      summary: Revoke one of the caller's own sessions (F-2.7)
+      x-role: viewer
+      parameters:
+        - in: path
+          name: sessionId
+          required: true
+          schema: { type: string }
+      responses:
+        '204': { description: Revoked }
+        '401': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+  /auth/sessions/revoke-others:
+    post:
+      tags: [auth]
+      summary: Sign out every other session of the caller's own account (F-2.7)
+      x-role: viewer
+      responses:
+        '204': { description: Other sessions revoked }
+        '401': { $ref: '#/components/responses/Error' }
   /auth/password:
     put:
       tags: [auth]
@@ -1494,6 +1534,19 @@ components:
               subject: { type: string }
         created_at: { type: string, format: date-time }
         last_login_at: { type: string, format: date-time }
+
+    SessionInfo:
+      type: object
+      description: A user's own browser session, as shown on the account page (F-2.7).
+      required: [id, created_at, last_seen_at, expires_at, ip, user_agent, current]
+      properties:
+        id: { type: string }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        ip: { type: string }
+        user_agent: { type: string }
+        current: { type: boolean, description: Whether this is the session the request was made with }
 
     CreateUserRequest:
       type: object

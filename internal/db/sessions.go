@@ -52,6 +52,39 @@ func (s *Sessions) Get(ctx context.Context, id string) (*domain.Session, error) 
 	return &sess, nil
 }
 
+// ListByUser returns userID's active (non-expired) sessions, most recently
+// active first, for the account page's session list (F-2.7).
+func (s *Sessions) ListByUser(ctx context.Context, userID int64) ([]domain.Session, error) {
+	rows, err := s.DB.QueryContext(ctx, `
+		SELECT id, user_id, created_at, expires_at, last_seen_at, ip, user_agent
+		FROM sessions
+		WHERE user_id = ? AND expires_at > ?
+		ORDER BY last_seen_at DESC`, userID, nowString(time.Now()))
+	if err != nil {
+		return nil, fmt.Errorf("list sessions for user %d: %w", userID, err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var out []domain.Session
+	for rows.Next() {
+		var (
+			sess                           domain.Session
+			createdAt, expiresAt, lastSeen string
+		)
+		if err := rows.Scan(&sess.ID, &sess.UserID, &createdAt, &expiresAt, &lastSeen, &sess.IP, &sess.UserAgent); err != nil {
+			return nil, fmt.Errorf("scan session: %w", err)
+		}
+		sess.CreatedAt = parseTime(createdAt)
+		sess.ExpiresAt = parseTime(expiresAt)
+		sess.LastSeenAt = parseTime(lastSeen)
+		out = append(out, sess)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list sessions for user %d: %w", userID, err)
+	}
+	return out, nil
+}
+
 // Touch bumps last_seen_at.
 func (s *Sessions) Touch(ctx context.Context, id string, when time.Time) error {
 	_, err := s.DB.ExecContext(ctx, `UPDATE sessions SET last_seen_at = ? WHERE id = ?`, nowString(when), id)

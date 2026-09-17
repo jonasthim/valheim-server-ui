@@ -253,6 +253,134 @@ func TestChangePasswordFlow(t *testing.T) {
 	}
 }
 
+func TestRevokeOtherSessionsKeepsCurrent(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	admin, err := svc.Setup(ctx, rec, req, "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	var setupCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == CookieName {
+			setupCookie = c
+		}
+	}
+	if setupCookie == nil {
+		t.Fatalf("expected session cookie from setup")
+	}
+
+	// A second, independent login/session for the same user.
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/", nil)
+	if _, err := svc.Login(ctx, rec2, req2, "admin", "correct-password"); err != nil {
+		t.Fatalf("second login: %v", err)
+	}
+
+	// Revoke others using the setup session as "current".
+	revokeReq := httptest.NewRequest(http.MethodPost, "/", nil)
+	revokeReq.AddCookie(setupCookie)
+	if err := svc.RevokeOtherSessions(ctx, revokeReq, admin.ID); err != nil {
+		t.Fatalf("RevokeOtherSessions: %v", err)
+	}
+
+	sessions, err := svc.sessions.ListByUser(ctx, admin.ID)
+	if err != nil {
+		t.Fatalf("ListByUser: %v", err)
+	}
+	if len(sessions) != 1 || sessions[0].ID != HashToken(setupCookie.Value) {
+		t.Fatalf("expected only the current session to remain, got %+v", sessions)
+	}
+}
+
+func TestRevokeSessionOtherUserIsNotFoundAndDeletesNothing(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	admin, err := svc.Setup(ctx, rec, req, "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// A second user with its own session.
+	if _, err := svc.Create(ctx, "other", "correct-password", "", "", domain.RoleViewer); err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/", nil)
+	if _, err := svc.Login(ctx, rec2, req2, "other", "correct-password"); err != nil {
+		t.Fatalf("login other: %v", err)
+	}
+	var otherCookie *http.Cookie
+	for _, c := range rec2.Result().Cookies() {
+		if c.Name == CookieName {
+			otherCookie = c
+		}
+	}
+	if otherCookie == nil {
+		t.Fatalf("expected session cookie for other")
+	}
+	otherSessionID := HashToken(otherCookie.Value)
+
+	if err := svc.RevokeSession(ctx, admin.ID, otherSessionID); domain.AsError(err).Code != domain.CodeNotFound {
+		t.Fatalf("expected not_found revoking another user's session, got %v", err)
+	}
+	if _, err := svc.sessions.Get(ctx, otherSessionID); err != nil {
+		t.Fatalf("expected other's session to still exist, got %v", err)
+	}
+}
+
+func TestListSessionsMarksExactlyOneCurrent(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	admin, err := svc.Setup(ctx, rec, req, "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	var setupCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == CookieName {
+			setupCookie = c
+		}
+	}
+	if setupCookie == nil {
+		t.Fatalf("expected session cookie from setup")
+	}
+
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/", nil)
+	if _, err := svc.Login(ctx, rec2, req2, "admin", "correct-password"); err != nil {
+		t.Fatalf("second login: %v", err)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	listReq.AddCookie(setupCookie)
+	sessions, err := svc.ListSessions(ctx, listReq, admin.ID)
+	if err != nil {
+		t.Fatalf("ListSessions: %v", err)
+	}
+	if len(sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(sessions))
+	}
+	currentCount := 0
+	for _, si := range sessions {
+		if si.Current {
+			currentCount++
+			if si.ID != HashToken(setupCookie.Value) {
+				t.Fatalf("wrong session marked current: %+v", si)
+			}
+		}
+	}
+	if currentCount != 1 {
+		t.Fatalf("expected exactly one current session, got %d", currentCount)
+	}
+}
+
 func TestOIDCOnlyUserCannotLoginLocally(t *testing.T) {
 	svc := newTestService(t)
 	ctx := context.Background()

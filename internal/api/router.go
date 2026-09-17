@@ -81,6 +81,7 @@ type Deps struct {
 	SelfUpdate   SelfUpdateService   // WP-30
 	Notify       NotifyService       // F-1.1
 	Agent        AgentService        // server plugin (optional)
+	Sessions     SessionService      // F-2.7
 	// Metrics is optional; when nil the system endpoint omits host usage.
 	Metrics HostMetricsSource
 }

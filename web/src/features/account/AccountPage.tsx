@@ -1,12 +1,20 @@
-import { Badge, Button, Code, Group, Loader, PasswordInput, Stack, Text } from '@mantine/core'
+import { Badge, Button, Code, Group, Loader, PasswordInput, Stack, Table, Text, Tooltip } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { useMutation } from '@tanstack/react-query'
+import { modals } from '@mantine/modals'
 import { IconKey } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { fmtTime } from '../../lib/format'
-import { PageHeader, SectionCard } from '../../ui'
+import { PageHeader, SectionCard, LoadError } from '../../ui'
+import type { SessionInfo } from '../../api/types'
+import { useRevokeOtherSessions, useRevokeSession, useSessions } from './useSessions'
+
+/** Truncates a long string for table display; the full value goes in a Tooltip. */
+function truncate(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n)}…` : s
+}
 
 interface PasswordValues {
   current_password: string
@@ -71,6 +79,105 @@ function ChangePasswordForm() {
         </Group>
       </Stack>
     </form>
+  )
+}
+
+function SessionsCard() {
+  const sessionsQ = useSessions()
+  const revokeSession = useRevokeSession()
+  const revokeOthers = useRevokeOtherSessions()
+  const sessions = sessionsQ.data?.sessions ?? []
+
+  function confirmRevoke(session: SessionInfo) {
+    modals.openConfirmModal({
+      title: 'Sign out this session',
+      children: (
+        <Text size="sm">
+          Sign out the session from <strong>{session.ip || 'this device'}</strong>?
+        </Text>
+      ),
+      labels: { confirm: 'Sign out', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: () => revokeSession.mutate(session.id),
+    })
+  }
+
+  function confirmRevokeOthers() {
+    modals.openConfirmModal({
+      title: 'Sign out everywhere else',
+      children: (
+        <Text size="sm">
+          Sign out every other session on this account? This session stays signed in.
+        </Text>
+      ),
+      labels: { confirm: 'Sign out everywhere else', cancel: 'Cancel' },
+      confirmProps: { color: 'red' },
+      onConfirm: () => revokeOthers.mutate(),
+    })
+  }
+
+  return (
+    <SectionCard
+      title="Sessions"
+      actions={
+        <Button variant="default" size="xs" disabled={sessions.length <= 1} onClick={confirmRevokeOthers}>
+          Sign out everywhere else
+        </Button>
+      }
+    >
+      {sessionsQ.isLoading && (
+        <Group justify="center" py="md">
+          <Loader size="sm" />
+        </Group>
+      )}
+      {sessionsQ.isError && (
+        <LoadError error={sessionsQ.error} title="Could not load sessions" onRetry={() => sessionsQ.refetch()} />
+      )}
+      {!sessionsQ.isLoading && !sessionsQ.isError && (
+        <Table.ScrollContainer minWidth={560}>
+          <Table verticalSpacing="sm">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Browser</Table.Th>
+                <Table.Th>IP</Table.Th>
+                <Table.Th>Signed in</Table.Th>
+                <Table.Th>Last seen</Table.Th>
+                <Table.Th />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {sessions.map((session) => (
+                <Table.Tr key={session.id}>
+                  <Table.Td>
+                    <Tooltip label={session.user_agent} disabled={session.user_agent.length <= 60}>
+                      <Text size="sm">{truncate(session.user_agent, 60) || '-'}</Text>
+                    </Tooltip>
+                  </Table.Td>
+                  <Table.Td>{session.ip || '-'}</Table.Td>
+                  <Table.Td>{fmtTime(session.created_at)}</Table.Td>
+                  <Table.Td>{fmtTime(session.last_seen_at)}</Table.Td>
+                  <Table.Td>
+                    {session.current ? (
+                      <Badge variant="light">This session</Badge>
+                    ) : (
+                      <Button
+                        size="xs"
+                        variant="subtle"
+                        color="red"
+                        loading={revokeSession.isPending && revokeSession.variables === session.id}
+                        onClick={() => confirmRevoke(session)}
+                      >
+                        Sign out
+                      </Button>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      )}
+    </SectionCard>
   )
 }
 
@@ -147,6 +254,8 @@ export function AccountPage() {
             </Text>
           )}
         </SectionCard>
+
+        <SessionsCard />
       </Stack>
     </Stack>
   )

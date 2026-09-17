@@ -62,6 +62,17 @@ type Session struct {
 	UserAgent  string
 }
 
+// SessionInfo is a user's own session as shown on the account page.
+type SessionInfo struct {
+	ID         string    `json:"id"`
+	CreatedAt  time.Time `json:"created_at"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	IP         string    `json:"ip"`
+	UserAgent  string    `json:"user_agent"`
+	Current    bool      `json:"current"`
+}
+
 // OIDCSettings configures the single external identity provider.
 type OIDCSettings struct {
 	Enabled         bool            `json:"enabled"`

@@ -22,6 +22,13 @@ func registerAuthRoutes(r chi.Router, d *Deps) {
 			r.Post("/logout", authLogoutHandler(d))
 			r.Get("/me", authMeHandler(d))
 			r.Put("/password", authChangePasswordHandler(d))
+
+			r.Group(func(r chi.Router) {
+				r.Use(requireService(func() bool { return d.Sessions != nil }, "session service not configured"))
+				r.Get("/sessions", authListSessionsHandler(d))
+				r.Delete("/sessions/{sessionId}", authRevokeSessionHandler(d))
+				r.Post("/sessions/revoke-others", authRevokeOtherSessionsHandler(d))
+			})
 		})
 	})
 }
@@ -168,6 +175,66 @@ func authChangePasswordHandler(d *Deps) http.HandlerFunc {
 			return
 		}
 		d.audit(r, "user.password.change", "", usr.Username, nil)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+type sessionsResponse struct {
+	Sessions []domain.SessionInfo `json:"sessions"`
+}
+
+// authListSessionsHandler is GET /auth/sessions (F-2.7).
+func authListSessionsHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		usr := UserFrom(r.Context())
+		if usr == nil {
+			WriteError(w, domain.E(domain.CodeUnauthorized, "authentication required"))
+			return
+		}
+		sessions, err := d.Sessions.ListSessions(r.Context(), r, usr.ID)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if sessions == nil {
+			sessions = []domain.SessionInfo{}
+		}
+		WriteJSON(w, http.StatusOK, sessionsResponse{Sessions: sessions})
+	}
+}
+
+// authRevokeSessionHandler is DELETE /auth/sessions/{sessionId} (F-2.7).
+func authRevokeSessionHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		usr := UserFrom(r.Context())
+		if usr == nil {
+			WriteError(w, domain.E(domain.CodeUnauthorized, "authentication required"))
+			return
+		}
+		sessionID := chi.URLParam(r, "sessionId")
+		if err := d.Sessions.RevokeSession(r.Context(), usr.ID, sessionID); err != nil {
+			WriteError(w, err)
+			return
+		}
+		d.audit(r, "auth.session.revoke", "", sessionID, nil)
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// authRevokeOtherSessionsHandler is POST /auth/sessions/revoke-others (F-2.7):
+// "sign out everywhere else".
+func authRevokeOtherSessionsHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		usr := UserFrom(r.Context())
+		if usr == nil {
+			WriteError(w, domain.E(domain.CodeUnauthorized, "authentication required"))
+			return
+		}
+		if err := d.Sessions.RevokeOtherSessions(r.Context(), r, usr.ID); err != nil {
+			WriteError(w, err)
+			return
+		}
+		d.audit(r, "auth.session.revoke", "", "others", nil)
 		w.WriteHeader(http.StatusNoContent)
 	}
 }

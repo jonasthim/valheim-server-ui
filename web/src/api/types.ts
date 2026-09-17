@@ -5,6 +5,7 @@ import type { components } from './schema'
 export type Schemas = components['schemas']
 export type Role = Schemas['Role']
 export type User = Schemas['User']
+export type SessionInfo = Schemas['SessionInfo']
 export type AuthStatus = Schemas['AuthStatus']
 export type SetupRequest = Schemas['SetupRequest']
 export type LoginRequest = Schemas['LoginRequest']

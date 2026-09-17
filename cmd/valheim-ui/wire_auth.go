@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/api"
 	"github.com/jonasthim/valheim-server-ui/internal/audit"
@@ -24,8 +25,6 @@ import (
 // provider on every successful write, so a changed issuer/client/secret in
 // Settings takes effect on the next OIDC login without a restart.
 func wireAuth(ctx context.Context, deps *api.Deps) error {
-	_ = ctx
-
 	auditRepo := db.NewAuditRepo(deps.DB)
 	recorder := audit.New(auditRepo, deps.Log)
 
@@ -37,5 +36,11 @@ func wireAuth(ctx context.Context, deps *api.Deps) error {
 	deps.Auth = authSvc
 	deps.Users = authSvc
 	deps.Settings = settingsSvc
+	deps.Sessions = authSvc
+
+	// Purge expired sessions hourly for the life of the server (F-2.7); ctx is
+	// the long-lived context cancelled on shutdown (see serve.go), the same
+	// one wireSelfUpdate's checker.Run is bound to.
+	go authSvc.RunSessionPurge(ctx, time.Hour)
 	return nil
 }

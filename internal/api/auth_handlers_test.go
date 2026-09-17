@@ -19,6 +19,7 @@ import (
 	"github.com/jonasthim/valheim-server-ui/internal/auth"
 	"github.com/jonasthim/valheim-server-ui/internal/config"
 	"github.com/jonasthim/valheim-server-ui/internal/db"
+	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
 // newAuthTestRouter wires the real WP-01 stack (auth.Service + audit.Recorder
@@ -44,6 +45,184 @@ func newAuthTestRouter(t *testing.T) (http.Handler, *auth.Service) {
 		Auth: svc, Audit: recorder, Users: svc, Settings: settings,
 	}
 	return api.NewRouter(deps, nil), svc
+}
+
+// newAuthTestRouterWithSessions is newAuthTestRouter plus a SessionService
+// (F-2.7), which the real WP-01 stack does not provide on its own. It also
+// returns the audit recorder so tests can assert on recorded entries.
+func newAuthTestRouterWithSessions(t *testing.T, sessions api.SessionService) (http.Handler, *auth.Service, *audit.Recorder) {
+	t.Helper()
+	sqldb, err := db.OpenMemory(context.Background())
+	if err != nil {
+		t.Fatalf("OpenMemory: %v", err)
+	}
+	t.Cleanup(func() { _ = sqldb.Close() })
+
+	log := slog.New(slog.DiscardHandler)
+	auditRepo := db.NewAuditRepo(sqldb)
+	recorder := audit.New(auditRepo, log)
+	svc := auth.NewService(sqldb, config.Config{InsecureCookies: true}, log, auth.WithAuditor(recorder))
+	settingsRepo := db.NewSettingsRepo(sqldb)
+	settings := auth.NewSettings(settingsRepo, config.Config{InsecureCookies: true}, nil)
+
+	deps := &api.Deps{
+		Log: log, DB: sqldb, Version: "test",
+		Auth: svc, Audit: recorder, Users: svc, Settings: settings, Sessions: sessions,
+	}
+	return api.NewRouter(deps, nil), svc, recorder
+}
+
+// fakeSessionService is a test double for api.SessionService that records
+// what it was called with so handler tests can assert on it independently of
+// the real auth.Service implementation (which is exercised separately in
+// internal/auth/service_test.go).
+type fakeSessionService struct {
+	sessions []domain.SessionInfo
+
+	revokeCalled bool
+	revokeUserID int64
+	revokeSessID string
+	revokeErr    error
+
+	othersCalled bool
+	othersUserID int64
+	othersErr    error
+}
+
+func (f *fakeSessionService) ListSessions(_ context.Context, _ *http.Request, _ int64) ([]domain.SessionInfo, error) {
+	return f.sessions, nil
+}
+
+func (f *fakeSessionService) RevokeSession(_ context.Context, userID int64, sessionID string) error {
+	f.revokeCalled = true
+	f.revokeUserID = userID
+	f.revokeSessID = sessionID
+	return f.revokeErr
+}
+
+func (f *fakeSessionService) RevokeOtherSessions(_ context.Context, _ *http.Request, userID int64) error {
+	f.othersCalled = true
+	f.othersUserID = userID
+	return f.othersErr
+}
+
+// setupAdminCookie creates the first admin account directly through svc and
+// returns the user and the session cookie set for it, for tests that need an
+// authenticated request without going through the HTTP /auth/setup route.
+func setupAdminCookie(t *testing.T, svc *auth.Service) (*domain.User, *http.Cookie) {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	usr, err := svc.Setup(context.Background(), rec, req, "admin", "correct-password", "", "")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == auth.CookieName {
+			return usr, c
+		}
+	}
+	t.Fatalf("expected session cookie from setup")
+	return nil, nil
+}
+
+func TestAuthSessions_ListReturnsCurrentFlag(t *testing.T) {
+	fake := &fakeSessionService{sessions: []domain.SessionInfo{
+		{ID: "sess-1", IP: "127.0.0.1", UserAgent: "test-agent", Current: true},
+		{ID: "sess-2", IP: "10.0.0.2", UserAgent: "other-agent", Current: false},
+	}}
+	h, svc, _ := newAuthTestRouterWithSessions(t, fake)
+	_, cookie := setupAdminCookie(t, svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/sessions", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET sessions: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Sessions []domain.SessionInfo `json:"sessions"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Sessions) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(body.Sessions))
+	}
+	if !body.Sessions[0].Current || body.Sessions[1].Current {
+		t.Fatalf("expected only the first session marked current: %+v", body.Sessions)
+	}
+}
+
+func TestAuthSessions_DeleteCallsServiceAndAudits(t *testing.T) {
+	fake := &fakeSessionService{}
+	h, svc, recorder := newAuthTestRouterWithSessions(t, fake)
+	usr, cookie := setupAdminCookie(t, svc)
+
+	req := mutatingRequest(http.MethodDelete, "/api/v1/auth/sessions/some-session-id", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE session: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !fake.revokeCalled {
+		t.Fatalf("expected RevokeSession to be called")
+	}
+	if fake.revokeUserID != usr.ID {
+		t.Fatalf("expected RevokeSession called with user id %d, got %d", usr.ID, fake.revokeUserID)
+	}
+	if fake.revokeSessID != "some-session-id" {
+		t.Fatalf("expected RevokeSession called with path session id, got %q", fake.revokeSessID)
+	}
+
+	entries, err := recorder.List(context.Background(), "", "", 10, 0)
+	if err != nil {
+		t.Fatalf("audit List: %v", err)
+	}
+	found := false
+	for _, e := range entries {
+		if e.Action == "auth.session.revoke" && e.Target == "some-session-id" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected an audit entry for auth.session.revoke, got %+v", entries)
+	}
+}
+
+func TestAuthSessions_RevokeOthersReturns204(t *testing.T) {
+	fake := &fakeSessionService{}
+	h, svc, _ := newAuthTestRouterWithSessions(t, fake)
+	usr, cookie := setupAdminCookie(t, svc)
+
+	req := mutatingRequest(http.MethodPost, "/api/v1/auth/sessions/revoke-others", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("revoke-others: code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !fake.othersCalled {
+		t.Fatalf("expected RevokeOtherSessions to be called")
+	}
+	if fake.othersUserID != usr.ID {
+		t.Fatalf("expected RevokeOtherSessions called with user id %d, got %d", usr.ID, fake.othersUserID)
+	}
+}
+
+func TestAuthSessions_NotConfiguredWhenSessionsNil(t *testing.T) {
+	h, svc := newAuthTestRouter(t)
+	_, cookie := setupAdminCookie(t, svc)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/sessions", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 when Sessions is not configured, got %d body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 func jsonBody(t *testing.T, v any) *bytes.Reader {

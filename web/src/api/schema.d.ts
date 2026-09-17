@@ -168,6 +168,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the caller's own active sessions (F-2.7) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Sessions */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessions: components["schemas"]["SessionInfo"][];
+                        };
+                    };
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke one of the caller's own sessions (F-2.7) */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Revoked */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Error"];
+                404: components["responses"]["Error"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/sessions/revoke-others": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Sign out every other session of the caller's own account (F-2.7) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Other sessions revoked */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/password": {
         parameters: {
             query?: never;
@@ -3346,6 +3458,20 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             last_login_at?: string;
+        };
+        /** @description A user's own browser session, as shown on the account page (F-2.7). */
+        SessionInfo: {
+            id: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            last_seen_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            ip: string;
+            user_agent: string;
+            /** @description Whether this is the session the request was made with */
+            current: boolean;
         };
         CreateUserRequest: {
             username: string;

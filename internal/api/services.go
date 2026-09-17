@@ -201,3 +201,10 @@ type AgentService interface {
 	ExploredPNG(ctx context.Context, instanceID string) (path string, info *domain.ExploredInfo, err error)
 	RenderMap(ctx context.Context, instanceID string, req domain.MapRenderRequest) (*domain.MapInfo, error)
 }
+
+// SessionService lists and revokes the calling user's own sessions (F-2.7).
+type SessionService interface {
+	ListSessions(ctx context.Context, r *http.Request, userID int64) ([]domain.SessionInfo, error)
+	RevokeSession(ctx context.Context, userID int64, sessionID string) error
+	RevokeOtherSessions(ctx context.Context, r *http.Request, userID int64) error
+}
