@@ -337,3 +337,51 @@ func TestSettingsPutNotifications_NewChannelWithBlankURLRejected(t *testing.T) {
 		t.Fatalf("expected validation_failed for a brand-new channel with a blank url, got %v", err)
 	}
 }
+
+// TestSettingsPutNotifications_TypeChangeDoesNotInheritStoredURL covers the
+// security review finding: re-submitting a stored discord channel as another
+// type with a blank URL must not carry the credential-embedding webhook URL
+// over to a type whose URL Redacted() returns in the clear. A type change has
+// to re-enter the destination, and drops the old secret.
+func TestSettingsPutNotifications_TypeChangeDoesNotInheritStoredURL(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	ctx := context.Background()
+
+	first := domain.DefaultSettings()
+	first.Notifications.Channels = []domain.NotifyChannel{{
+		Type: domain.NotifyChannelDiscord, Name: "Alerts", URL: "https://discord.com/api/webhooks/1/abc",
+		Secret: "tok", Enabled: true, Events: []string{domain.AlertCrashed},
+	}}
+	out, err := s.Put(ctx, first)
+	if err != nil {
+		t.Fatalf("first Put: %v", err)
+	}
+	id := out.Notifications.Channels[0].ID
+
+	second := domain.DefaultSettings()
+	second.Notifications.Channels = []domain.NotifyChannel{{
+		ID: id, Type: domain.NotifyChannelNtfy, Name: "Alerts", URL: "", Enabled: true, Events: []string{domain.AlertCrashed},
+	}}
+	if _, err := s.Put(ctx, second); err == nil {
+		t.Fatalf("expected a validation error for a type change with a blank url")
+	}
+	cur, err := s.Get(ctx)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got := cur.Notifications.Channels[0]; got.Type != domain.NotifyChannelDiscord || got.URL != "https://discord.com/api/webhooks/1/abc" {
+		t.Fatalf("stored channel must be unchanged after the rejected Put, got %+v", got)
+	}
+
+	third := domain.DefaultSettings()
+	third.Notifications.Channels = []domain.NotifyChannel{{
+		ID: id, Type: domain.NotifyChannelNtfy, Name: "Alerts", URL: "https://ntfy.sh/valheim", Enabled: true, Events: []string{domain.AlertCrashed},
+	}}
+	out3, err := s.Put(ctx, third)
+	if err != nil {
+		t.Fatalf("third Put (type change with a new url): %v", err)
+	}
+	if got := out3.Notifications.Channels[0]; got.Secret != "" || got.URL != "https://ntfy.sh/valheim" {
+		t.Fatalf("expected the old secret dropped and the new url stored, got %+v", got)
+	}
+}

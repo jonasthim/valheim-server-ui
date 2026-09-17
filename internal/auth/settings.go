@@ -193,18 +193,25 @@ func validateNotifications(out *domain.NotifySettings, current domain.NotifySett
 		ch := &out.Channels[i]
 		prefix := fmt.Sprintf("notifications.channels.%d", i)
 
+		typeChanged := false
 		if ch.ID == "" {
 			ch.ID = uuid.NewString()
 		} else if prev, ok := currentByID[ch.ID]; ok {
+			typeChanged = ch.Type != prev.Type
 			// A blank submitted Secret or URL keeps the stored value (same
 			// rule as auth.oidc.client_secret): Secret is always write-only,
 			// and discord/slack/telegram also blank URL on read since it
 			// embeds a bearer credential (see channelURLEmbedsSecret).
-			if ch.Secret == "" {
-				ch.Secret = prev.Secret
-			}
-			if ch.URL == "" {
-				ch.URL = prev.URL
+			// Never across a type change: the stored values belong to the
+			// old provider, and carrying a credential-embedding URL over to
+			// a type whose URL is returned in the clear would disclose it.
+			if !typeChanged {
+				if ch.Secret == "" {
+					ch.Secret = prev.Secret
+				}
+				if ch.URL == "" {
+					ch.URL = prev.URL
+				}
 			}
 		}
 
@@ -215,7 +222,9 @@ func validateNotifications(out *domain.NotifySettings, current domain.NotifySett
 		if l := len(ch.Name); l < 1 || l > 64 {
 			fields = append(fields, domain.FieldError{Field: prefix + ".name", Message: "must be 1-64 characters"})
 		}
-		if err := validateChannelURL(ch); err != "" {
+		if typeChanged && ch.URL == "" {
+			fields = append(fields, domain.FieldError{Field: prefix + ".url", Message: "enter the destination again when changing the channel type"})
+		} else if err := validateChannelURL(ch); err != "" {
 			fields = append(fields, domain.FieldError{Field: prefix + ".url", Message: err})
 		}
 		for _, ev := range ch.Events {
