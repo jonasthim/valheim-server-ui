@@ -430,6 +430,10 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
   instances, backups, mods, players, schedules) < `admin` (+ users, settings,
   create/delete instances). Enforced by `auth.RequireRole(min)` middleware per route;
   the OpenAPI spec annotates each operation with `x-role`.
+- **UI gating rule**: controls a role cannot use are hidden, never rendered disabled;
+  the exception is toggles and switches (autostart, schedule enabled, mod enabled),
+  which render disabled so the current state stays visible. Pages re-check the role
+  inside the component even when the route is already role-gated.
 - **Local login**: argon2id (t=3, m=64 MiB, p=4), constant-time compare, 5 failed
   attempts per username → 5 min lockout (in-memory). Passwords ≥ 10 chars.
 - **Sessions**: 32 random bytes, base64url in cookie `vsui_session`

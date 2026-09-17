@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { modals } from '@mantine/modals'
 import { IconKey, IconPencil, IconTrash, IconUserPlus, IconUsers } from '@tabler/icons-react'
 import { api, ApiError } from '../../api/client'
+import { useAuth } from '../../auth/useAuth'
 import type { User } from '../../api/types'
 import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
@@ -15,6 +16,8 @@ import { ROLE_COLORS } from './roles'
 
 export function UsersPage() {
   const qc = useQueryClient()
+  const { hasRole } = useAuth()
+  const canAdmin = hasRole('admin')
   const usersQ = useQuery({ queryKey: ['users'], queryFn: () => api.get<{ users: User[] }>('/users') })
 
   const [creating, setCreating] = useState(false)
@@ -59,9 +62,11 @@ export function UsersPage() {
         title="Users"
         description="People who can sign in to this UI, and what they're allowed to do."
         actions={
-          <Button leftSection={<IconUserPlus size={16} />} onClick={() => setCreating(true)}>
-            New user
-          </Button>
+          canAdmin && (
+            <Button leftSection={<IconUserPlus size={16} />} onClick={() => setCreating(true)}>
+              New user
+            </Button>
+          )
         }
       />
 
@@ -154,39 +159,41 @@ export function UsersPage() {
                     </Table.Td>
                     <Table.Td>{fmtAgo(u.last_login_at)}</Table.Td>
                     <Table.Td>
-                      <Group gap={4} justify="flex-end" wrap="nowrap">
-                        <Tooltip label="Edit">
-                          <ActionIcon variant="subtle" onClick={() => setEditing(u)} aria-label={`Edit ${u.username}`}>
-                            <IconPencil size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                        <Tooltip
-                          label={
-                            ssoLinked
-                              ? 'Password managed by the identity provider (SSO-linked account)'
-                              : 'Set password'
-                          }
-                        >
-                          <ActionIcon
-                            variant="subtle"
-                            disabled={ssoLinked}
-                            onClick={() => setSettingPassword(u)}
-                            aria-label={`Set password for ${u.username}`}
+                      {canAdmin && (
+                        <Group gap={4} justify="flex-end" wrap="nowrap">
+                          <Tooltip label="Edit">
+                            <ActionIcon variant="subtle" onClick={() => setEditing(u)} aria-label={`Edit ${u.username}`}>
+                              <IconPencil size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip
+                            label={
+                              ssoLinked
+                                ? 'Password managed by the identity provider (SSO-linked account)'
+                                : 'Set password'
+                            }
                           >
-                            <IconKey size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                        <Tooltip label="Delete">
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            onClick={() => confirmDelete(u)}
-                            aria-label={`Delete ${u.username}`}
-                          >
-                            <IconTrash size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                      </Group>
+                            <ActionIcon
+                              variant="subtle"
+                              disabled={ssoLinked}
+                              onClick={() => setSettingPassword(u)}
+                              aria-label={`Set password for ${u.username}`}
+                            >
+                              <IconKey size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label="Delete">
+                            <ActionIcon
+                              variant="subtle"
+                              color="red"
+                              onClick={() => confirmDelete(u)}
+                              aria-label={`Delete ${u.username}`}
+                            >
+                              <IconTrash size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                        </Group>
+                      )}
                     </Table.Td>
                   </Table.Tr>
                 )
