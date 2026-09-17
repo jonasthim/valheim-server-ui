@@ -80,7 +80,12 @@ export function BackupsTable({
         </div>
       ) : backups.length === 0 ? (
         <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
-          <EmptyState icon={<IconDatabase size={22} />} title="No backups yet." />
+          <EmptyState
+            icon={<IconDatabase size={22} />}
+            title="No backups yet."
+            description="Back up now, or upload one."
+            variant="parchment"
+          />
         </div>
       ) : (
         <Table.ScrollContainer minWidth={860}>

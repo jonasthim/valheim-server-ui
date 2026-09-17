@@ -121,6 +121,19 @@
   background: var(--vh-accent-soft);
   color: var(--vh-ember);
 }
+.emptyParchment {
+  background: var(--vh-parchment);
+  color: var(--vh-ink);
+  /* Text's c="dimmed" resolves to an inline `color: var(--mantine-color-dimmed)`
+     style, which beats any external `color` rule on that element — so the
+     dimmed tone is overridden here, at the variable it reads from. */
+  --mantine-color-dimmed: rgba(26, 18, 10, 0.7);
+  border: 1px dashed rgba(26, 18, 10, 0.25);
+  box-shadow: var(--vh-elevation);
+}
+.emptyParchment :global(.mantine-Text-root) { color: var(--vh-ink); }
+.emptyParchment .emptyIcon { background: var(--vh-ink); color: var(--vh-ember); }
+.emptyCompact { padding: 16px; }
 /* Applied to Paper/Card roots via the theme's component defaults: the one
    elevation for borderless surfaces, no hover lift. */
 .elevated {

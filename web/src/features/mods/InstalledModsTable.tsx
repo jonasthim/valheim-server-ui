@@ -130,6 +130,7 @@ export function InstalledModsTable({ id }: { id: string }) {
           <EmptyState
             icon={<IconPackage size={22} />}
             title="No mods installed yet. Browse Thunderstore or upload a mod below."
+            variant="parchment"
           />
         </div>
       ) : (

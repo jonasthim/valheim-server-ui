@@ -54,7 +54,12 @@ export function SchedulesTable({
   if (schedules.length === 0) {
     return (
       <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
-        <EmptyState icon={<IconCalendarTime size={22} />} title="No schedules configured." />
+        <EmptyState
+          icon={<IconCalendarTime size={22} />}
+          title="No schedules configured."
+          description="Add a restart, backup or update schedule."
+          variant="parchment"
+        />
       </div>
     )
   }
