@@ -48,7 +48,7 @@
   color: var(--mantine-color-text);
 }
 .link[data-active] {
-  background: var(--vh-accent-soft);
+  background: var(--vh-surface-2);
   color: var(--mantine-color-text);
 }
 .link[data-active]::before {

@@ -40,13 +40,6 @@ html, body, #root { height: 100%; }
 
 body {
   background-color: var(--mantine-color-body);
-  /* Aurora / torchlight glow: ember top-left, frost top-right. Fixed so it
-     stays put while the page scrolls. */
-  background-image:
-    radial-gradient(900px 520px at -10% -10%, var(--vh-glow-a), transparent 60%),
-    radial-gradient(800px 480px at 110% -20%, var(--vh-glow-b), transparent 60%);
-  background-attachment: fixed;
-  background-repeat: no-repeat;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -63,14 +56,17 @@ a:not(.mantine-Anchor-root):hover { text-decoration: none; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: var(--vh-border-strong); border-radius: 8px; }
 
-/* Surfaces: every Paper/Card uses the token border and surface colours. */
-.mantine-Paper-root[data-with-border],
-.mantine-Card-root[data-with-border] {
+/* Surfaces: every Paper/Card uses the token surface colour. Cards are
+   borderless by default (theme.ts sets withBorder: false and an elevation
+   shadow instead); border-color only matters for the rare explicit
+   withBorder usage. */
+.mantine-Paper-root,
+.mantine-Card-root {
   background-color: var(--vh-surface);
   border-color: var(--vh-border);
 }
 
-/* Tables: muted, letter-spaced headers; hairline rows. */
+/* Tables: muted, sentence-case headers; hairline rows. */
 .mantine-Table-th {
   font-size: 0.72rem;
   font-weight: 600;
@@ -105,7 +101,7 @@ a:not(.mantine-Anchor-root):hover { text-decoration: none; }
 
 .mono { font-family: var(--mantine-font-family-monospace); }
 
-/* Utility: small uppercase label used above stats and sections. */
+/* Utility: small label used above stats and sections. */
 .vh-eyebrow {
   font-size: 0.85rem;
   font-weight: 600;

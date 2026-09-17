@@ -121,3 +121,8 @@
   background: var(--vh-accent-soft);
   color: var(--vh-ember);
 }
+/* Applied to Paper/Card roots via the theme's component defaults: the one
+   elevation for borderless surfaces, no hover lift. */
+.elevated {
+  box-shadow: var(--vh-elevation);
+}

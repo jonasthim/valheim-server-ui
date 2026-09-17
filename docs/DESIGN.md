@@ -1,12 +1,26 @@
-# Design system — "Nordic SaaS"
+# Design system — "The Longhouse Table"
 
-The UI is a dark-first, modern SaaS product with Valheim accents. Everything is
-Mantine (no other UI kit or CSS framework); the look comes from
+Everything is Mantine (no other UI kit or CSS framework); the look comes from
 `web/src/theme/theme.ts`, `web/src/index.css` and the primitives in `web/src/ui/`.
+
+> **Direction: the longhouse table.** A warm, lamplit, dark-timber workspace on which the parchment map is the object of attention. Material and typography carry the identity; no filigree, runes-as-decoration, or ornate borders. The map is the memorable thing; everything else is quiet. Two materials only: timber chrome and parchment paper. One accent (ember) reserved for the primary action, active nav and focus. Hierarchy by size and type, never by identical tiles. Two type voices: Valheim Display (Cormorant Garamond) for names and titles, Source Sans 3 for everything else, JetBrains Mono for logs.
+>
+> | Token | Dark | Light | Role |
+> |---|---|---|---|
+> | body (`hearth`) | `#17130F` | `#E9DFC4` | page base |
+> | surface (`timber`) | `#241D16` | `#F3ECD8` | cards |
+> | raised (`oak`) | `#32281E` | `#FAF5E6` | hover / active |
+> | sidebar | `#120F0B` | `#DED2B3` | navbar + header |
+> | parchment | `#B9AD8C` | `#D8CCAA` | paper surfaces: map, empty states, login backdrop |
+> | ink | `#EFE6CC` on dark, `#1A120A` on parchment | | text |
+> | ember | `#F5A20F` | `#c97c05` | the single accent |
+> | moss / blood / frost | unchanged | | status hues |
+>
+> Contrast: ink on timber ≈ 12:1, ember on timber ≈ 8:1, ink on parchment ≈ 9:1.
 
 ## Principles
 
-1. **Calm surfaces, one warm accent.** Cool iron neutrals; ember gold is reserved
+1. **Calm surfaces, one warm accent.** Warm timber neutrals; ember gold is reserved
    for primary actions, the active nav item and focus. Never use ember for
    decoration or status.
 2. **Status has a colour language.** running/success = `moss` (green),
@@ -32,6 +46,10 @@ Mantine (no other UI kit or CSS framework); the look comes from
 | `--vh-accent-soft` | ember tint (active nav, focus ring, icon tiles) |
 | `--vh-text-soft` | eyebrow / secondary text |
 | `--vh-ember --vh-frost --vh-moss --vh-blood --vh-spirit` | accent colours |
+| `--vh-text` / `--vh-text-soft` | Ink text on timber, and its dimmed variant |
+| `--vh-parchment` / `--vh-parchment-2` | Paper surfaces: the map, empty states, the login backdrop |
+| `--vh-ink` | Text on parchment |
+| `--vh-elevation` | The one card shadow (borderless surfaces) |
 
 Radius: cards `lg` (14px), controls `md` (10px). Spacing: page `xl`, inside
 cards `lg`, between stacked cards `md`.
