@@ -9,6 +9,7 @@ import {
   Group,
   Paper,
   Pill,
+  SegmentedControl,
   Skeleton,
   SimpleGrid,
   Stack,
@@ -35,11 +36,12 @@ import { API_BASE } from '../../api/client'
 import { fmtAgo, fmtBytes, fmtPercent, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
-import { EmptyState, LoadError, SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
+import { EmptyState, LoadError, SectionCard, Sparkline, StatTile, StatusDot, StatusPill } from '../../ui'
 import { useModsOverview } from '../mods/useMods'
 import { useAgent, WorldCard } from '../agent'
 import { useInstance } from './useInstance'
 import { useCheckForUpdate, useInstanceEvents, useInstanceStatus, useSetAutostart } from './instanceActions'
+import { useInstanceMetrics, type MetricRange } from './useMetrics'
 import { stateColor, stateLabel } from './instanceHelpers'
 import { LifecycleControls } from './LifecycleControls'
 
@@ -62,6 +64,12 @@ export function OverviewTab({ id }: { id: string }) {
   // Hides the hero map <img> on load failure so the parchment Paper shows
   // through instead of a broken-image glyph (see the Hero section below).
   const [mapImgOk, setMapImgOk] = useState(true)
+
+  // F-1.3: 24h sparklines on the compact CPU/Memory tiles, plus a ranged
+  // history section below (dedupes with the tiles' query when range is 24h).
+  const tileMetrics = useInstanceMetrics(id, '24h')
+  const [historyRange, setHistoryRange] = useState<MetricRange>('24h')
+  const historyMetrics = useInstanceMetrics(id, historyRange)
 
   if (inst.isLoading) {
     return (
@@ -159,6 +167,8 @@ export function OverviewTab({ id }: { id: string }) {
           hint={status.state === 'running' ? 'of one core' : 'not running'}
           icon={<IconCpu size={16} />}
           accent={status.cpu_percent !== undefined && status.cpu_percent >= 90 ? 'var(--vh-blood)' : undefined}
+          spark={tileMetrics.data?.cpu}
+          sparkFormat={fmtPercent}
         />
         <StatTile
           compact
@@ -166,6 +176,8 @@ export function OverviewTab({ id }: { id: string }) {
           value={status.memory_bytes !== undefined ? fmtBytes(status.memory_bytes) : '—'}
           hint={status.state === 'running' ? 'resident' : 'not running'}
           icon={<IconDeviceSdCard size={16} />}
+          spark={tileMetrics.data?.mem}
+          sparkFormat={fmtBytes}
         />
         <StatTile
           compact
@@ -184,6 +196,30 @@ export function OverviewTab({ id }: { id: string }) {
           accent={anyUpdate ? 'var(--vh-ember)' : undefined}
         />
       </SimpleGrid>
+
+      <SectionCard
+        title="History"
+        description="Resource and player trends."
+        actions={
+          <SegmentedControl
+            size="xs"
+            value={historyRange}
+            onChange={(v) => setHistoryRange(v as MetricRange)}
+            data={[
+              { label: '1h', value: '1h' },
+              { label: '24h', value: '24h' },
+              { label: '7d', value: '7d' },
+              { label: '30d', value: '30d' },
+            ]}
+          />
+        }
+      >
+        <Stack gap="md">
+          <HistoryRow label="CPU" values={historyMetrics.data?.cpu} format={fmtPercent} />
+          <HistoryRow label="Memory" values={historyMetrics.data?.mem} format={fmtBytes} />
+          <HistoryRow label="Players" values={historyMetrics.data?.players} format={(v) => `${Math.round(v)} online`} />
+        </Stack>
+      </SectionCard>
 
       <SectionCard title="Updates" description="Game server files and installed mods.">
         <Stack gap="md">
@@ -411,6 +447,36 @@ export function OverviewTab({ id }: { id: string }) {
         )}
       </SectionCard>
     </Stack>
+  )
+}
+
+// HistoryRow is one labelled trend line in the "History" section: a
+// full-width sparkline, or a dimmed placeholder while there are fewer than 2
+// samples in the selected range (F-1.3).
+function HistoryRow({
+  label,
+  values,
+  format,
+}: {
+  label: string
+  values: number[] | undefined
+  format: (v: number) => string
+}) {
+  return (
+    <Group justify="space-between" align="center" wrap="nowrap" gap="md">
+      <Text size="sm" c="dimmed" style={{ minWidth: 64, flexShrink: 0 }}>
+        {label}
+      </Text>
+      {values && values.length >= 2 ? (
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Sparkline values={values} format={format} width="100%" height={56} />
+        </div>
+      ) : (
+        <Text size="xs" c="dimmed">
+          No samples yet.
+        </Text>
+      )}
+    </Group>
   )
 }
 

@@ -1,12 +1,15 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { Group, Paper, Text } from '@mantine/core'
+import { Sparkline } from './Sparkline'
 import classes from './ui.module.css'
 
 /**
- * KPI tile: eyebrow label, big value, optional hint line and icon.
+ * KPI tile: eyebrow label, big value, optional hint line, icon and trend.
  * `accent` is any CSS colour (use the --vh-* tokens) drawn as a left bar.
  * `compact` shrinks vertical padding and the value's font size (inline
  * style only, so it composes with any background/color the caller applies).
+ * `spark`/`sparkFormat` draw a history sparkline (F-1.3) beneath the value;
+ * omit `spark` for tiles with no history to show.
  */
 export function StatTile({
   label,
@@ -15,6 +18,8 @@ export function StatTile({
   icon,
   accent,
   compact = false,
+  spark,
+  sparkFormat,
 }: {
   label: ReactNode
   value: ReactNode
@@ -22,6 +27,8 @@ export function StatTile({
   icon?: ReactNode
   accent?: string
   compact?: boolean
+  spark?: number[]
+  sparkFormat?: (v: number) => string
 }) {
   const rootStyle = {
     ...(accent ? { '--tile-accent': accent } : {}),
@@ -53,6 +60,11 @@ export function StatTile({
           <Text size="xs" c="dimmed" mt={2}>
             {hint}
           </Text>
+        )}
+        {spark && (
+          <div style={{ marginTop: 6 }}>
+            <Sparkline values={spark} format={sparkFormat} width="100%" height={compact ? 20 : 24} />
+          </div>
         )}
       </div>
     </Paper>

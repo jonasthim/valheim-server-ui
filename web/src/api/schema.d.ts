@@ -776,6 +776,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/system/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Host resource/player history for the dashboard sparklines (F-1.3) */
+        get: {
+            parameters: {
+                query: {
+                    range: components["parameters"]["metricRange"];
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MetricSeries"];
+                    };
+                };
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/system/update-check": {
         parameters: {
             query?: never;
@@ -1341,6 +1379,47 @@ export interface paths {
                         };
                     };
                 };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Resource/player history for the Overview sparklines (F-1.3) */
+        get: {
+            parameters: {
+                query: {
+                    range: components["parameters"]["metricRange"];
+                };
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MetricSeries"];
+                    };
+                };
+                404: components["responses"]["Error"];
+                422: components["responses"]["Error"];
             };
         };
         put?: never;
@@ -3634,6 +3713,19 @@ export interface components {
             app_update?: components["schemas"]["AppUpdateInfo"];
             host?: components["schemas"]["HostMetrics"];
         };
+        /**
+         * @description Resource/player history (F-1.3): parallel arrays of equal length,
+         *     ascending by time. Never absent, even when empty.
+         */
+        MetricSeries: {
+            ts: string[];
+            /** @description Percent of one core (instance) or all cores (host) */
+            cpu: number[];
+            /** @description Resident bytes (instance) or used bytes (host) */
+            mem: number[];
+            players: number[];
+            disk_free: number[];
+        };
         /** @description Manager host resource usage, sampled from /proc. */
         HostMetrics: {
             /** @description CPU utilisation across all cores */
@@ -4416,6 +4508,7 @@ export interface components {
         modId: number;
         jobId: string;
         worldName: string;
+        metricRange: "1h" | "24h" | "7d" | "30d";
     };
     requestBodies: never;
     headers: never;

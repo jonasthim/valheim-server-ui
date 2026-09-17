@@ -177,5 +177,11 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 	if err := wireSelfUpdate(ctx, deps, runner, playersEverywhere); err != nil {
 		return fmt.Errorf("self-update: %w", err)
 	}
+
+	// F-1.3: resource/player history recorder; needs deps.Instances (WP-02,
+	// wired above) and deps.Metrics (the host sampler, set right after).
+	if err := wireMetrics(ctx, deps); err != nil {
+		return fmt.Errorf("metrics: %w", err)
+	}
 	return nil
 }

@@ -83,7 +83,8 @@ type Deps struct {
 	Agent        AgentService        // server plugin (optional)
 	Sessions     SessionService      // F-2.7
 	// Metrics is optional; when nil the system endpoint omits host usage.
-	Metrics HostMetricsSource
+	Metrics        HostMetricsSource
+	MetricsHistory MetricsHistoryService // F-1.3
 }
 
 // NewRouter builds the full HTTP handler: /api/v1 plus the embedded SPA.
@@ -109,6 +110,7 @@ func NewRouter(d *Deps, spa http.Handler) http.Handler {
 		registerSettingsRoutes(api, d)
 		registerNotifyRoutes(api, d)
 		registerSystemRoutes(api, d)
+		registerMetricsRoutes(api, d)
 		registerInstanceRoutes(api, d)
 		registerInstanceJobRoutes(api, d)
 		registerPlayerRoutes(api, d)

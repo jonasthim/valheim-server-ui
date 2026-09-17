@@ -1,6 +1,7 @@
 export { ErrorBoundary } from './ErrorBoundary'
 export { PageHeader } from './PageHeader'
 export { StatTile } from './StatTile'
+export { Sparkline } from './Sparkline'
 export { StatusDot, StatusPill } from './StatusPill'
 export { SectionCard } from './SectionCard'
 export { EmptyState } from './EmptyState'

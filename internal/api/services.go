@@ -208,3 +208,11 @@ type SessionService interface {
 	RevokeSession(ctx context.Context, userID int64, sessionID string) error
 	RevokeOtherSessions(ctx context.Context, r *http.Request, userID int64) error
 }
+
+// MetricsHistoryService serves resource/player history for sparklines
+// (internal/metrics.History, F-1.3).
+type MetricsHistoryService interface {
+	// Series returns instanceID's samples (nil = the host) since the given
+	// time, ascending, as parallel arrays.
+	Series(ctx context.Context, instanceID *string, since time.Time) (domain.MetricSeries, error)
+}

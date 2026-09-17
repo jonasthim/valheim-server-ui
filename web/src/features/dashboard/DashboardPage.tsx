@@ -6,6 +6,7 @@ import { fmtBytes, fmtPercent } from '../../lib/format'
 import { EmptyState, LoadError, PageHeader, StatTile } from '../../ui'
 import { useCheckAppUpdate, useSystemInfo } from '../system'
 import { useInstances } from '../instances'
+import { useSystemMetrics } from '../instances/useMetrics'
 import { SystemStrip } from './SystemStrip'
 import { InstanceCard } from './InstanceCard'
 
@@ -14,6 +15,7 @@ export function DashboardPage() {
   const instancesQuery = useInstances()
   const system = useSystemInfo()
   const checkAppUpdate = useCheckAppUpdate()
+  const metrics = useSystemMetrics('24h')
 
   const instances = instancesQuery.data ?? []
   const running = instances.filter((i) => i.status.state === 'running').length
@@ -64,6 +66,8 @@ export function DashboardPage() {
             hint={host ? `load ${host.load_avg_1.toFixed(2)}, ${host.cpu_count} cores` : undefined}
             icon={<IconCpu size={16} />}
             accent={host && host.cpu_percent >= 85 ? 'var(--vh-blood)' : undefined}
+            spark={metrics.data?.cpu}
+            sparkFormat={fmtPercent}
           />
           <StatTile
             label="Memory"
@@ -71,6 +75,8 @@ export function DashboardPage() {
             hint={host ? `of ${fmtBytes(host.mem_total_bytes)} (${fmtPercent((host.mem_used_bytes / host.mem_total_bytes) * 100)})` : undefined}
             icon={<IconDeviceSdCard size={16} />}
             accent={host && host.mem_used_bytes / host.mem_total_bytes >= 0.9 ? 'var(--vh-blood)' : undefined}
+            spark={metrics.data?.mem}
+            sparkFormat={fmtBytes}
           />
           <StatTile
             label="Disk free"
