@@ -1,8 +1,10 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -24,6 +26,8 @@ func registerModRoutes(r chi.Router, d *Deps) {
 		Post("/instances/{instanceId}/mods", installModHandler(d))
 	r.With(RequireRole(domain.RoleOperator), guard).
 		Post("/instances/{instanceId}/mods/upload", uploadModHandler(d))
+	r.With(RequireRole(domain.RoleViewer), guard).
+		Get("/instances/{instanceId}/mods/export", exportModProfileHandler(d))
 
 	r.With(RequireRole(domain.RoleOperator), guard).
 		Post("/instances/{instanceId}/mods/bepinex", installBepInExHandler(d))
@@ -264,6 +268,32 @@ func updateModHandler(d *Deps) http.HandlerFunc {
 		}
 		d.audit(r, "mods.update", id, job.ID, map[string]any{"mod_id": modID, "version": req.Version})
 		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
+	}
+}
+
+// exportModProfileHandler serves an r2modman/Gale client profile zip of the
+// instance's installed Thunderstore mods and BepInEx config files.
+func exportModProfileHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if format := r.URL.Query().Get("format"); format != "r2z" {
+			WriteValidation(w, domain.FieldError{Field: "format", Message: "must be r2z"})
+			return
+		}
+		zipBytes, skipped, err := d.Mods.ExportProfile(r.Context(), id)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/zip")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", id+"-mods.r2z"))
+		w.Header().Set("X-Skipped-Mods", strings.Join(skipped, ","))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(zipBytes) //nolint:gosec // G705: zipBytes is a zip archive served as application/zip, not reflected as HTML/script, so it cannot carry an XSS payload
 	}
 }
 

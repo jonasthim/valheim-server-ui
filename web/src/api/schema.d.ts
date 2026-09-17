@@ -2837,6 +2837,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/mods/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export installed Thunderstore mods and BepInEx configs as an r2modman/Gale client profile
+         * @description Builds a zip players import into r2modman or Gale to get the server's
+         *     Thunderstore mods at their exact installed versions, plus the server's
+         *     BepInEx config files. Mods not installed from Thunderstore, or whose
+         *     version does not parse as three numeric dot-separated parts, are left
+         *     out of the profile and listed in the `X-Skipped-Mods` header instead.
+         */
+        get: operations["exportModProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/thunderstore/registries": {
         parameters: {
             query?: never;
@@ -4272,4 +4296,34 @@ export interface components {
     pathItems: never;
 }
 export type $defs = Record<string, never>;
-export type operations = Record<string, never>;
+export interface operations {
+    exportModProfile: {
+        parameters: {
+            query: {
+                /** @description Export format; only `r2z` (an r2modman/Gale profile zip) is supported. */
+                format: "r2z";
+            };
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description r2modman/Gale profile zip (export.r2x plus one config/<name> entry per BepInEx config file) */
+            200: {
+                headers: {
+                    /** @description Comma-separated `owner-name` of installed mods left out of the profile (not from Thunderstore, or an unparseable version). Present even when empty. */
+                    "X-Skipped-Mods"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/zip": string;
+                };
+            };
+            404: components["responses"]["Error"];
+            422: components["responses"]["Error"];
+        };
+    };
+}

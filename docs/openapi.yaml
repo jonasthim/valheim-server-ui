@@ -1152,6 +1152,36 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ConfigFile' }
+  /instances/{instanceId}/mods/export:
+    get:
+      tags: [mods]
+      operationId: exportModProfile
+      summary: Export installed Thunderstore mods and BepInEx configs as an r2modman/Gale client profile
+      description: |
+        Builds a zip players import into r2modman or Gale to get the server's
+        Thunderstore mods at their exact installed versions, plus the server's
+        BepInEx config files. Mods not installed from Thunderstore, or whose
+        version does not parse as three numeric dot-separated parts, are left
+        out of the profile and listed in the `X-Skipped-Mods` header instead.
+      x-role: viewer
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - name: format
+          in: query
+          required: true
+          schema: { type: string, enum: [r2z] }
+          description: Export format; only `r2z` (an r2modman/Gale profile zip) is supported.
+      responses:
+        '200':
+          description: r2modman/Gale profile zip (export.r2x plus one config/<name> entry per BepInEx config file)
+          headers:
+            X-Skipped-Mods:
+              description: Comma-separated `owner-name` of installed mods left out of the profile (not from Thunderstore, or an unparseable version). Present even when empty.
+              schema: { type: string }
+          content:
+            application/zip: { schema: { type: string, format: binary } }
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
 
   # ------------------------------------------------------------------ thunderstore
   /thunderstore/registries:

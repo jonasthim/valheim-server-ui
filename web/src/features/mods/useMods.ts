@@ -115,3 +115,35 @@ export function useInstallPackage(id: string) {
     onError: (err) => notifyError(err, 'Could not queue install'),
   })
 }
+
+/**
+ * GET /instances/{id}/mods/export?format=r2z — download an r2modman/Gale
+ * client profile zip and report the mods left out of it (not on
+ * Thunderstore, or with an unparseable version).
+ */
+export function useExportModProfile(id: string) {
+  return useMutation({
+    mutationFn: async (): Promise<string[]> => {
+      const res = await fetch(api.url(`/instances/${id}/mods/export?format=r2z`), { credentials: 'include' })
+      if (!res.ok) throw new Error(`Export failed (${res.status})`)
+      const skipped = (res.headers.get('X-Skipped-Mods') ?? '').split(',').filter((s) => s !== '')
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${id}-mods.r2z`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      return skipped
+    },
+    onSuccess: (skipped) => {
+      notifySuccess('Client profile exported')
+      if (skipped.length > 0) {
+        notifyError(new Error(`Skipped (not on Thunderstore): ${skipped.join(', ')}`), 'Some mods were skipped')
+      }
+    },
+    onError: (err) => notifyError(err, 'Could not export client profile'),
+  })
+}

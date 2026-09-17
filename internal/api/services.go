@@ -129,6 +129,11 @@ type ModService interface {
 	ListConfigs(ctx context.Context, instanceID string) ([]domain.ConfigFileInfo, error)
 	GetConfig(ctx context.Context, instanceID, file string) (*domain.ConfigFile, error)
 	UpdateConfig(ctx context.Context, instanceID, file string, upd domain.ConfigFileUpdate) (*domain.ConfigFile, error)
+	// ExportProfile builds an r2modman/Gale client profile zip (export.r2x +
+	// BepInEx config files) for instanceID's installed Thunderstore mods.
+	// skipped lists the FullName of every installed mod omitted from the
+	// profile (not from Thunderstore, or an unparseable version).
+	ExportProfile(ctx context.Context, instanceID string) ([]byte, []string, error)
 }
 
 // WP-08

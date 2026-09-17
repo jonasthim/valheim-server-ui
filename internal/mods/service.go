@@ -758,6 +758,40 @@ func (s *Service) UpdateConfig(ctx context.Context, instanceID, file string, upd
 	return cf, nil
 }
 
+// ---------------------------------------------------------------- export
+
+// ExportProfile builds an r2modman/Gale client profile (BuildR2Profile) from
+// the mods and BepInEx config files currently installed on instanceID: the
+// mods the same way Overview reports them, and the config files the same way
+// ListConfigs+GetConfig obtain them (list, then read each).
+func (s *Service) ExportProfile(ctx context.Context, instanceID string) ([]byte, []string, error) {
+	overview, err := s.Overview(ctx, instanceID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load mods: %w", err)
+	}
+	inst, err := s.inst.Get(ctx, instanceID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load instance: %w", err)
+	}
+	infos, err := listConfigFiles(inst.Paths)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list config files: %w", err)
+	}
+	configs := make([]domain.ConfigFile, 0, len(infos))
+	for _, info := range infos {
+		cf, err := readConfigFile(inst.Paths, info.Name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read config file %s: %w", info.Name, err)
+		}
+		configs = append(configs, *cf)
+	}
+	zipBytes, skipped, err := BuildR2Profile(instanceID, overview.Mods, configs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("build r2 profile: %w", err)
+	}
+	return zipBytes, skipped, nil
+}
+
 // ---------------------------------------------------------------- thunderstore
 
 // ThunderstoreService implements api.ThunderstoreService over the configured

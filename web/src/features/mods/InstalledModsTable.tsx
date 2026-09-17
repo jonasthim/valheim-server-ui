@@ -28,7 +28,7 @@ import { useAuth } from '../../auth/useAuth'
 import { useJobDrawer } from '../jobs'
 import type { Mod } from '../../api/types'
 import { EmptyState, SectionCard } from '../../ui'
-import { useModsOverview, useSetModEnabled, useUninstallMod, useUpdateMod } from './useMods'
+import { useExportModProfile, useModsOverview, useSetModEnabled, useUninstallMod, useUpdateMod } from './useMods'
 import { useConfigFiles } from './useModConfig'
 import { matchModConfigs } from './helpers'
 
@@ -40,6 +40,7 @@ export function InstalledModsTable({ id }: { id: string }) {
   const updateMod = useUpdateMod(id)
   const uninstallMod = useUninstallMod(id)
   const configFiles = useConfigFiles(id)
+  const exportProfile = useExportModProfile(id)
   const [updatingAll, setUpdatingAll] = useState(false)
 
   const canOperate = hasRole('operator')
@@ -110,18 +111,27 @@ export function InstalledModsTable({ id }: { id: string }) {
     <SectionCard
       title="Installed mods"
       actions={
-        canOperate &&
-        updatable.length > 0 && (
+        <Group gap="xs">
+          {canOperate && updatable.length > 0 && (
+            <Button
+              size="xs"
+              variant="light"
+              leftSection={<IconRefresh size={14} />}
+              loading={updatingAll}
+              onClick={updateAll}
+            >
+              Update all ({updatable.length})
+            </Button>
+          )}
           <Button
             size="xs"
-            variant="light"
-            leftSection={<IconRefresh size={14} />}
-            loading={updatingAll}
-            onClick={updateAll}
+            variant="default"
+            loading={exportProfile.isPending}
+            onClick={() => exportProfile.mutate()}
           >
-            Update all ({updatable.length})
+            Export client profile
           </Button>
-        )
+        </Group>
       }
       flush
     >

@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -365,6 +366,77 @@ func TestModsAPI_Upload(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &overview)
 	if len(overview.Mods) != 1 || overview.Mods[0].Source != domain.ModSourceManual {
 		t.Fatalf("expected 1 manual mod, got %+v", overview.Mods)
+	}
+}
+
+func TestModsAPI_ExportProfile(t *testing.T) {
+	a := newModsTestAPI(t)
+	createModsTestInstance(t, a, "main")
+
+	rec := a.do(t, http.MethodPost, "/api/v1/instances/main/mods", map[string]any{"owner": "Alice", "name": "CoreLib"})
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("install: expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var jobResp struct {
+		Job domain.Job `json:"job"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &jobResp); err != nil {
+		t.Fatal(err)
+	}
+	a.waitJob(t, jobResp.Job.ID)
+
+	// (a) format=r2z -> 200 zip with export.r2x listing the installed mod.
+	rec = a.do(t, http.MethodGet, "/api/v1/instances/main/mods/export?format=r2z", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("export: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/zip" {
+		t.Errorf("Content-Type = %q, want application/zip", ct)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, `attachment; filename="main-mods.r2z"`) {
+		t.Errorf("Content-Disposition = %q, want to contain attachment; filename=%q", cd, "main-mods.r2z")
+	}
+	if _, ok := rec.Header()["X-Skipped-Mods"]; !ok {
+		t.Error("expected X-Skipped-Mods header to be present")
+	}
+
+	body := rec.Body.Bytes()
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("open zip body: %v", err)
+	}
+	var r2x *zip.File
+	for _, f := range zr.File {
+		if f.Name == "export.r2x" {
+			r2x = f
+		}
+	}
+	if r2x == nil {
+		t.Fatal("zip body missing export.r2x")
+	}
+	rc, err := r2x.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	yamlBytes, err := io.ReadAll(rc)
+	_ = rc.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(yamlBytes), "Alice-CoreLib") {
+		t.Errorf("export.r2x does not mention Alice-CoreLib:\n%s", yamlBytes)
+	}
+
+	// (b) unsupported format -> validation error.
+	rec = a.do(t, http.MethodGet, "/api/v1/instances/main/mods/export?format=zip", nil)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("format=zip: expected 422, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// (c) missing format -> validation error.
+	rec = a.do(t, http.MethodGet, "/api/v1/instances/main/mods/export", nil)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("missing format: expected 422, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
