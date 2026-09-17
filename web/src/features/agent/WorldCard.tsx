@@ -1,7 +1,9 @@
 // Live world card on the Overview: day, clock, weather, players and global
 // keys straight from the running server through the agent, with the save
 // and broadcast actions.
-import { Badge, Button, Group, SimpleGrid, Stack, Text, Tooltip } from '@mantine/core'
+import type { CSSProperties } from 'react'
+import { Anchor, Badge, Button, Group, SimpleGrid, Stack, Text, Tooltip } from '@mantine/core'
+import { Link } from 'react-router-dom'
 import { IconDeviceFloppy, IconMoon, IconSun, IconSwords } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
@@ -15,7 +17,27 @@ import { useAgentSetup } from './useAgentSetup'
 
 const MAX_KEYS = 12
 
-export function WorldCard({ id }: { id: string }) {
+// Recolors every Mantine Paper/Text in the subtree to ink-on-parchment: Paper
+// reads its background from --mantine-color-body, and Text (default or
+// c="dimmed") either inherits `color` or reads --mantine-color-dimmed, so
+// shadowing these on a wrapper covers SectionCard, its Text/Title children
+// and the StatTile grid without editing those files. Mirrors the
+// .emptyParchment treatment in ui.module.css, just scoped inline instead of
+// via a CSS-module class (WorldCard.tsx is the only file this card lets us
+// touch for this variant).
+const PARCHMENT_VARS = {
+  background: 'var(--vh-parchment)',
+  color: 'var(--vh-ink)',
+  '--mantine-color-body': 'var(--vh-parchment)',
+  // index.css paints every Paper with --vh-surface, so shadow that too or the
+  // card (and the StatTile papers inside it) stay timber-coloured.
+  '--vh-surface': 'var(--vh-parchment)',
+  '--vh-surface-2': 'var(--vh-parchment-2)',
+  '--mantine-color-dimmed': 'var(--vh-ink)',
+  '--vh-text-soft': 'var(--vh-ink)',
+} as CSSProperties
+
+export function WorldCard({ id, variant = 'default' }: { id: string; variant?: 'default' | 'parchment' }) {
   const { hasRole } = useAuth()
   const command = useAgentCommand(id)
   const { stage, info } = useAgentSetup(id)
@@ -34,7 +56,7 @@ export function WorldCard({ id }: { id: string }) {
   const modifiers = Object.entries(st?.modifiers ?? {})
   const event = st?.world?.event
 
-  return (
+  const card = (
     <SectionCard
       title="World"
       description="Live from the server through the Valheim UI Agent."
@@ -61,7 +83,13 @@ export function WorldCard({ id }: { id: string }) {
               <WorldControls id={id} status={st} disabled={!info.connected} />
             </>
           )}
-          <ChatButton id={id} disabled={!info.connected} canSay={canOperate} />
+          {variant === 'parchment' ? (
+            <Anchor component={Link} to={`/instances/${id}/players`} size="sm">
+              Players &amp; chat
+            </Anchor>
+          ) : (
+            <ChatButton id={id} disabled={!info.connected} canSay={canOperate} />
+          )}
         </Group>
       }
     >
@@ -152,4 +180,7 @@ export function WorldCard({ id }: { id: string }) {
       )}
     </SectionCard>
   )
+
+  if (variant !== 'parchment') return card
+  return <div style={PARCHMENT_VARS}>{card}</div>
 }

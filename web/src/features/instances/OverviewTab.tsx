@@ -1,9 +1,13 @@
+import { useState } from 'react'
 import {
   ActionIcon,
   Alert,
+  Anchor,
   Button,
   CopyButton,
+  Grid,
   Group,
+  Paper,
   Pill,
   Skeleton,
   SimpleGrid,
@@ -11,9 +15,10 @@ import {
   Switch,
   Table,
   Text,
+  Title,
   Tooltip,
 } from '@mantine/core'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   IconAlertTriangle,
   IconBox,
@@ -22,19 +27,17 @@ import {
   IconCheck,
   IconCopy,
   IconDownload,
-  IconKey,
   IconPlugConnected,
   IconRefresh,
-  IconServer2,
-  IconUsers,
 } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
+import { API_BASE } from '../../api/client'
 import { fmtAgo, fmtBytes, fmtPercent, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
 import { SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
 import { useModsOverview } from '../mods/useMods'
-import { WorldCard } from '../agent'
+import { useAgent, WorldCard } from '../agent'
 import { CheckModUpdatesButton } from '../mods/CheckModUpdatesButton'
 import { useInstance } from './useInstance'
 import { useCheckForUpdate, useInstanceEvents, useInstanceStatus, useSetAutostart } from './instanceActions'
@@ -56,6 +59,10 @@ export function OverviewTab({ id }: { id: string }) {
   const jobsQuery = useJobs({ instance: id, limit: 5 })
   const eventsQuery = useInstanceEvents(id)
   const systemInfo = useSystemInfo()
+  const agentQuery = useAgent(id)
+  // Hides the hero map <img> on load failure so the parchment Paper shows
+  // through instead of a broken-image glyph (see the Hero section below).
+  const [mapImgOk, setMapImgOk] = useState(true)
 
   if (inst.isLoading) {
     return (
@@ -80,6 +87,15 @@ export function OverviewTab({ id }: { id: string }) {
   const canOperate = hasRole('operator')
   const host = window.location.hostname
 
+  // Status statement subtitle: the live world clock/weather through the
+  // agent when connected, else just the configured world name.
+  const world = agentQuery.data?.connected ? agentQuery.data.status?.world : undefined
+  const worldSummary = world
+    ? `world ${world.name ?? instance.config.world}, day ${world.day ?? '?'}, ${
+        world.weather ? world.weather.toLowerCase() : 'unknown weather'
+      }, ${world.is_night ? 'night' : 'day'}`
+    : `world ${instance.config.world}`
+
   const jobs = jobsQuery.data ?? []
   const events = eventsQuery.data?.events ?? []
   const latestBuildId = checkUpdate.data?.latest_buildid ?? systemInfo.data?.latest_buildid
@@ -100,45 +116,45 @@ export function OverviewTab({ id }: { id: string }) {
 
   return (
     <Stack>
-      <SimpleGrid cols={{ base: 2, md: 3, xl: 7 }}>
+      <Stack gap={2}>
+        <Group gap="sm" align="center">
+          <StatusDot color={stateColor(status.state)} pulse={status.state === 'running' || status.state === 'starting'} />
+          <Title order={2}>
+            {stateLabel(status.state)}
+            {status.state === 'running' ? ` · ${status.players_online} online` : ''}
+          </Title>
+        </Group>
+        <Text size="sm" c="dimmed">
+          {worldSummary}
+        </Text>
+      </Stack>
+
+      <Grid gap="md">
+        <Grid.Col span={{ base: 12, md: 7 }}>
+          <Paper p="sm" style={{ background: 'var(--vh-parchment)' }}>
+            <div style={{ width: 'min(100%, 60vh)', aspectRatio: '1', margin: '0 auto' }}>
+              {mapImgOk && (
+                <img
+                  src={`${API_BASE}/instances/${id}/map.png`}
+                  alt="World map"
+                  style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }}
+                  onError={() => setMapImgOk(false)}
+                />
+              )}
+            </div>
+            <Anchor component={Link} to={`/instances/${id}/map`} size="sm" mt="xs" ta="center" style={{ display: 'block' }}>
+              Open the map
+            </Anchor>
+          </Paper>
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, md: 5 }}>
+          <WorldCard id={id} variant="parchment" />
+        </Grid.Col>
+      </Grid>
+
+      <SimpleGrid cols={{ base: 2, md: 4 }}>
         <StatTile
-          label="State"
-          value={stateLabel(status.state)}
-          hint={status.state === 'running' && status.since ? `since ${fmtAgo(status.since)}` : undefined}
-          icon={<IconServer2 size={16} />}
-          accent={`var(--mantine-color-${stateColor(status.state)}-5)`}
-        />
-        <StatTile
-          label="Players"
-          value={`${status.players_online} / ${status.max_players ?? '?'}`}
-          hint="online now"
-          icon={<IconUsers size={16} />}
-          accent={status.players_online > 0 ? 'var(--vh-moss)' : undefined}
-        />
-        {/* Join code is issued only by Valheim's crossplay networking. */}
-        {instance.config.crossplay && (
-          <StatTile
-            label="Join code"
-            value={status.join_code ? <Text ff="monospace" fw={650} size="lg">{status.join_code}</Text> : '—'}
-            hint="share with friends"
-            icon={
-              status.join_code ? (
-                <CopyButton value={status.join_code}>
-                  {({ copied, copy }) => (
-                    <Tooltip label={copied ? 'Copied' : 'Copy'}>
-                      <ActionIcon size="sm" variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label="Copy join code">
-                        {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-                      </ActionIcon>
-                    </Tooltip>
-                  )}
-                </CopyButton>
-              ) : (
-                <IconKey size={16} />
-              )
-            }
-          />
-        )}
-        <StatTile
+          compact
           label="CPU"
           value={fmtPercent(status.cpu_percent)}
           hint={status.state === 'running' ? 'of one core' : 'not running'}
@@ -146,12 +162,14 @@ export function OverviewTab({ id }: { id: string }) {
           accent={status.cpu_percent !== undefined && status.cpu_percent >= 90 ? 'var(--vh-blood)' : undefined}
         />
         <StatTile
+          compact
           label="Memory"
           value={status.memory_bytes !== undefined ? fmtBytes(status.memory_bytes) : '—'}
           hint={status.state === 'running' ? 'resident' : 'not running'}
           icon={<IconDeviceSdCard size={16} />}
         />
         <StatTile
+          compact
           label="Build"
           value={status.installed_buildid ?? 'unknown'}
           hint={gameUpdate ? 'update available' : 'up to date'}
@@ -159,6 +177,7 @@ export function OverviewTab({ id }: { id: string }) {
           accent={gameUpdate ? 'var(--vh-ember)' : undefined}
         />
         <StatTile
+          compact
           label="Updates"
           value={updatesValue}
           hint={anyUpdate ? 'available' : 'all current'}
@@ -166,8 +185,6 @@ export function OverviewTab({ id }: { id: string }) {
           accent={anyUpdate ? 'var(--vh-ember)' : undefined}
         />
       </SimpleGrid>
-
-      <WorldCard id={id} />
 
       <SectionCard title="Updates" description="Game server files and installed mods.">
         <Stack gap="md">
