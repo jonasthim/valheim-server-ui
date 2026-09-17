@@ -14,6 +14,7 @@ type playersSnapshot map[string]bool
 // alertableJobTypes are the job kinds whose failure raises AlertJobFailed.
 var alertableJobTypes = map[domain.JobType]bool{
 	domain.JobBackup:           true,
+	domain.JobBackupUpload:     true,
 	domain.JobRestore:          true,
 	domain.JobUpdate:           true,
 	domain.JobScheduledRestart: true,

@@ -29,6 +29,7 @@ import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { PageHeader, SectionCard, LoadError } from '../../ui'
 import { ReleaseNotesModal, useCheckAppUpdate, useSystemInfo, useUpgradeAppAction } from '../system'
+import { BackupTargetsCard } from './BackupTargetsCard'
 import { NotificationsCard } from './NotificationsCard'
 import { DEFAULT_ROLE_OPTIONS } from './options'
 import { RoleMappingEditor } from './RoleMappingEditor'
@@ -56,6 +57,7 @@ const EMPTY_SETTINGS: Settings = {
   thunderstore: { index_refresh_hours: 6 },
   app: { update_check_hours: 6, auto_upgrade: false },
   notifications: { channels: [], disk_low_percent: 0 },
+  backups: { targets: [] },
 }
 
 interface OidcTestResult {
@@ -302,6 +304,12 @@ export function SettingsPage() {
             onChange={(v) => form.setFieldValue('notifications', v)}
             resetToken={settingsQ.dataUpdatedAt}
             errors={form.errors}
+          />
+
+          <BackupTargetsCard
+            value={form.values.backups.targets}
+            onChange={(v) => form.setFieldValue('backups.targets', v)}
+            resetToken={settingsQ.dataUpdatedAt}
           />
 
           <SectionCard title="Application">

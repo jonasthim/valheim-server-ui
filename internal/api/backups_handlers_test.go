@@ -333,3 +333,101 @@ func TestBackupsHandlers_UploadInvalidZipRejected422(t *testing.T) {
 func itoa(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
+
+// ---------------------------------------------------------------- off-site targets (F-1.4)
+
+// stubUploader is a minimal remote.Uploader stand-in; defined locally so this
+// test file need not import internal/backup/remote for one fake.
+type stubUploader struct{ err error }
+
+func (s stubUploader) Upload(context.Context, domain.BackupTarget, string, string) error {
+	return s.err
+}
+
+// setRemoteBackup points id's InstanceConfig.RemoteBackup at targetID for the
+// given kinds.
+func (a *backupTestAPI) setRemoteBackup(t *testing.T, id, targetID string, kinds ...domain.BackupKind) {
+	t.Helper()
+	inst, err := a.inst.Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("get instance: %v", err)
+	}
+	cfg := inst.Config
+	cfg.RemoteBackup = &domain.RemoteBackupConfig{TargetID: targetID, Kinds: kinds}
+	if _, err := a.inst.Update(context.Background(), id, nil, &cfg, nil); err != nil {
+		t.Fatalf("update instance config: %v", err)
+	}
+}
+
+func TestBackupsHandlers_RetryRemoteUpload(t *testing.T) {
+	api := newBackupTestAPI(t)
+	api.createInstance(t, "main", "Dedicated", 2456)
+
+	target := domain.BackupTarget{ID: "t1", Name: "Local", Type: domain.BackupTargetLocal, Path: t.TempDir()}
+	api.svc.SetTargets(func(context.Context) ([]domain.BackupTarget, error) { return []domain.BackupTarget{target}, nil })
+	api.svc.SetUploader(stubUploader{})
+	api.setRemoteBackup(t, "main", "t1", domain.BackupManual)
+
+	rec := api.postJSON(t, "/api/v1/instances/main/backups", nil)
+	createJob := api.waitForJob(t, rec)
+	if createJob.Status != domain.JobSucceeded {
+		t.Fatalf("expected the backup job to succeed, got %+v", createJob)
+	}
+	list, err := api.svc.List(context.Background(), "main")
+	if err != nil || len(list) != 1 {
+		t.Fatalf("expected exactly one backup, got %v err=%v", list, err)
+	}
+	backupID := list[0].ID
+
+	rec = api.postJSON(t, "/api/v1/instances/main/backups/"+itoa(backupID)+"/upload", nil)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("retry upload: expected 202, got %d: %s", rec.Code, rec.Body.String())
+	}
+	job := api.waitForJob(t, rec)
+	if job.Status != domain.JobSucceeded {
+		t.Fatalf("expected the retry job to succeed, got %v (err=%s)", job.Status, job.Error)
+	}
+	if job.Type != domain.JobBackupUpload {
+		t.Fatalf("expected a backup_upload job, got %v", job.Type)
+	}
+
+	call, ok := api.audit.last()
+	if !ok || call.action != "backup.upload" || call.target != itoa(backupID) {
+		t.Fatalf("expected a backup.upload audit call with target=%s, got %+v (ok=%v)", itoa(backupID), call, ok)
+	}
+}
+
+func TestBackupsHandlers_RetryRemoteUpload_UnknownBackup404(t *testing.T) {
+	api := newBackupTestAPI(t)
+	api.createInstance(t, "main", "Dedicated", 2456)
+	api.setRemoteBackup(t, "main", "t1", domain.BackupManual)
+
+	rec := api.postJSON(t, "/api/v1/instances/main/backups/999/upload", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestBackupsHandlers_ListTargets_StripsAdminFields(t *testing.T) {
+	api := newBackupTestAPI(t)
+	api.svc.SetTargets(func(context.Context) ([]domain.BackupTarget, error) {
+		return []domain.BackupTarget{{ID: "t1", Name: "Offsite", Type: domain.BackupTargetLocal, Path: "/mnt/backups", KeepLast: 5}}, nil
+	})
+
+	rec := api.request(t, http.MethodGet, "/api/v1/backups/targets", nil, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Targets []domain.BackupTarget `json:"targets"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Targets) != 1 || body.Targets[0].ID != "t1" || body.Targets[0].Name != "Offsite" {
+		t.Fatalf("expected the target's id/name, got %+v", body.Targets)
+	}
+	if body.Targets[0].Path != "" {
+		t.Errorf("expected path to be stripped from the viewer-facing list, got %q", body.Targets[0].Path)
+	}
+}

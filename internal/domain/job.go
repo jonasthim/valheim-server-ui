@@ -8,6 +8,7 @@ const (
 	JobInstall             JobType = "install"
 	JobUpdate              JobType = "update"
 	JobBackup              JobType = "backup"
+	JobBackupUpload        JobType = "backup_upload"
 	JobRestore             JobType = "restore"
 	JobWorldImport         JobType = "world_import"
 	JobWorldRegenerate     JobType = "world_regenerate"

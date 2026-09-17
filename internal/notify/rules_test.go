@@ -47,6 +47,12 @@ func TestAlertsFor(t *testing.T) {
 			wantKinds: nil,
 		},
 		{
+			name: "job failed (backup_upload) maps to job_failed",
+			ev: domain.Event{Name: domain.EventJobUpdated, InstanceID: "main", TS: now,
+				Data: domain.Job{Type: domain.JobBackupUpload, InstanceID: "main", Status: domain.JobFailed, Error: "rclone copyto: boom"}},
+			wantKinds: []string{domain.AlertJobFailed},
+		},
+		{
 			name: "a job.updated succeeded produces nothing",
 			ev: domain.Event{Name: domain.EventJobUpdated, InstanceID: "main", TS: now,
 				Data: domain.Job{Type: domain.JobBackup, InstanceID: "main", Status: domain.JobSucceeded}},

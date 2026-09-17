@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jonasthim/valheim-server-ui/internal/backup/remote"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 	"github.com/jonasthim/valheim-server-ui/internal/instance"
 	"github.com/jonasthim/valheim-server-ui/internal/jobs"
@@ -45,6 +46,13 @@ type Service struct {
 	bus        domain.Publisher
 	appVersion string
 	log        *slog.Logger
+
+	// uploader and targetsFn back the off-site copy feature (F-1.4); both are
+	// nil until SetUploader/SetTargets are called from wire_backups.go, in
+	// which case Create silently skips the off-site copy (there is nothing
+	// sane to do without them).
+	uploader  remote.Uploader
+	targetsFn func(ctx context.Context) ([]domain.BackupTarget, error)
 }
 
 // New constructs the backup service.
@@ -53,6 +61,16 @@ func New(db *sql.DB, inst *instance.Service, runner *jobs.Runner, bus domain.Pub
 		log = slog.Default()
 	}
 	return &Service{db: db, inst: inst, runner: runner, bus: bus, appVersion: appVersion, log: log}
+}
+
+// SetUploader configures the off-site uploader used by Create and
+// EnqueueRemoteUpload (F-1.4). Called once from cmd/valheim-ui/wire_backups.go.
+func (s *Service) SetUploader(u remote.Uploader) { s.uploader = u }
+
+// SetTargets configures how the configured backup targets are read (F-1.4);
+// wire_backups.go points it at deps.Settings.Get(ctx).Backups.Targets.
+func (s *Service) SetTargets(fn func(ctx context.Context) ([]domain.BackupTarget, error)) {
+	s.targetsFn = fn
 }
 
 // isBusyState reports whether st means it is not safe to overwrite save
@@ -128,8 +146,32 @@ func (s *Service) Create(ctx context.Context, instanceID string, kind domain.Bac
 		}
 	}
 
+	// Off-site copy (F-1.4): only when the instance has a target configured
+	// and this backup's kind is one it should be copied for. The target
+	// itself is resolved later, inside the job, from the same TargetID.
+	if rb := inst.Config.RemoteBackup; rb != nil && containsBackupKind(rb.Kinds, kind) {
+		if err := s.SetRemoteStatus(ctx, id, "pending", ""); err != nil {
+			s.log.Warn("backup: set remote status pending", "instance", instanceID, "id", id, "err", err)
+		} else {
+			row.RemoteStatus = "pending"
+		}
+		if _, err := s.enqueueRemoteUpload(ctx, instanceID, id, filename, rb.TargetID, "system"); err != nil {
+			s.log.Warn("backup: enqueue off-site upload job", "instance", instanceID, "id", id, "err", err)
+		}
+	}
+
 	b := row.toDomain()
 	return &b, nil
+}
+
+// containsBackupKind reports whether k appears in kinds.
+func containsBackupKind(kinds []domain.BackupKind, k domain.BackupKind) bool {
+	for _, x := range kinds {
+		if x == k {
+			return true
+		}
+	}
+	return false
 }
 
 // EnqueueBackup runs Create as a job so callers get progress/log output and
@@ -172,6 +214,113 @@ func (s *Service) PreUpdateBackup(ctx context.Context, instanceID string, log *j
 	log.Printf("created pre-update backup %s", b.Filename)
 	log.SetSummary("pre_update_backup", b.Filename)
 	return nil
+}
+
+// ---------------------------------------------------------------- remote upload (F-1.4)
+
+// enqueueRemoteUpload runs the off-site copy of an already-created backup as
+// a backup_upload job: mirrors EnqueueBackup's shape. targetID is resolved
+// against SetTargets inside the job (not here), so a target added or removed
+// between enqueue and run is picked up at run time.
+func (s *Service) enqueueRemoteUpload(ctx context.Context, instanceID string, backupID int64, filename, targetID, requestedBy string) (*domain.Job, error) {
+	return s.runner.Enqueue(ctx, jobs.Spec{
+		Type:        domain.JobBackupUpload,
+		InstanceID:  instanceID,
+		Title:       fmt.Sprintf("Copy backup %s off-site", filename),
+		RequestedBy: requestedBy,
+	}, func(ctx context.Context, log *jobs.Logger) error {
+		return s.runRemoteUpload(ctx, instanceID, backupID, targetID, log)
+	})
+}
+
+// runRemoteUpload is the backup_upload job body: resolve the target and the
+// backup's zip path, call the uploader, then record the outcome on the
+// backup row. The returned error (if any) is also what marks the job failed.
+func (s *Service) runRemoteUpload(ctx context.Context, instanceID string, backupID int64, targetID string, log *jobs.Logger) error {
+	target, err := s.resolveTarget(ctx, targetID)
+	if err != nil {
+		_ = s.SetRemoteStatus(ctx, backupID, "failed", err.Error())
+		return err
+	}
+	row, err := s.getBackupRow(ctx, instanceID, backupID)
+	if err != nil {
+		_ = s.SetRemoteStatus(ctx, backupID, "failed", err.Error())
+		return err
+	}
+	if s.uploader == nil {
+		err := fmt.Errorf("off-site uploader is not configured")
+		_ = s.SetRemoteStatus(ctx, backupID, "failed", err.Error())
+		return err
+	}
+
+	// Resolved the same way Open resolves a backup's zip path.
+	zipPath := filepath.Join(s.inst.Paths(instanceID).Backups, row.Filename)
+	if err := s.uploader.Upload(ctx, target, zipPath, instanceID); err != nil {
+		_ = s.SetRemoteStatus(ctx, backupID, "failed", err.Error())
+		return err
+	}
+	log.Printf("copied %s to target %q", row.Filename, target.Name)
+	return s.SetRemoteStatus(ctx, backupID, "ok", "")
+}
+
+// resolveTarget looks targetID up among the configured targets (SetTargets).
+func (s *Service) resolveTarget(ctx context.Context, targetID string) (domain.BackupTarget, error) {
+	if s.targetsFn == nil {
+		return domain.BackupTarget{}, fmt.Errorf("backup targets are not configured")
+	}
+	targets, err := s.targetsFn(ctx)
+	if err != nil {
+		return domain.BackupTarget{}, fmt.Errorf("load backup targets: %w", err)
+	}
+	for _, t := range targets {
+		if t.ID == targetID {
+			return t, nil
+		}
+	}
+	return domain.BackupTarget{}, fmt.Errorf("backup target %q not found", targetID)
+}
+
+// EnqueueRemoteUpload retries the off-site copy of an existing backup,
+// e.g. from the Backups tab's retry button. It verifies backupID belongs to
+// instanceID and that the instance still has an off-site target configured,
+// then enqueues the same backup_upload job Create would have.
+func (s *Service) EnqueueRemoteUpload(ctx context.Context, instanceID string, backupID int64, requestedBy string) (*domain.Job, error) {
+	inst, err := s.inst.Get(ctx, instanceID)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.getBackupRow(ctx, instanceID, backupID)
+	if err != nil {
+		return nil, err
+	}
+	if inst.Config.RemoteBackup == nil || inst.Config.RemoteBackup.TargetID == "" {
+		return nil, domain.Validation([]domain.FieldError{
+			{Field: "remote_backup", Message: "instance has no off-site backup target configured"},
+		})
+	}
+
+	if err := s.SetRemoteStatus(ctx, backupID, "pending", ""); err != nil {
+		return nil, err
+	}
+	return s.enqueueRemoteUpload(ctx, instanceID, backupID, row.Filename, inst.Config.RemoteBackup.TargetID, requestedBy)
+}
+
+// Targets returns the configured off-site backup targets with admin-only
+// fields (Path/Remote) blanked, for GET /backups/targets: operators pick a
+// target by id/name without seeing local paths or rclone remotes.
+func (s *Service) Targets(ctx context.Context) ([]domain.BackupTarget, error) {
+	if s.targetsFn == nil {
+		return []domain.BackupTarget{}, nil
+	}
+	targets, err := s.targetsFn(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load backup targets: %w", err)
+	}
+	out := make([]domain.BackupTarget, len(targets))
+	for i, t := range targets {
+		out[i] = domain.BackupTarget{ID: t.ID, Name: t.Name, Type: t.Type}
+	}
+	return out, nil
 }
 
 // ---------------------------------------------------------------- list/reconcile

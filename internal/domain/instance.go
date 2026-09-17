@@ -82,6 +82,16 @@ type InstanceConfig struct {
 	BackupKeepLast     int       `json:"backup_keep_last"`
 	BackupKeepDays     int       `json:"backup_keep_days"`
 	BackupBeforeUpdate bool      `json:"backup_before_update"`
+	// RemoteBackup configures copying backups off-box after they are created
+	// (F-1.4). Nil means no off-site target is configured for this instance.
+	RemoteBackup *RemoteBackupConfig `json:"remote_backup,omitempty"`
+}
+
+// RemoteBackupConfig picks which configured BackupTarget an instance's
+// backups are copied to, and which BackupKinds trigger the copy (F-1.4).
+type RemoteBackupConfig struct {
+	TargetID string       `json:"target_id"`
+	Kinds    []BackupKind `json:"kinds"`
 }
 
 // DefaultInstanceConfig returns the defaults applied to omitted fields.
@@ -202,6 +212,21 @@ func (c InstanceConfig) Validate() error {
 	}
 	if c.BackupKeepDays < 0 {
 		add("backup_keep_days", "must be >= 0")
+	}
+	if c.RemoteBackup != nil {
+		if strings.TrimSpace(c.RemoteBackup.TargetID) == "" {
+			add("remote_backup.target_id", "required when an off-site target is configured")
+		}
+		seenKind := map[BackupKind]bool{}
+		for _, k := range c.RemoteBackup.Kinds {
+			if !validBackupKind(k) {
+				add("remote_backup.kinds", "unknown kind "+strconv.Quote(string(k)))
+			}
+			if seenKind[k] {
+				add("remote_backup.kinds", "duplicate kind "+strconv.Quote(string(k)))
+			}
+			seenKind[k] = true
+		}
 	}
 	return Validation(fs)
 }

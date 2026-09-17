@@ -1,12 +1,25 @@
 import type { ReactNode } from 'react'
 import { ActionIcon, Badge, Checkbox, Group, Skeleton, Stack, Table, Text, Tooltip } from '@mantine/core'
 import { modals } from '@mantine/modals'
-import { IconDatabase, IconDownload, IconRestore, IconTrash } from '@tabler/icons-react'
+import { IconDatabase, IconDownload, IconRefresh, IconRestore, IconTrash } from '@tabler/icons-react'
 import { api } from '../../../api/client'
 import type { Backup, InstanceState } from '../../../api/types'
 import { fmtAgo, fmtBytes, fmtTime } from '../../../lib/format'
 import { EmptyState, SectionCard } from '../../../ui'
 import { BACKUP_KIND_COLORS, BACKUP_KIND_LABELS } from './constants'
+import { useRetryRemoteUpload } from './useBackups'
+
+const REMOTE_STATUS_COLORS: Record<string, string> = {
+  pending: 'straw',
+  ok: 'moss',
+  failed: 'blood',
+}
+
+const REMOTE_STATUS_LABELS: Record<string, string> = {
+  pending: 'Pending',
+  ok: 'Copied',
+  failed: 'Failed',
+}
 
 export function BackupsTable({
   id,
@@ -28,6 +41,7 @@ export function BackupsTable({
   onDelete: (backupId: number) => void
 }) {
   const running = instanceState === 'running'
+  const retryUpload = useRetryRemoteUpload(id)
 
   function confirmRestore(backup: Backup) {
     let stopIfRunning = running
@@ -88,7 +102,7 @@ export function BackupsTable({
           />
         </div>
       ) : (
-        <Table.ScrollContainer minWidth={860}>
+        <Table.ScrollContainer minWidth={980}>
           <Table verticalSpacing="xs">
             <Table.Thead>
               <Table.Tr>
@@ -97,6 +111,7 @@ export function BackupsTable({
                 <Table.Th>World</Table.Th>
                 <Table.Th>Size</Table.Th>
                 <Table.Th>Note</Table.Th>
+                <Table.Th>Off-site</Table.Th>
                 <Table.Th />
               </Table.Tr>
             </Table.Thead>
@@ -124,6 +139,40 @@ export function BackupsTable({
                   <Table.Td>{b.world}</Table.Td>
                   <Table.Td>{fmtBytes(b.size_bytes)}</Table.Td>
                   <Table.Td>{b.note || '-'}</Table.Td>
+                  <Table.Td>
+                    {!b.remote_status ? (
+                      <Text size="sm" c="dimmed">
+                        —
+                      </Text>
+                    ) : (
+                      <Group gap={4} wrap="nowrap">
+                        {b.remote_status === 'failed' && b.remote_error ? (
+                          <Tooltip label={b.remote_error} multiline maw={280}>
+                            <Badge color={REMOTE_STATUS_COLORS[b.remote_status]} variant="light">
+                              {REMOTE_STATUS_LABELS[b.remote_status]}
+                            </Badge>
+                          </Tooltip>
+                        ) : (
+                          <Badge color={REMOTE_STATUS_COLORS[b.remote_status]} variant="light">
+                            {REMOTE_STATUS_LABELS[b.remote_status]}
+                          </Badge>
+                        )}
+                        {canManage && b.remote_status === 'failed' && (
+                          <Tooltip label="Retry off-site copy">
+                            <ActionIcon
+                              variant="subtle"
+                              color="straw"
+                              aria-label="Retry off-site copy"
+                              loading={retryUpload.isPending && retryUpload.variables === b.id}
+                              onClick={() => retryUpload.mutate(b.id)}
+                            >
+                              <IconRefresh size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
+                      </Group>
+                    )}
+                  </Table.Td>
                   <Table.Td>
                     {canManage && (
                       <Group gap={4} wrap="nowrap" justify="flex-end">

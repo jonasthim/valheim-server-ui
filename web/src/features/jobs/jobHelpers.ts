@@ -19,6 +19,7 @@ const JOB_TYPE_LABELS: Record<JobType, string> = {
   install: 'Install game files',
   update: 'Update game files',
   backup: 'Backup',
+  backup_upload: 'Off-site copy',
   restore: 'Restore',
   world_import: 'Import world',
   world_regenerate: 'Regenerate world',
@@ -41,6 +42,7 @@ export function jobTypeLabel(type: JobType): string {
 export function jobTabFor(type: JobType): InstanceTab {
   switch (type) {
     case 'backup':
+    case 'backup_upload':
     case 'restore':
       return 'backups'
     case 'world_import':

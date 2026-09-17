@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
@@ -100,6 +101,7 @@ func (s *Settings) Put(ctx context.Context, in domain.Settings) (domain.Settings
 	}
 
 	fields = append(fields, validateNotifications(&out.Notifications, current.Notifications)...)
+	fields = append(fields, validateBackupTargets(&out.Backups.Targets, current.Backups.Targets)...)
 
 	if len(fields) > 0 {
 		return domain.Settings{}, domain.Validation(fields)
@@ -309,4 +311,51 @@ func validateEmailURL(raw string) string {
 		return "path must be the recipient address, e.g. /ops@example.com"
 	}
 	return ""
+}
+
+// validateBackupTargets assigns ids (F-1.4) and validates *out in place,
+// mirroring validateNotifications's id-assignment + validation style:
+// unlike a channel's secret/url, a target's path/remote are not write-only,
+// so there is no "blank keeps stored" rule here -- every field is always
+// resubmitted in full. current is unused beyond the id lookup that keeps a
+// resubmitted target's id stable across saves.
+func validateBackupTargets(out *[]domain.BackupTarget, current []domain.BackupTarget) []domain.FieldError {
+	currentByID := make(map[string]domain.BackupTarget, len(current))
+	for _, t := range current {
+		currentByID[t.ID] = t
+	}
+
+	var fields []domain.FieldError
+	for i := range *out {
+		t := &(*out)[i]
+		prefix := fmt.Sprintf("backups.targets.%d", i)
+
+		if t.ID == "" {
+			t.ID = uuid.NewString()
+		}
+
+		switch t.Type {
+		case domain.BackupTargetLocal, domain.BackupTargetRclone:
+		default:
+			fields = append(fields, domain.FieldError{Field: prefix + ".type", Message: "must be local or rclone"})
+			continue // path/remote checks below assume a known type
+		}
+		if l := len(t.Name); l < 1 || l > 64 {
+			fields = append(fields, domain.FieldError{Field: prefix + ".name", Message: "must be 1-64 characters"})
+		}
+		switch t.Type {
+		case domain.BackupTargetLocal:
+			if !filepath.IsAbs(t.Path) {
+				fields = append(fields, domain.FieldError{Field: prefix + ".path", Message: "must be an absolute path"})
+			}
+		case domain.BackupTargetRclone:
+			if t.Remote == "" || !strings.Contains(t.Remote, ":") {
+				fields = append(fields, domain.FieldError{Field: prefix + ".remote", Message: `must be a remote in the form "name:path"`})
+			}
+		}
+		if t.KeepLast < 0 || t.KeepLast > 1000 {
+			fields = append(fields, domain.FieldError{Field: prefix + ".keep_last", Message: "must be 0-1000"})
+		}
+	}
+	return fields
 }

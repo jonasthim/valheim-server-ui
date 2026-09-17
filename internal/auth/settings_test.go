@@ -385,3 +385,99 @@ func TestSettingsPutNotifications_TypeChangeDoesNotInheritStoredURL(t *testing.T
 		t.Fatalf("expected the old secret dropped and the new url stored, got %+v", got)
 	}
 }
+
+// ---------------------------------------------------------------- backup targets (F-1.4)
+
+func TestSettingsPutBackupTargets_UnknownTypeRejected(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	in := domain.DefaultSettings()
+	in.Backups.Targets = []domain.BackupTarget{{Type: "ftp", Name: "Old school", Path: "/mnt/backups"}}
+	_, err := s.Put(context.Background(), in)
+	de := domain.AsError(err)
+	if de.Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for an unknown target type, got %v (%v)", de.Code, err)
+	}
+}
+
+func TestSettingsPutBackupTargets_LocalRelativePathRejected(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	in := domain.DefaultSettings()
+	in.Backups.Targets = []domain.BackupTarget{{Type: domain.BackupTargetLocal, Name: "Local", Path: "relative/path"}}
+	_, err := s.Put(context.Background(), in)
+	de := domain.AsError(err)
+	if de.Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for a relative local path, got %v (%v)", de.Code, err)
+	}
+
+	// An absolute path is accepted.
+	in.Backups.Targets[0].Path = "/mnt/backups/valheim"
+	if _, err := s.Put(context.Background(), in); err != nil {
+		t.Fatalf("expected an absolute local path to be accepted, got %v", err)
+	}
+}
+
+func TestSettingsPutBackupTargets_RcloneRemoteWithoutColonRejected(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	in := domain.DefaultSettings()
+	in.Backups.Targets = []domain.BackupTarget{{Type: domain.BackupTargetRclone, Name: "Cloud", Remote: "just-a-bucket"}}
+	_, err := s.Put(context.Background(), in)
+	de := domain.AsError(err)
+	if de.Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for an rclone remote without a colon, got %v (%v)", de.Code, err)
+	}
+
+	// A well-formed "name:path" remote is accepted.
+	in.Backups.Targets[0].Remote = "b2:my-bucket/valheim"
+	if _, err := s.Put(context.Background(), in); err != nil {
+		t.Fatalf("expected a valid rclone remote to be accepted, got %v", err)
+	}
+}
+
+func TestSettingsPutBackupTargets_KeepLastRange(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	in := domain.DefaultSettings()
+	in.Backups.Targets = []domain.BackupTarget{{Type: domain.BackupTargetLocal, Name: "Local", Path: "/mnt/backups", KeepLast: -1}}
+	if _, err := s.Put(context.Background(), in); domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for a negative keep_last, got %v", err)
+	}
+
+	in.Backups.Targets[0].KeepLast = 1001
+	if _, err := s.Put(context.Background(), in); domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation_failed for keep_last > 1000, got %v", err)
+	}
+}
+
+func TestSettingsPutBackupTargets_AssignsID(t *testing.T) {
+	s := newTestSettings(t, config.Config{}, nil)
+	ctx := context.Background()
+
+	in := domain.DefaultSettings()
+	in.Backups.Targets = []domain.BackupTarget{{Type: domain.BackupTargetLocal, Name: "Local", Path: "/mnt/backups"}}
+	out, err := s.Put(ctx, in)
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if len(out.Backups.Targets) != 1 || out.Backups.Targets[0].ID == "" {
+		t.Fatalf("expected a freshly assigned id, got %+v", out.Backups.Targets)
+	}
+	id := out.Backups.Targets[0].ID
+
+	// Re-saving with the same id keeps it stable.
+	second := domain.DefaultSettings()
+	second.Backups.Targets = []domain.BackupTarget{{ID: id, Type: domain.BackupTargetLocal, Name: "Local renamed", Path: "/mnt/backups"}}
+	out2, err := s.Put(ctx, second)
+	if err != nil {
+		t.Fatalf("second Put: %v", err)
+	}
+	if out2.Backups.Targets[0].ID != id {
+		t.Fatalf("expected the id to be preserved, got %q want %q", out2.Backups.Targets[0].ID, id)
+	}
+	if out2.Backups.Targets[0].Name != "Local renamed" {
+		t.Fatalf("expected the name to change, got %q", out2.Backups.Targets[0].Name)
+	}
+
+	stored, err := s.Get(ctx)
+	if err != nil || len(stored.Backups.Targets) != 1 || stored.Backups.Targets[0].ID != id {
+		t.Fatalf("target not persisted correctly: %+v err=%v", stored, err)
+	}
+}

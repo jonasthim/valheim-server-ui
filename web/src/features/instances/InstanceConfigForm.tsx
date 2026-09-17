@@ -7,6 +7,7 @@ import {
   Accordion,
   Button,
   Checkbox,
+  Divider,
   Group,
   NumberInput,
   PasswordInput,
@@ -19,10 +20,18 @@ import {
   TextInput,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import type { InstanceConfig, Modifiers } from '../../api/types'
+import type { BackupKind, InstanceConfig, Modifiers, RemoteBackupConfig } from '../../api/types'
 import { SectionCard } from '../../ui'
+import { BACKUP_KIND_LABELS } from './backups/constants'
+import { useBackupTargets } from './backups/useBackups'
 import { INSTANCE_ID_PATTERN, WORLD_NAME_PATTERN, slugify } from './instanceHelpers'
 import classes from './InstanceConfigForm.module.css'
+
+const DEFAULT_REMOTE_BACKUP_KINDS: BackupKind[] = ['manual', 'scheduled']
+
+const REMOTE_BACKUP_KIND_OPTIONS: { value: BackupKind; label: string }[] = (
+  Object.keys(BACKUP_KIND_LABELS) as BackupKind[]
+).map((k) => ({ value: k, label: BACKUP_KIND_LABELS[k] }))
 
 type ModifierKey = keyof Modifiers
 
@@ -53,6 +62,8 @@ interface ConfigFormValues {
   backup_keep_last: number
   backup_keep_days: number
   backup_before_update: boolean
+  remote_backup_target_id: string
+  remote_backup_kinds: BackupKind[]
 }
 
 interface FormValues {
@@ -121,6 +132,8 @@ function configToForm(config: InstanceConfig): ConfigFormValues {
     backup_keep_last: config.backup_keep_last,
     backup_keep_days: config.backup_keep_days,
     backup_before_update: config.backup_before_update,
+    remote_backup_target_id: config.remote_backup?.target_id ?? '',
+    remote_backup_kinds: config.remote_backup?.kinds ?? DEFAULT_REMOTE_BACKUP_KINDS,
   }
 }
 
@@ -149,6 +162,9 @@ function formToConfig(v: ConfigFormValues): InstanceConfig {
     backup_keep_last: v.backup_keep_last,
     backup_keep_days: v.backup_keep_days,
     backup_before_update: v.backup_before_update,
+    remote_backup: v.remote_backup_target_id
+      ? ({ target_id: v.remote_backup_target_id, kinds: v.remote_backup_kinds } satisfies RemoteBackupConfig)
+      : undefined,
   }
 }
 
@@ -263,6 +279,11 @@ export function InstanceConfigForm({
 }: InstanceConfigFormProps) {
   const [idTouched, setIdTouched] = useState(mode === 'edit')
   const [passwordUnlocked, setPasswordUnlocked] = useState(!passwordMasked)
+  const targetsQ = useBackupTargets()
+  const targetOptions = [
+    { value: '', label: 'None' },
+    ...(targetsQ.data ?? []).map((t) => ({ value: t.id, label: t.name })),
+  ]
 
   const form = useForm<FormValues>({
     initialValues: {
@@ -427,6 +448,28 @@ export function InstanceConfigForm({
                 label="Back up before updating"
                 {...form.getInputProps('config.backup_before_update', { type: 'checkbox' })}
               />
+
+              <Divider label="Off-site copy" labelPosition="left" />
+              <Select
+                label="Off-site target"
+                description="Copy backups here after they are created; configured by an admin in Settings"
+                data={targetOptions}
+                allowDeselect={false}
+                {...form.getInputProps('config.remote_backup_target_id')}
+              />
+              {form.values.config.remote_backup_target_id && (
+                <Checkbox.Group
+                  label="Copy these backups"
+                  value={form.values.config.remote_backup_kinds}
+                  onChange={(v) => form.setFieldValue('config.remote_backup_kinds', v as BackupKind[])}
+                >
+                  <SimpleGrid cols={{ base: 1, sm: 3 }} mt="xs">
+                    {REMOTE_BACKUP_KIND_OPTIONS.map((o) => (
+                      <Checkbox key={o.value} value={o.value} label={o.label} />
+                    ))}
+                  </SimpleGrid>
+                </Checkbox.Group>
+              )}
             </Stack>
           </SectionCard>
 

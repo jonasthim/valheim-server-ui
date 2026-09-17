@@ -11,32 +11,37 @@ import (
 )
 
 // backupRow is the persisted shape of one backups table row
-// (internal/db/migrations/00001_init.sql).
+// (internal/db/migrations/00001_init.sql, extended by
+// 00007_backups_remote.sql for RemoteStatus/RemoteError).
 type backupRow struct {
-	ID         int64
-	InstanceID string
-	World      string
-	Kind       domain.BackupKind
-	Filename   string
-	SizeBytes  int64
-	Note       string
-	CreatedAt  time.Time
+	ID           int64
+	InstanceID   string
+	World        string
+	Kind         domain.BackupKind
+	Filename     string
+	SizeBytes    int64
+	Note         string
+	CreatedAt    time.Time
+	RemoteStatus string
+	RemoteError  string
 }
 
 func (r backupRow) toDomain() domain.Backup {
 	return domain.Backup{
-		ID:         r.ID,
-		InstanceID: r.InstanceID,
-		World:      r.World,
-		Kind:       r.Kind,
-		Filename:   r.Filename,
-		SizeBytes:  r.SizeBytes,
-		Note:       r.Note,
-		CreatedAt:  r.CreatedAt,
+		ID:           r.ID,
+		InstanceID:   r.InstanceID,
+		World:        r.World,
+		Kind:         r.Kind,
+		Filename:     r.Filename,
+		SizeBytes:    r.SizeBytes,
+		Note:         r.Note,
+		CreatedAt:    r.CreatedAt,
+		RemoteStatus: r.RemoteStatus,
+		RemoteError:  r.RemoteError,
 	}
 }
 
-const backupColumns = `id, instance_id, world, kind, filename, size_bytes, note, created_at`
+const backupColumns = `id, instance_id, world, kind, filename, size_bytes, note, created_at, remote_status, remote_error`
 
 func scanBackupRow(scan func(...any) error) (backupRow, error) {
 	var (
@@ -44,7 +49,7 @@ func scanBackupRow(scan func(...any) error) (backupRow, error) {
 		kind      string
 		createdAt string
 	)
-	if err := scan(&r.ID, &r.InstanceID, &r.World, &kind, &r.Filename, &r.SizeBytes, &r.Note, &createdAt); err != nil {
+	if err := scan(&r.ID, &r.InstanceID, &r.World, &kind, &r.Filename, &r.SizeBytes, &r.Note, &createdAt, &r.RemoteStatus, &r.RemoteError); err != nil {
 		return backupRow{}, err
 	}
 	r.Kind = domain.BackupKind(kind)
@@ -55,9 +60,9 @@ func scanBackupRow(scan func(...any) error) (backupRow, error) {
 }
 
 func (s *Service) insertBackupRow(ctx context.Context, r backupRow) (int64, error) {
-	q := `INSERT INTO backups (instance_id, world, kind, filename, size_bytes, note, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`
-	res, err := s.db.ExecContext(ctx, q, r.InstanceID, r.World, string(r.Kind), r.Filename, r.SizeBytes, r.Note, r.CreatedAt.UTC().Format(time.RFC3339))
+	q := `INSERT INTO backups (instance_id, world, kind, filename, size_bytes, note, created_at, remote_status, remote_error)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	res, err := s.db.ExecContext(ctx, q, r.InstanceID, r.World, string(r.Kind), r.Filename, r.SizeBytes, r.Note, r.CreatedAt.UTC().Format(time.RFC3339), r.RemoteStatus, r.RemoteError)
 	if err != nil {
 		return 0, fmt.Errorf("insert backup row: %w", err)
 	}
@@ -66,6 +71,20 @@ func (s *Service) insertBackupRow(ctx context.Context, r backupRow) (int64, erro
 		return 0, fmt.Errorf("insert backup row: %w", err)
 	}
 	return id, nil
+}
+
+// SetRemoteStatus updates a backup's off-site copy status (F-1.4): status is
+// one of "pending"/"ok"/"failed", errMsg the upload error when status is
+// "failed" (empty otherwise).
+func (s *Service) SetRemoteStatus(ctx context.Context, backupID int64, status, errMsg string) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE backups SET remote_status = ?, remote_error = ? WHERE id = ?`, status, errMsg, backupID)
+	if err != nil {
+		return fmt.Errorf("set backup %d remote status: %w", backupID, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return domain.NotFound("backup")
+	}
+	return nil
 }
 
 func (s *Service) getBackupRow(ctx context.Context, instanceID string, id int64) (backupRow, error) {

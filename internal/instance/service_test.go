@@ -125,6 +125,49 @@ func TestCreate_InvalidConfig(t *testing.T) {
 	}
 }
 
+// TestCreate_InvalidConfig_RemoteBackup covers F-1.4's InstanceConfig
+// validation: RemoteBackup, when set, needs a non-empty TargetID and every
+// Kind must be a known domain.BackupKind (target existence itself is
+// checked at upload time, not here -- see backup.Service.resolveTarget).
+func TestCreate_InvalidConfig_RemoteBackup(t *testing.T) {
+	cases := []struct {
+		name string
+		rb   *domain.RemoteBackupConfig
+	}{
+		{name: "missing target id", rb: &domain.RemoteBackupConfig{TargetID: "", Kinds: []domain.BackupKind{domain.BackupManual}}},
+		{name: "unknown kind", rb: &domain.RemoteBackupConfig{TargetID: "t1", Kinds: []domain.BackupKind{"not-a-kind"}}},
+		{name: "duplicate kind", rb: &domain.RemoteBackupConfig{TargetID: "t1", Kinds: []domain.BackupKind{domain.BackupManual, domain.BackupManual}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc, _, _ := newTestService(t)
+			cfg := validConfig(2456)
+			cfg.RemoteBackup = tc.rb
+			_, err := svc.Create(context.Background(), "main", "Main", cfg, false)
+			de := requireDomainError(t, err)
+			if de.Code != domain.CodeValidationFailed {
+				t.Errorf("expected validation_failed, got %v", de.Code)
+			}
+		})
+	}
+}
+
+// TestCreate_ValidConfig_RemoteBackup is the positive case: a well-formed
+// RemoteBackup (non-empty TargetID, known Kinds) does not fail validation --
+// the target itself need not exist yet.
+func TestCreate_ValidConfig_RemoteBackup(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	cfg := validConfig(2456)
+	cfg.RemoteBackup = &domain.RemoteBackupConfig{TargetID: "t1", Kinds: []domain.BackupKind{domain.BackupManual, domain.BackupScheduled}}
+	inst, err := svc.Create(context.Background(), "main", "Main", cfg, false)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if inst.Config.RemoteBackup == nil || inst.Config.RemoteBackup.TargetID != "t1" {
+		t.Errorf("expected RemoteBackup to round-trip, got %+v", inst.Config.RemoteBackup)
+	}
+}
+
 func TestCreate_Duplicate(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	ctx := context.Background()

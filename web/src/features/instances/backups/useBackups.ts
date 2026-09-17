@@ -1,7 +1,7 @@
 // Query hooks for the backups tab.
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
-import type { Backup, Job } from '../../../api/types'
+import type { Backup, BackupTarget, Job } from '../../../api/types'
 import { useJobDrawer } from '../../jobs'
 import { notifyError, notifySuccess } from '../../../lib/notify'
 
@@ -76,5 +76,28 @@ export function useRestoreBackup(id: string) {
       openJob(res.job.id)
     },
     onError: (err) => notifyError(err, 'Could not start restore'),
+  })
+}
+
+/** POST /instances/{id}/backups/{backupId}/upload → 202 Job: retry a backup's off-site copy (F-1.4). */
+export function useRetryRemoteUpload(id: string) {
+  const qc = useQueryClient()
+  const { openJob } = useJobDrawer()
+  return useMutation({
+    mutationFn: (backupId: number) => api.post<{ job: Job }>(`/instances/${id}/backups/${backupId}/upload`),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: backupsKey(id) })
+      notifySuccess('Off-site copy queued')
+      openJob(res.job.id)
+    },
+    onError: (err) => notifyError(err, 'Could not queue off-site copy'),
+  })
+}
+
+/** GET /backups/targets (F-1.4): the configured off-site targets, id/name/type only. */
+export function useBackupTargets() {
+  return useQuery({
+    queryKey: ['backups', 'targets'],
+    queryFn: () => api.get<{ targets: BackupTarget[] }>('/backups/targets').then((r) => r.targets),
   })
 }

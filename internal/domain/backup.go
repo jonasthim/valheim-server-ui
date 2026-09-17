@@ -17,6 +17,20 @@ func (k BackupKind) AutoDeletable() bool {
 	return k == BackupScheduled || k == BackupPreUpdate || k == BackupPreRestore
 }
 
+// AllBackupKinds lists every known backup kind, e.g. for validating
+// InstanceConfig.RemoteBackup.Kinds (F-1.4).
+var AllBackupKinds = []BackupKind{BackupManual, BackupScheduled, BackupPreUpdate, BackupPreRestore, BackupUploaded}
+
+// validBackupKind reports whether k is one of AllBackupKinds.
+func validBackupKind(k BackupKind) bool {
+	for _, known := range AllBackupKinds {
+		if k == known {
+			return true
+		}
+	}
+	return false
+}
+
 type Backup struct {
 	ID         int64      `json:"id"`
 	InstanceID string     `json:"instance_id"`
@@ -27,6 +41,31 @@ type Backup struct {
 	Note       string     `json:"note,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	Missing    bool       `json:"missing,omitempty"`
+	// RemoteStatus/RemoteError track the off-site copy (F-1.4): ""
+	// (never configured), "pending", "ok" or "failed", set by
+	// backup.Service.SetRemoteStatus.
+	RemoteStatus string `json:"remote_status,omitempty"`
+	RemoteError  string `json:"remote_error,omitempty"`
+}
+
+// BackupTargetType is where an off-site backup copy is sent.
+type BackupTargetType string
+
+const (
+	BackupTargetLocal  BackupTargetType = "local"
+	BackupTargetRclone BackupTargetType = "rclone"
+)
+
+// BackupTarget is one configured off-site backup destination
+// (Settings.Backups.Targets, F-1.4). Path is only meaningful for
+// Type==local, Remote only for Type==rclone.
+type BackupTarget struct {
+	ID       string           `json:"id"`
+	Name     string           `json:"name"`
+	Type     BackupTargetType `json:"type"`
+	Path     string           `json:"path,omitempty"`
+	Remote   string           `json:"remote,omitempty"`
+	KeepLast int              `json:"keep_last"`
 }
 
 // BackupManifest is stored as manifest.json inside every backup zip.

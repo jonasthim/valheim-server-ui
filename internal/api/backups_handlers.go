@@ -11,15 +11,17 @@ import (
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
 
-// registerBackupRoutes mounts /instances/{instanceId}/backups*
-// (docs/openapi.yaml "backups" tag, WP-06).
+// registerBackupRoutes mounts /instances/{instanceId}/backups* and
+// /backups/targets (docs/openapi.yaml "backups" tag, WP-06 + F-1.4).
 func registerBackupRoutes(r chi.Router, d *Deps) {
+	r.With(RequireRole(domain.RoleViewer)).Get("/backups/targets", handleListBackupTargets(d))
 	r.With(RequireRole(domain.RoleViewer)).Get("/instances/{instanceId}/backups", handleListBackups(d))
 	r.With(RequireRole(domain.RoleOperator)).Post("/instances/{instanceId}/backups", handleCreateBackup(d))
 	r.With(RequireRole(domain.RoleOperator)).Post("/instances/{instanceId}/backups/upload", handleUploadBackup(d))
 	r.With(RequireRole(domain.RoleOperator)).Delete("/instances/{instanceId}/backups/{backupId}", handleDeleteBackup(d))
 	r.With(RequireRole(domain.RoleOperator)).Get("/instances/{instanceId}/backups/{backupId}/download", handleDownloadBackup(d))
 	r.With(RequireRole(domain.RoleOperator)).Post("/instances/{instanceId}/backups/{backupId}/restore", handleRestoreBackup(d))
+	r.With(RequireRole(domain.RoleOperator)).Post("/instances/{instanceId}/backups/{backupId}/upload", handleRetryRemoteUpload(d))
 }
 
 // backupIDParam reads and validates the {backupId} URL parameter.
@@ -204,5 +206,54 @@ func handleRestoreBackup(d *Deps) http.HandlerFunc {
 		}
 		d.audit(r, "backup.restore", id, job.ID, map[string]any{"backup_id": backupID, "stop_if_running": req.StopIfRunning})
 		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
+	}
+}
+
+// handleRetryRemoteUpload is POST /instances/{instanceId}/backups/{backupId}/upload
+// (F-1.4): retries a backup's off-site copy as a new backup_upload job.
+func handleRetryRemoteUpload(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		backupID, err := backupIDParam(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if d.Backups == nil {
+			WriteError(w, domain.E(domain.CodeInternal, "backup service not configured"))
+			return
+		}
+		job, err := d.Backups.EnqueueRemoteUpload(r.Context(), id, backupID, RequestedBy(r))
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		d.audit(r, "backup.upload", id, strconv.FormatInt(backupID, 10), nil)
+		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
+	}
+}
+
+// handleListBackupTargets is GET /backups/targets (F-1.4): the configured
+// off-site targets with admin-only fields blanked, so any authenticated
+// viewer can pick a target for an instance.
+func handleListBackupTargets(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if d.Backups == nil {
+			WriteError(w, domain.E(domain.CodeInternal, "backup service not configured"))
+			return
+		}
+		targets, err := d.Backups.Targets(r.Context())
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if targets == nil {
+			targets = []domain.BackupTarget{}
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"targets": targets})
 	}
 }

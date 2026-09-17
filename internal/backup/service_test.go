@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jonasthim/valheim-server-ui/internal/config"
@@ -85,6 +87,21 @@ func (e *testEnv) writeWorldFiles(id, world string, db, fwl []byte) domain.Insta
 		}
 	}
 	return paths
+}
+
+// setRemoteBackup updates id's InstanceConfig.RemoteBackup in place (F-1.4).
+func (e *testEnv) setRemoteBackup(id string, cfg *domain.RemoteBackupConfig) {
+	e.t.Helper()
+	ctx := context.Background()
+	inst, err := e.inst.Get(ctx, id)
+	if err != nil {
+		e.t.Fatalf("get instance %s: %v", id, err)
+	}
+	newCfg := inst.Config
+	newCfg.RemoteBackup = cfg
+	if _, err := e.inst.Update(ctx, id, nil, &newCfg, nil); err != nil {
+		e.t.Fatalf("update instance %s config: %v", id, err)
+	}
 }
 
 // markInstalled writes a fake server binary so instance.Service.Start does
@@ -361,5 +378,270 @@ func TestCreate_MixedLayout_KeepsLegacyFilesToo(t *testing.T) {
 		if !containsString(names, want) {
 			t.Errorf("backup is missing %s; entries: %v", want, names)
 		}
+	}
+}
+
+// ---------------------------------------------------------------- off-site upload (F-1.4)
+
+// fakeUploader is a remote.Uploader stand-in (structurally compatible, no
+// import of internal/backup/remote needed): it records every call and can be
+// primed to fail like a real rclone/local error.
+type fakeUploadCall struct {
+	target     domain.BackupTarget
+	zipPath    string
+	instanceID string
+}
+
+type fakeUploader struct {
+	mu      sync.Mutex
+	calls   []fakeUploadCall
+	failErr error
+}
+
+func (f *fakeUploader) Upload(_ context.Context, target domain.BackupTarget, zipPath, instanceID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, fakeUploadCall{target: target, zipPath: zipPath, instanceID: instanceID})
+	return f.failErr
+}
+
+func (f *fakeUploader) callCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.calls)
+}
+
+func fakeTargetsFunc(targets ...domain.BackupTarget) func(context.Context) ([]domain.BackupTarget, error) {
+	return func(context.Context) ([]domain.BackupTarget, error) { return targets, nil }
+}
+
+// uploadJobFor finds the (single) backup_upload job for instanceID, failing
+// the test if there is none.
+func uploadJobFor(t *testing.T, env *testEnv, instanceID string) domain.Job {
+	t.Helper()
+	jobs, err := env.run.List(context.Background(), instanceID, "", 0)
+	if err != nil {
+		t.Fatalf("List jobs: %v", err)
+	}
+	var found []domain.Job
+	for _, j := range jobs {
+		if j.Type == domain.JobBackupUpload {
+			found = append(found, j)
+		}
+	}
+	if len(found) != 1 {
+		t.Fatalf("expected exactly 1 backup_upload job, got %d (%+v)", len(found), found)
+	}
+	return found[0]
+}
+
+func TestCreate_RemoteBackup_EnqueuesUploadJobAndMarksPending(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.writeWorldFiles("main", "Dedicated", []byte("db"), []byte("fwl"))
+	env.setRemoteBackup("main", &domain.RemoteBackupConfig{TargetID: "t1", Kinds: []domain.BackupKind{domain.BackupManual}})
+
+	up := &fakeUploader{}
+	env.svc.SetUploader(up)
+	env.svc.SetTargets(fakeTargetsFunc(domain.BackupTarget{ID: "t1", Name: "Local", Type: domain.BackupTargetLocal, Path: t.TempDir()}))
+
+	b, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if b.RemoteStatus != "pending" {
+		t.Errorf("expected remote_status=pending on the returned backup, got %q", b.RemoteStatus)
+	}
+
+	job := uploadJobFor(t, env, "main")
+	final, err := env.run.WaitFor(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("WaitFor: %v", err)
+	}
+	if final.Status != domain.JobSucceeded {
+		t.Fatalf("expected the upload job to succeed, got %v (err=%s)", final.Status, final.Error)
+	}
+	if up.callCount() != 1 {
+		t.Errorf("expected the uploader to be called once, got %d", up.callCount())
+	}
+
+	got, err := env.svc.getBackupRow(context.Background(), "main", b.ID)
+	if err != nil {
+		t.Fatalf("getBackupRow: %v", err)
+	}
+	if got.RemoteStatus != "ok" {
+		t.Errorf("expected remote_status=ok after a successful upload, got %q (err=%q)", got.RemoteStatus, got.RemoteError)
+	}
+}
+
+func TestCreate_RemoteBackup_KindNotConfigured_NoUpload(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.writeWorldFiles("main", "Dedicated", []byte("db"), []byte("fwl"))
+	// Only "scheduled" triggers an off-site copy; Create here uses "manual".
+	env.setRemoteBackup("main", &domain.RemoteBackupConfig{TargetID: "t1", Kinds: []domain.BackupKind{domain.BackupScheduled}})
+
+	up := &fakeUploader{}
+	env.svc.SetUploader(up)
+	env.svc.SetTargets(fakeTargetsFunc(domain.BackupTarget{ID: "t1", Name: "Local", Type: domain.BackupTargetLocal, Path: t.TempDir()}))
+
+	b, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if b.RemoteStatus != "" {
+		t.Errorf("expected no remote status for a kind outside Kinds, got %q", b.RemoteStatus)
+	}
+
+	jobList, err := env.run.List(context.Background(), "main", "", 0)
+	if err != nil {
+		t.Fatalf("List jobs: %v", err)
+	}
+	for _, j := range jobList {
+		if j.Type == domain.JobBackupUpload {
+			t.Fatalf("expected no backup_upload job, got %+v", j)
+		}
+	}
+	if up.callCount() != 0 {
+		t.Errorf("expected the uploader never to be called, got %d calls", up.callCount())
+	}
+}
+
+func TestCreate_RemoteBackup_NotConfigured_NoUpload(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.writeWorldFiles("main", "Dedicated", []byte("db"), []byte("fwl"))
+	// No RemoteBackup at all on the instance.
+
+	up := &fakeUploader{}
+	env.svc.SetUploader(up)
+	env.svc.SetTargets(fakeTargetsFunc(domain.BackupTarget{ID: "t1", Name: "Local", Type: domain.BackupTargetLocal, Path: t.TempDir()}))
+
+	b, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if b.RemoteStatus != "" {
+		t.Errorf("expected no remote status when remote backup is not configured, got %q", b.RemoteStatus)
+	}
+	if up.callCount() != 0 {
+		t.Errorf("expected the uploader never to be called, got %d calls", up.callCount())
+	}
+}
+
+func TestCreate_RemoteBackup_UploadFailure_MarksFailed(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.writeWorldFiles("main", "Dedicated", []byte("db"), []byte("fwl"))
+	env.setRemoteBackup("main", &domain.RemoteBackupConfig{TargetID: "t1", Kinds: []domain.BackupKind{domain.BackupManual}})
+
+	up := &fakeUploader{failErr: fmt.Errorf("disk full")}
+	env.svc.SetUploader(up)
+	env.svc.SetTargets(fakeTargetsFunc(domain.BackupTarget{ID: "t1", Name: "Local", Type: domain.BackupTargetLocal, Path: t.TempDir()}))
+
+	b, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	job := uploadJobFor(t, env, "main")
+	final, err := env.run.WaitFor(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("WaitFor: %v", err)
+	}
+	if final.Status != domain.JobFailed {
+		t.Fatalf("expected the upload job to fail, got %v", final.Status)
+	}
+	if !strings.Contains(final.Error, "disk full") {
+		t.Errorf("expected the job error to mention the upload failure, got %q", final.Error)
+	}
+
+	got, err := env.svc.getBackupRow(context.Background(), "main", b.ID)
+	if err != nil {
+		t.Fatalf("getBackupRow: %v", err)
+	}
+	if got.RemoteStatus != "failed" || !strings.Contains(got.RemoteError, "disk full") {
+		t.Errorf("expected remote_status=failed with the upload error, got status=%q error=%q", got.RemoteStatus, got.RemoteError)
+	}
+}
+
+func TestEnqueueRemoteUpload_RetriesAndRunsAgain(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.writeWorldFiles("main", "Dedicated", []byte("db"), []byte("fwl"))
+	env.setRemoteBackup("main", &domain.RemoteBackupConfig{TargetID: "t1", Kinds: []domain.BackupKind{domain.BackupManual}})
+
+	up := &fakeUploader{failErr: fmt.Errorf("timeout")}
+	env.svc.SetUploader(up)
+	env.svc.SetTargets(fakeTargetsFunc(domain.BackupTarget{ID: "t1", Name: "Local", Type: domain.BackupTargetLocal, Path: t.TempDir()}))
+
+	b, err := env.svc.Create(context.Background(), "main", domain.BackupManual, "")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	firstJob := uploadJobFor(t, env, "main")
+	if _, err := env.run.WaitFor(context.Background(), firstJob.ID); err != nil {
+		t.Fatalf("WaitFor first job: %v", err)
+	}
+
+	up.failErr = nil // the retry succeeds
+	job, err := env.svc.EnqueueRemoteUpload(context.Background(), "main", b.ID, "alice")
+	if err != nil {
+		t.Fatalf("EnqueueRemoteUpload: %v", err)
+	}
+	final, err := env.run.WaitFor(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("WaitFor retry: %v", err)
+	}
+	if final.Status != domain.JobSucceeded {
+		t.Fatalf("expected the retried upload to succeed, got %v (err=%s)", final.Status, final.Error)
+	}
+	if final.RequestedBy != "alice" {
+		t.Errorf("expected requested_by=alice, got %q", final.RequestedBy)
+	}
+	if up.callCount() != 2 {
+		t.Errorf("expected the uploader to have been called twice (initial + retry), got %d", up.callCount())
+	}
+
+	got, err := env.svc.getBackupRow(context.Background(), "main", b.ID)
+	if err != nil {
+		t.Fatalf("getBackupRow: %v", err)
+	}
+	if got.RemoteStatus != "ok" {
+		t.Errorf("expected remote_status=ok after the retry, got %q", got.RemoteStatus)
+	}
+}
+
+func TestEnqueueRemoteUpload_UnknownBackup404(t *testing.T) {
+	env := newTestEnv(t)
+	env.createInstance("main", "Dedicated", 2456)
+	env.setRemoteBackup("main", &domain.RemoteBackupConfig{TargetID: "t1", Kinds: []domain.BackupKind{domain.BackupManual}})
+
+	_, err := env.svc.EnqueueRemoteUpload(context.Background(), "main", 999, "")
+	de := requireDomainError(t, err)
+	if de.Code != domain.CodeNotFound {
+		t.Errorf("expected not_found, got %v", de.Code)
+	}
+}
+
+func TestTargets_StripsAdminOnlyFields(t *testing.T) {
+	env := newTestEnv(t)
+	env.svc.SetTargets(fakeTargetsFunc(domain.BackupTarget{
+		ID: "t1", Name: "Offsite", Type: domain.BackupTargetLocal, Path: "/mnt/backups", KeepLast: 5,
+	}))
+
+	targets, err := env.svc.Targets(context.Background())
+	if err != nil {
+		t.Fatalf("Targets: %v", err)
+	}
+	if len(targets) != 1 {
+		t.Fatalf("expected 1 target, got %d", len(targets))
+	}
+	got := targets[0]
+	if got.ID != "t1" || got.Name != "Offsite" || got.Type != domain.BackupTargetLocal {
+		t.Errorf("unexpected target identity: %+v", got)
+	}
+	if got.Path != "" {
+		t.Errorf("expected Path to be stripped, got %q", got.Path)
 	}
 }

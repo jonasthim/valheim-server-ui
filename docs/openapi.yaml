@@ -778,6 +778,32 @@ paths:
       responses:
         '202': { $ref: '#/components/responses/JobResponse' }
         '409': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/backups/{backupId}/upload:
+    post:
+      tags: [backups]
+      summary: Retry a backup's off-site copy (F-1.4)
+      x-role: operator
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - { $ref: '#/components/parameters/backupId' }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+        '422': { $ref: '#/components/responses/Error' }
+  /backups/targets:
+    get:
+      tags: [backups]
+      summary: List configured off-site backup targets (id/name/type only; F-1.4)
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [targets]
+                properties:
+                  targets: { type: array, items: { $ref: '#/components/schemas/BackupTarget' } }
 
   # ------------------------------------------------------------------ schedules
   /instances/{instanceId}/schedules:
@@ -1691,7 +1717,7 @@ components:
 
     Settings:
       type: object
-      required: [auth, updates, thunderstore, app, notifications]
+      required: [auth, updates, thunderstore, app, notifications, backups]
       properties:
         auth:
           type: object
@@ -1716,6 +1742,11 @@ components:
             update_check_hours: { type: integer, minimum: 0, default: 6, description: 0 disables release polling }
             auto_upgrade: { type: boolean, default: false, description: Install new releases automatically when no players are online on any instance }
         notifications: { $ref: '#/components/schemas/NotifySettings' }
+        backups:
+          type: object
+          required: [targets]
+          properties:
+            targets: { type: array, items: { $ref: '#/components/schemas/BackupTarget' } }
 
     SystemInfo:
       type: object
@@ -1820,6 +1851,7 @@ components:
         backup_keep_last: { type: integer, minimum: 0, default: 10 }
         backup_keep_days: { type: integer, minimum: 0, default: 30 }
         backup_before_update: { type: boolean, default: true }
+        remote_backup: { $ref: '#/components/schemas/RemoteBackupConfig' }
 
     A2SInfo:
       type: object
@@ -1995,6 +2027,36 @@ components:
         note: { type: string }
         created_at: { type: string, format: date-time }
         missing: { type: boolean, description: DB row exists but file is gone }
+        remote_status:
+          type: string
+          enum: [pending, ok, failed]
+          description: Off-site copy status (F-1.4); absent when no off-site target applies to this backup.
+        remote_error: { type: string, description: Set when remote_status is failed }
+
+    BackupTargetType:
+      type: string
+      enum: [local, rclone]
+
+    BackupTarget:
+      type: object
+      required: [id, name, type, keep_last]
+      properties:
+        id: { type: string, readOnly: true }
+        name: { type: string, minLength: 1, maxLength: 64 }
+        type: { $ref: '#/components/schemas/BackupTargetType' }
+        path: { type: string, description: 'Local absolute directory (type=local only); omitted from GET /backups/targets' }
+        remote: { type: string, description: 'rclone remote, e.g. "b2:my-bucket/valheim" (type=rclone only); omitted from GET /backups/targets' }
+        keep_last: { type: integer, minimum: 0, maximum: 1000, default: 0, description: Newest copies to keep at this target; 0 disables pruning }
+
+    RemoteBackupConfig:
+      type: object
+      required: [target_id, kinds]
+      properties:
+        target_id: { type: string, description: 'id of a Settings.backups.targets entry (existence checked at upload time, not on save)' }
+        kinds:
+          type: array
+          items: { $ref: '#/components/schemas/BackupKind' }
+          description: Backup kinds that trigger an off-site copy
 
     ScheduleKind:
       type: string
@@ -2404,7 +2466,7 @@ components:
 
     JobType:
       type: string
-      enum: [install, update, backup, restore, world_import, world_regenerate, mod_install, mod_update, mod_uninstall, bepinex_install, agent_install, scheduled_restart, thunderstore_refresh, self_upgrade, restart]
+      enum: [install, update, backup, backup_upload, restore, world_import, world_regenerate, mod_install, mod_update, mod_uninstall, bepinex_install, agent_install, scheduled_restart, thunderstore_refresh, self_upgrade, restart]
 
     JobStatus:
       type: string

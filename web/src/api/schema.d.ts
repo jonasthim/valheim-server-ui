@@ -1933,6 +1933,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/backups/{backupId}/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Retry a backup's off-site copy (F-1.4) */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                    backupId: components["parameters"]["backupId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                202: components["responses"]["JobResponse"];
+                404: components["responses"]["Error"];
+                422: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/backups/targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List configured off-site backup targets (id/name/type only; F-1.4) */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            targets: components["schemas"]["BackupTarget"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/schedules": {
         parameters: {
             query?: never;
@@ -3692,6 +3762,9 @@ export interface components {
                 auto_upgrade: boolean;
             };
             notifications: components["schemas"]["NotifySettings"];
+            backups: {
+                targets: components["schemas"]["BackupTarget"][];
+            };
         };
         SystemInfo: {
             version: string;
@@ -3814,6 +3887,7 @@ export interface components {
             backup_keep_days: number;
             /** @default true */
             backup_before_update: boolean;
+            remote_backup?: components["schemas"]["RemoteBackupConfig"];
         };
         A2SInfo: {
             server_name: string;
@@ -3978,6 +4052,35 @@ export interface components {
             created_at: string;
             /** @description DB row exists but file is gone */
             missing?: boolean;
+            /**
+             * @description Off-site copy status (F-1.4); absent when no off-site target applies to this backup.
+             * @enum {string}
+             */
+            remote_status?: "pending" | "ok" | "failed";
+            /** @description Set when remote_status is failed */
+            remote_error?: string;
+        };
+        /** @enum {string} */
+        BackupTargetType: "local" | "rclone";
+        BackupTarget: {
+            readonly id: string;
+            name: string;
+            type: components["schemas"]["BackupTargetType"];
+            /** @description Local absolute directory (type=local only); omitted from GET /backups/targets */
+            path?: string;
+            /** @description rclone remote, e.g. "b2:my-bucket/valheim" (type=rclone only); omitted from GET /backups/targets */
+            remote?: string;
+            /**
+             * @description Newest copies to keep at this target; 0 disables pruning
+             * @default 0
+             */
+            keep_last: number;
+        };
+        RemoteBackupConfig: {
+            /** @description id of a Settings.backups.targets entry (existence checked at upload time, not on save) */
+            target_id: string;
+            /** @description Backup kinds that trigger an off-site copy */
+            kinds: components["schemas"]["BackupKind"][];
         };
         /** @enum {string} */
         ScheduleKind: "restart" | "backup" | "update";
@@ -4382,7 +4485,7 @@ export interface components {
             position?: components["schemas"]["Vec3"];
         };
         /** @enum {string} */
-        JobType: "install" | "update" | "backup" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "agent_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade" | "restart";
+        JobType: "install" | "update" | "backup" | "backup_upload" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "agent_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade" | "restart";
         /** @enum {string} */
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";
         Job: {

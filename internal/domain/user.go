@@ -112,6 +112,11 @@ type Settings struct {
 	// Notifications configures outbound alerting channels (F-1.1). Zero value
 	// means no channels configured.
 	Notifications NotifySettings `json:"notifications"`
+	// Backups configures off-site backup targets (F-1.4). Zero value means no
+	// targets configured.
+	Backups struct {
+		Targets []BackupTarget `json:"targets"`
+	} `json:"backups"`
 }
 
 // DefaultSettings returns the settings used when the row does not exist yet.

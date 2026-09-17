@@ -101,6 +101,14 @@ type BackupService interface {
 	EnqueueWorldRegenerate(ctx context.Context, instanceID, world string, stopIfRunning bool, requestedBy string) (*domain.Job, error)
 	// ExportWorld writes a zip of <world>.db/.fwl to w.
 	ExportWorld(ctx context.Context, instanceID, world string, w io.Writer) error
+
+	// EnqueueRemoteUpload retries an existing backup's off-site copy as a
+	// backup_upload job (F-1.4).
+	EnqueueRemoteUpload(ctx context.Context, instanceID string, backupID int64, requestedBy string) (*domain.Job, error)
+	// Targets returns the configured off-site backup targets with admin-only
+	// fields (Path/Remote) blanked, so any authenticated viewer can pick a
+	// target for an instance without seeing local paths or rclone remotes.
+	Targets(ctx context.Context) ([]domain.BackupTarget, error)
 }
 
 // WP-07
