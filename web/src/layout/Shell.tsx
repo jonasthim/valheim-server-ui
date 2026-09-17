@@ -36,7 +36,7 @@ import { useAuth } from '../auth/useAuth'
 import { useEvents } from '../events/useEvents'
 import { ActivityIndicator } from '../features/jobs/ActivityIndicator'
 import { JobDrawerHost } from '../features/jobs/JobDrawerHost'
-import { LiveStatusBadge, useSystemInfo } from '../features/system'
+import { LiveStatusBadge, UpgradeFlowHost, useSystemInfo } from '../features/system'
 import { stateColor, useInstances } from '../features/instances'
 import { BrandMark, ErrorBoundary, StatusDot } from '../ui'
 import classes from './Shell.module.css'
@@ -137,135 +137,137 @@ export function Shell() {
 
   return (
     <JobDrawerHost>
-      <AppShell
-        header={{ height: 56 }}
-        navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
-        padding={{ base: 'md', md: 'xl' }}
-      >
-        <AppShell.Header className={classes.header}>
-          <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-            <Group gap="sm" wrap="nowrap">
-              <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
-              <Link to="/" className={classes.brand} onClick={close}>
-                <BrandMark size={26} />
-                <Stack gap={0}>
-                  <span className={classes.brandName}>Valheim</span>
-                  <span className={classes.brandSub}>Server UI</span>
-                </Stack>
-              </Link>
+      <UpgradeFlowHost>
+        <AppShell
+          header={{ height: 56 }}
+          navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
+          padding={{ base: 'md', md: 'xl' }}
+        >
+          <AppShell.Header className={classes.header}>
+            <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+              <Group gap="sm" wrap="nowrap">
+                <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
+                <Link to="/" className={classes.brand} onClick={close}>
+                  <BrandMark size={26} />
+                  <Stack gap={0}>
+                    <span className={classes.brandName}>Valheim</span>
+                    <span className={classes.brandSub}>Server UI</span>
+                  </Stack>
+                </Link>
+              </Group>
+              <Group gap="xs" wrap="nowrap">
+                <LiveStatusBadge />
+                <ActivityIndicator />
+                <ColorSchemeToggle />
+              </Group>
             </Group>
-            <Group gap="xs" wrap="nowrap">
-              <LiveStatusBadge />
-              <ActivityIndicator />
-              <ColorSchemeToggle />
-            </Group>
-          </Group>
-        </AppShell.Header>
+          </AppShell.Header>
 
-        <AppShell.Navbar className={classes.navbar}>
-          <ScrollArea style={{ flex: 1 }} px="xs" py="xs">
-            {NAV_GROUPS.map((group) => {
-              const items = group.items.filter((n) => hasRole(n.min))
-              return (
-                <Fragment key={group.label}>
-                  {items.length > 0 && (
-                    <div>
-                      <span className={classes.groupLabel}>{group.label}</span>
-                      <Stack gap={2}>
-                        {items.map((n) => {
-                          const active = n.to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(n.to)
-                          return (
+          <AppShell.Navbar className={classes.navbar}>
+            <ScrollArea style={{ flex: 1 }} px="xs" py="xs">
+              {NAV_GROUPS.map((group) => {
+                const items = group.items.filter((n) => hasRole(n.min))
+                return (
+                  <Fragment key={group.label}>
+                    {items.length > 0 && (
+                      <div>
+                        <span className={classes.groupLabel}>{group.label}</span>
+                        <Stack gap={2}>
+                          {items.map((n) => {
+                            const active = n.to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(n.to)
+                            return (
+                              <NavLink
+                                key={n.to}
+                                component={Link}
+                                to={n.to}
+                                label={n.label}
+                                className={classes.link}
+                                leftSection={
+                                  <span className={classes.linkIcon}>
+                                    <n.icon size={18} stroke={1.8} />
+                                  </span>
+                                }
+                                active={active}
+                                variant="subtle"
+                                onClick={close}
+                              />
+                            )
+                          })}
+                        </Stack>
+                      </div>
+                    )}
+                    {group.label === 'Servers' && showInstancesGroup && (
+                      <div>
+                        <span className={classes.groupLabel}>Instances</span>
+                        <Stack gap={2}>
+                          {visibleInstances.map((instance) => {
+                            const active = loc.pathname.startsWith(`/instances/${instance.id}/`)
+                            return (
+                              <NavLink
+                                key={instance.id}
+                                component={Link}
+                                to={`/instances/${instance.id}/overview`}
+                                label={instance.name}
+                                className={classes.link}
+                                leftSection={
+                                  <StatusDot color={stateColor(instance.status.state)} pulse={instance.status.state === 'running'} />
+                                }
+                                rightSection={
+                                  instance.status.players_online > 0 ? (
+                                    <Text size="xs" c="dimmed">
+                                      {instance.status.players_online}
+                                    </Text>
+                                  ) : undefined
+                                }
+                                active={active}
+                                variant="subtle"
+                                onClick={close}
+                              />
+                            )
+                          })}
+                          {hasMoreInstances && (
                             <NavLink
-                              key={n.to}
                               component={Link}
-                              to={n.to}
-                              label={n.label}
+                              to="/"
+                              label="All instances"
                               className={classes.link}
-                              leftSection={
-                                <span className={classes.linkIcon}>
-                                  <n.icon size={18} stroke={1.8} />
-                                </span>
-                              }
-                              active={active}
                               variant="subtle"
                               onClick={close}
                             />
-                          )
-                        })}
-                      </Stack>
-                    </div>
-                  )}
-                  {group.label === 'Servers' && showInstancesGroup && (
-                    <div>
-                      <span className={classes.groupLabel}>Instances</span>
-                      <Stack gap={2}>
-                        {visibleInstances.map((instance) => {
-                          const active = loc.pathname.startsWith(`/instances/${instance.id}/`)
-                          return (
-                            <NavLink
-                              key={instance.id}
-                              component={Link}
-                              to={`/instances/${instance.id}/overview`}
-                              label={instance.name}
-                              className={classes.link}
-                              leftSection={
-                                <StatusDot color={stateColor(instance.status.state)} pulse={instance.status.state === 'running'} />
-                              }
-                              rightSection={
-                                instance.status.players_online > 0 ? (
-                                  <Text size="xs" c="dimmed">
-                                    {instance.status.players_online}
-                                  </Text>
-                                ) : undefined
-                              }
-                              active={active}
-                              variant="subtle"
-                              onClick={close}
-                            />
-                          )
-                        })}
-                        {hasMoreInstances && (
-                          <NavLink
-                            component={Link}
-                            to="/"
-                            label="All instances"
-                            className={classes.link}
-                            variant="subtle"
-                            onClick={close}
-                          />
-                        )}
-                      </Stack>
-                    </div>
-                  )}
-                </Fragment>
-              )
-            })}
-          </ScrollArea>
-          <div className={classes.navFooter}>
-            {userMenu}
-            <Group justify="space-between" px={8} pt={6}>
-              <Text size="xs" c="dimmed">
-                {system.data?.version ? `v${system.data.version.replace(/^v/, '')}` : ''}
-              </Text>
-              {system.data?.app_update?.update_available && (
-                <Badge size="xs" color="ember" variant="filled" component={Link} to="/settings" style={{ cursor: 'pointer' }}>
-                  Update
-                </Badge>
-              )}
-            </Group>
-          </div>
-        </AppShell.Navbar>
+                          )}
+                        </Stack>
+                      </div>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </ScrollArea>
+            <div className={classes.navFooter}>
+              {userMenu}
+              <Group justify="space-between" px={8} pt={6}>
+                <Text size="xs" c="dimmed">
+                  {system.data?.version ? `v${system.data.version.replace(/^v/, '')}` : ''}
+                </Text>
+                {system.data?.app_update?.update_available && (
+                  <Badge size="xs" color="ember" variant="filled" component={Link} to="/settings" style={{ cursor: 'pointer' }}>
+                    Update
+                  </Badge>
+                )}
+              </Group>
+            </div>
+          </AppShell.Navbar>
 
-        <AppShell.Main className={classes.main}>
-          <div className={classes.content}>
-            <ErrorBoundary key={loc.pathname}>
-              <Suspense fallback={<Center h="50vh"><Loader /></Center>}>
-                <Outlet />
-              </Suspense>
-            </ErrorBoundary>
-          </div>
-        </AppShell.Main>
-      </AppShell>
+          <AppShell.Main className={classes.main}>
+            <div className={classes.content}>
+              <ErrorBoundary key={loc.pathname}>
+                <Suspense fallback={<Center h="50vh"><Loader /></Center>}>
+                  <Outlet />
+                </Suspense>
+              </ErrorBoundary>
+            </div>
+          </AppShell.Main>
+        </AppShell>
+      </UpgradeFlowHost>
     </JobDrawerHost>
   )
 }

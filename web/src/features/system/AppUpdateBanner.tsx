@@ -1,43 +1,21 @@
 // Dashboard-facing "a new manager version is available" banner. Renders
-// nothing when there is no update, but still keeps the restart watcher
-// mounted so it can catch a self-upgrade job triggered from here.
+// nothing when there is no update. Upgrade confirm/mutate/watch state lives
+// in useUpgradeAppAction + UpgradeFlowHost, shared with SettingsPage.
 import { useState } from 'react'
 import { Alert, Button, Group, Text, Tooltip } from '@mantine/core'
-import { modals } from '@mantine/modals'
 import { IconRocket, IconSparkles } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import type { AppUpdateInfo } from '../../api/types'
 import { fmtAgo } from '../../lib/format'
-import { useJobDrawer } from '../jobs'
-import { ManagerRestartOverlay } from './ManagerRestartOverlay'
 import { ReleaseNotesModal } from './ReleaseNotesModal'
-import { UPGRADE_EXPLANATION, useManagerRestartWatch, useUpgradeApp, useUpgradeInFlight } from './useAppUpdate'
+import { useUpgradeAppAction } from './useUpgradeAppAction'
 
 export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | undefined }) {
   const { hasRole } = useAuth()
-  const { openJob } = useJobDrawer()
-  const upgrade = useUpgradeApp()
   const [notesOpen, setNotesOpen] = useState(false)
-  const [jobId, setJobId] = useState<string | undefined>(undefined)
-  const { inFlight, target } = useUpgradeInFlight()
-  const { restarting } = useManagerRestartWatch({ jobId, active: inFlight })
+  const { upgrade, isPending, inFlight, target } = useUpgradeAppAction()
 
   if (!appUpdate?.update_available) return null
-
-  function confirmUpgrade() {
-    modals.openConfirmModal({
-      title: 'Upgrade Valheim Server UI',
-      children: <Text size="sm">{UPGRADE_EXPLANATION}</Text>,
-      labels: { confirm: 'Upgrade now', cancel: 'Cancel' },
-      onConfirm: () =>
-        upgrade.mutate(undefined, {
-          onSuccess: (res) => {
-            setJobId(res.job.id)
-            openJob(res.job.id)
-          },
-        }),
-    })
-  }
 
   return (
     <>
@@ -66,8 +44,8 @@ export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | unde
                   size="xs"
                   leftSection={<IconRocket size={14} />}
                   disabled={!appUpdate.can_self_upgrade || inFlight}
-                  loading={upgrade.isPending || inFlight}
-                  onClick={confirmUpgrade}
+                  loading={isPending || inFlight}
+                  onClick={upgrade}
                 >
                   {inFlight ? `Upgrading${target ? ` to ${target}` : ''}…` : 'Upgrade'}
                 </Button>
@@ -78,7 +56,6 @@ export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | unde
       </Alert>
 
       <ReleaseNotesModal opened={notesOpen} onClose={() => setNotesOpen(false)} appUpdate={appUpdate} />
-      <ManagerRestartOverlay visible={restarting || inFlight} />
     </>
   )
 }

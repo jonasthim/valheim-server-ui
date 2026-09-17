@@ -20,7 +20,6 @@ import {
   TextInput,
   Tooltip,
 } from '@mantine/core'
-import { modals } from '@mantine/modals'
 import { IconAlertTriangle, IconCheck, IconCopy, IconPlugConnected, IconRefresh, IconRocket } from '@tabler/icons-react'
 import { api, ApiError } from '../../api/client'
 import { useAuth } from '../../auth/useAuth'
@@ -28,17 +27,7 @@ import type { Settings } from '../../api/types'
 import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { PageHeader, SectionCard, LoadError } from '../../ui'
-import { useJobDrawer } from '../jobs'
-import {
-  ManagerRestartOverlay,
-  ReleaseNotesModal,
-  UPGRADE_EXPLANATION,
-  useCheckAppUpdate,
-  useManagerRestartWatch,
-  useSystemInfo,
-  useUpgradeApp,
-  useUpgradeInFlight,
-} from '../system'
+import { ReleaseNotesModal, useCheckAppUpdate, useSystemInfo, useUpgradeAppAction } from '../system'
 import { NotificationsCard } from './NotificationsCard'
 import { DEFAULT_ROLE_OPTIONS } from './options'
 import { RoleMappingEditor } from './RoleMappingEditor'
@@ -84,28 +73,14 @@ export function SettingsPage() {
 
   const systemQ = useSystemInfo()
   const checkAppUpdate = useCheckAppUpdate()
-  const upgradeApp = useUpgradeApp()
-  const { openJob } = useJobDrawer()
   const [notesOpen, setNotesOpen] = useState(false)
-  const [upgradeJobId, setUpgradeJobId] = useState<string | undefined>(undefined)
-  const { inFlight: upgradeInFlight, target: upgradeTarget } = useUpgradeInFlight()
-  const { restarting } = useManagerRestartWatch({ jobId: upgradeJobId, active: upgradeInFlight })
+  const {
+    upgrade,
+    isPending: upgradePending,
+    inFlight: upgradeInFlight,
+    target: upgradeTarget,
+  } = useUpgradeAppAction()
   const canAdmin = hasRole('admin')
-
-  function confirmUpgradeApp() {
-    modals.openConfirmModal({
-      title: 'Upgrade Valheim Server UI',
-      children: <Text size="sm">{UPGRADE_EXPLANATION}</Text>,
-      labels: { confirm: 'Upgrade now', cancel: 'Cancel' },
-      onConfirm: () =>
-        upgradeApp.mutate(undefined, {
-          onSuccess: (res) => {
-            setUpgradeJobId(res.job.id)
-            openJob(res.job.id)
-          },
-        }),
-    })
-  }
 
   useEffect(() => {
     if (settingsQ.data) form.setValues(settingsQ.data)
@@ -412,8 +387,8 @@ export function SettingsPage() {
                         !systemQ.data?.app_update?.can_self_upgrade ||
                         upgradeInFlight
                       }
-                      loading={upgradeApp.isPending || upgradeInFlight}
-                      onClick={confirmUpgradeApp}
+                      loading={upgradePending || upgradeInFlight}
+                      onClick={upgrade}
                     >
                       {upgradeInFlight ? `Upgrading${upgradeTarget ? ` to ${upgradeTarget}` : ''}…` : 'Upgrade now'}
                     </Button>
@@ -434,7 +409,6 @@ export function SettingsPage() {
       {systemQ.data?.app_update && (
         <ReleaseNotesModal opened={notesOpen} onClose={() => setNotesOpen(false)} appUpdate={systemQ.data.app_update} />
       )}
-      <ManagerRestartOverlay visible={restarting || upgradeInFlight} />
     </Stack>
   )
 }
