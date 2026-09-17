@@ -1,12 +1,12 @@
 // Status card for the Valheim UI Agent on the Mods tab: installed/connected
 // state, version against the bundled one, and the install/update job.
-import { Badge, Button, Group, Skeleton, Stack, Text } from '@mantine/core'
-import { modals } from '@mantine/modals'
+import { Badge, Button, Group, Skeleton, Text } from '@mantine/core'
 import { IconPlugConnected } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { SectionCard, StatusPill } from '../../ui'
 import { useInstance } from '../instances/useInstance'
 import { useModsOverview } from '../mods/useMods'
+import { openConfirmInstallAgent } from './openConfirmInstallAgent'
 import { useAgent, useInstallAgent } from './useAgent'
 
 export function AgentCard({ id }: { id: string }) {
@@ -19,28 +19,6 @@ export function AgentCard({ id }: { id: string }) {
   const isRunning = ['running', 'starting', 'stopping'].includes(instance.data?.status.state ?? '')
   const bepinexInstalled = !!mods.data?.bepinex.installed
   const info = agent.data
-
-  function confirmInstall(update: boolean) {
-    const verb = update ? 'Update' : 'Install'
-    modals.openConfirmModal({
-      title: `${verb} Valheim UI Agent`,
-      children: (
-        <Stack gap="xs">
-          <span>
-            The agent is installed while the instance is <strong>stopped</strong>; the game keeps plugin files open
-            while it runs.
-          </span>
-          {isRunning && (
-            <span style={{ color: 'var(--vh-text-soft)' }}>
-              This instance is running. Confirming will stop it, {verb.toLowerCase()} the agent, and start it again.
-            </span>
-          )}
-        </Stack>
-      ),
-      labels: { confirm: isRunning ? `Stop, ${verb.toLowerCase()} and start again` : verb, cancel: 'Cancel' },
-      onConfirm: () => install.mutate({ stop_if_running: isRunning }),
-    })
-  }
 
   if (agent.isLoading) {
     return (
@@ -75,7 +53,18 @@ export function AgentCard({ id }: { id: string }) {
             </Badge>
           )}
           {hasRole('operator') && bepinexInstalled && (!info?.installed || info.update_available) && (
-            <Button size="xs" variant="light" loading={install.isPending} onClick={() => confirmInstall(!!info?.installed)}>
+            <Button
+              size="xs"
+              variant="light"
+              loading={install.isPending}
+              onClick={() =>
+                openConfirmInstallAgent({
+                  update: !!info?.installed,
+                  isRunning,
+                  onConfirm: (stop) => install.mutate({ stop_if_running: stop }),
+                })
+              }
+            >
               {info?.installed ? 'Update agent' : 'Install agent'}
             </Button>
           )}

@@ -6,7 +6,7 @@ import { KnownPlayersTable } from './players/KnownPlayersTable'
 import { PlayersOnlinePanel } from './players/PlayersOnlinePanel'
 import { LIST_KINDS, LIST_KIND_LABELS } from './players/constants'
 import { useAddPlayerToList, usePlayers } from './players/usePlayers'
-import { useAgent, useAgentCommand } from '../agent'
+import { AgentSetupNotice, useAgent, useAgentCommand } from '../agent'
 
 // Owned by WP-12 (docs/WORKPLAN.md). Props: the instance id.
 export function PlayersTab({ id }: { id: string }) {
@@ -20,6 +20,8 @@ export function PlayersTab({ id }: { id: string }) {
 
   return (
     <Stack gap="md">
+      <AgentSetupNotice id={id} context="players" />
+
       <PlayersOnlinePanel
         data={playersQ.data}
         isLoading={playersQ.isLoading}

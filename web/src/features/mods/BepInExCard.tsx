@@ -1,11 +1,11 @@
 // BepInEx (mod loader) status card: install/upgrade, enable toggle, and the
 // pending-restart hint. See docs/ARCHITECTURE.md §12.
-import { Alert, Badge, Button, Group, Skeleton, Stack, Switch } from '@mantine/core'
-import { modals } from '@mantine/modals'
+import { Alert, Badge, Button, Group, Skeleton, Switch } from '@mantine/core'
 import { IconAlertTriangle } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { SectionCard, StatusPill } from '../../ui'
 import { useInstance } from '../instances/useInstance'
+import { openConfirmInstallBepinex } from './openConfirmInstallBepinex'
 import { useInstallBepinex, useModsOverview, useSetBepinexEnabled } from './useMods'
 
 export function BepInExCard({ id }: { id: string }) {
@@ -16,31 +16,6 @@ export function BepInExCard({ id }: { id: string }) {
   const setEnabled = useSetBepinexEnabled(id)
 
   const isRunning = ['running', 'starting', 'stopping'].includes(instance.data?.status.state ?? '')
-
-  function confirmInstall(upgrade: boolean) {
-    const verb = upgrade ? 'Upgrade' : 'Install'
-    modals.openConfirmModal({
-      title: `${verb} BepInEx`,
-      children: (
-        <Stack gap="xs">
-          <span>
-            BepInEx must be installed while the instance is <strong>stopped</strong>.
-          </span>
-          {isRunning && (
-            <span style={{ color: 'var(--vh-text-soft)' }}>
-              This instance is currently running. Confirming will stop it, {verb.toLowerCase()} BepInEx, and start it
-              again afterwards.
-            </span>
-          )}
-        </Stack>
-      ),
-      labels: {
-        confirm: isRunning ? `Stop, ${verb.toLowerCase()} and start again` : verb,
-        cancel: 'Cancel',
-      },
-      onConfirm: () => installBepinex.mutate({ stop_if_running: isRunning }),
-    })
-  }
 
   if (overview.isLoading) {
     return (
@@ -80,7 +55,13 @@ export function BepInExCard({ id }: { id: string }) {
               size="xs"
               variant={bepinex?.installed ? 'light' : 'filled'}
               loading={installBepinex.isPending}
-              onClick={() => confirmInstall(!!bepinex?.installed)}
+              onClick={() =>
+                openConfirmInstallBepinex({
+                  upgrade: !!bepinex?.installed,
+                  isRunning,
+                  onConfirm: (stop) => installBepinex.mutate({ stop_if_running: stop }),
+                })
+              }
             >
               {bepinex?.installed
                 ? bepinex.update_available

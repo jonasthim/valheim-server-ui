@@ -21,12 +21,11 @@ import {
   IconMapOff,
   IconRefresh,
 } from "@tabler/icons-react";
-import { Link } from "react-router-dom";
 import type { ExploredInfo } from "../../api/types";
 import { useAuth } from "../../auth/useAuth";
 import { fmtAgo } from "../../lib/format";
 import { SectionCard, StatusPill } from "../../ui";
-import { useAgent } from "../agent";
+import { AgentSetupNotice, useAgent } from "../agent";
 import type { MapIconName } from "./MapIcons";
 import {
   MapView,
@@ -386,27 +385,19 @@ export function MapTab({ id }: { id: string }) {
           </>
         ) : (
           <>
-            <IconMapOff size={28} color="var(--vh-text-soft)" />
-            <Text size="sm" c="white" ta="center">
-              {!agent.data?.installed
-                ? "Install the Valheim UI Agent (Mods tab) to get a map of this world."
-                : !data.connected
-                  ? "No map yet. Start the server with the agent; it renders the map a few seconds after the world loads."
-                  : !data.map_supported
-                    ? `The agent running in this server (v${data.agent_version || "?"}) predates the map. Update it on the Mods tab; the server restarts and the map renders a minute or two later.`
+            {!agent.data?.installed || (data.connected && !data.map_supported) ? (
+              <AgentSetupNotice id={id} context="map" compact />
+            ) : (
+              <>
+                <IconMapOff size={28} color="var(--vh-text-soft)" />
+                <Text size="sm" c="white" ta="center">
+                  {!data.connected
+                    ? "No map yet. Start the server with the agent; it renders the map a few seconds after the world loads."
                     : info?.state === "failed"
                       ? `The render failed: ${info.error || "unknown error"}`
                       : "Waiting for the server to start the render…"}
-            </Text>
-            {data.connected && !data.map_supported && (
-              <Button
-                size="xs"
-                variant="light"
-                component={Link}
-                to={`/instances/${id}/mods`}
-              >
-                Open the Mods tab
-              </Button>
+                </Text>
+              </>
             )}
           </>
         )}
@@ -543,16 +534,7 @@ export function MapTab({ id }: { id: string }) {
             </Alert>
           )}
           {data.connected && data.map_supported && !data.layers_supported && (
-            <Alert
-              color="yellow"
-              variant="light"
-              icon={<IconAlertTriangle size={16} />}
-            >
-              The agent in this server (v{data.agent_version || "?"}) draws the
-              map in the older flat style. Update it from the{" "}
-              <Link to={`/instances/${id}/mods`}>Mods tab</Link> (the server
-              restarts) for the in-game look and deep zoom.
-            </Alert>
+            <AgentSetupNotice id={id} context="map" compact />
           )}
         </Stack>
       </SectionCard>

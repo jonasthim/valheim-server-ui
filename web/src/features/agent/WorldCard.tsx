@@ -6,21 +6,24 @@ import { IconDeviceFloppy, IconMoon, IconSun, IconSwords } from '@tabler/icons-r
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatTile, StatusPill } from '../../ui'
+import { AgentSetupNotice } from './AgentSetupNotice'
 import { BroadcastButton } from './BroadcastButton'
 import { ChatButton } from './ChatButton'
 import { WorldControls } from './WorldControls'
-import { fmtWorldTime, useAgent, useAgentCommand } from './useAgent'
+import { fmtWorldTime, useAgentCommand } from './useAgent'
+import { useAgentSetup } from './useAgentSetup'
 
 const MAX_KEYS = 12
 
 export function WorldCard({ id }: { id: string }) {
   const { hasRole } = useAuth()
-  const agent = useAgent(id)
   const command = useAgentCommand(id)
-  const info = agent.data
+  const { stage, info } = useAgentSetup(id)
 
-  // Nothing to show until the plugin exists; the Mods tab explains how.
-  if (!info?.installed) return null
+  // Nothing to show until the agent is ready or merely offline; otherwise
+  // the notice explains what's missing and offers the fix in place.
+  if (stage !== 'ready' && stage !== 'offline') return <AgentSetupNotice id={id} context="overview" />
+  if (!info) return null
 
   const canOperate = hasRole('operator')
   const st = info.connected ? info.status : undefined
