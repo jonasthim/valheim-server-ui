@@ -285,7 +285,12 @@ func validateChannelURL(ch *domain.NotifyChannel) string {
 			return "telegram URLs must point at api.telegram.org"
 		}
 	case domain.NotifyChannelNtfy, domain.NotifyChannelWebhook:
-		// any host
+		// Any host, including LAN and loopback addresses over plain http:
+		// a self-hosted ntfy or a Home Assistant webhook on the local
+		// network is the primary use case for a homelab manager. Only
+		// admins can configure channels, and the request is a POST with
+		// fixed alert text, so this is not an SSRF surface worth closing at
+		// the cost of the intended deployments.
 	}
 	return ""
 }
