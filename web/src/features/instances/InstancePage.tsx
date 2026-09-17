@@ -1,19 +1,9 @@
 import { lazy, Suspense } from 'react'
-import { Center, Loader, Stack, Tabs } from '@mantine/core'
+import { Badge, Box, Center, Indicator, Loader, NativeSelect, Stack, Tabs } from '@mantine/core'
 import { useNavigate, useParams } from 'react-router-dom'
-import {
-  IconAdjustments,
-  IconArchive,
-  IconCalendar,
-  IconLayoutDashboard,
-  IconMap2,
-  IconPuzzle,
-  IconTerminal2,
-  IconUsers,
-  IconWorld,
-} from '@tabler/icons-react'
 import { useInstance } from './useInstance'
-import { INSTANCE_TABS, type InstanceTab } from './tabs'
+import { INSTANCE_TAB_ICONS, INSTANCE_TAB_LABELS, INSTANCE_TABS } from './tabs'
+import { useInstanceTabBadges } from './useTabBadges'
 // Tab panels are code-split; keepMounted={false} means each loads on first
 // visit, behind the Suspense boundary around the panels below.
 const OverviewTab = lazy(() => import('./OverviewTab').then((m) => ({ default: m.OverviewTab })))
@@ -28,18 +18,6 @@ const SchedulesTab = lazy(() => import('./SchedulesTab').then((m) => ({ default:
 import { LoadError, PageHeader, StatusPill } from '../../ui'
 import { stateColor, stateLabel } from './instanceHelpers'
 
-const TAB_ICONS: Record<InstanceTab, typeof IconLayoutDashboard> = {
-  overview: IconLayoutDashboard,
-  console: IconTerminal2,
-  map: IconMap2,
-  config: IconAdjustments,
-  players: IconUsers,
-  worlds: IconWorld,
-  backups: IconArchive,
-  mods: IconPuzzle,
-  schedules: IconCalendar,
-}
-
 // Instance page with tab routing (/instances/:id/:tab). Owned by WP-11; the tab
 // components are owned by WP-11 (Overview/Console/Config), WP-12
 // (Players/Worlds/Backups/Schedules) and WP-13 (Mods). Keep this file thin.
@@ -47,6 +25,7 @@ export function InstancePage() {
   const { id = '', tab = 'overview' } = useParams()
   const navigate = useNavigate()
   const inst = useInstance(id)
+  const badges = useInstanceTabBadges(id)
   const state = inst.data?.status.state
   const config = inst.data?.config
 
@@ -74,18 +53,42 @@ export function InstancePage() {
         description={config ? `${config.name} · world ${config.world} · port ${config.port}` : undefined}
       />
       <Tabs value={tab} onChange={(t) => navigate(`/instances/${id}/${t ?? 'overview'}`)} keepMounted={false}>
-        <div style={{ overflowX: 'auto' }}>
+        <Box visibleFrom="sm" style={{ overflowX: 'auto' }}>
           <Tabs.List style={{ flexWrap: 'nowrap' }}>
             {INSTANCE_TABS.map((t) => {
-              const Icon = TAB_ICONS[t]
+              const Icon = INSTANCE_TAB_ICONS[t]
+              const badge = badges[t]
               return (
-                <Tabs.Tab key={t} value={t} tt="capitalize" leftSection={<Icon size={16} stroke={1.8} />}>
-                  {t}
+                <Tabs.Tab
+                  key={t}
+                  value={t}
+                  leftSection={<Icon size={16} stroke={1.8} />}
+                  rightSection={
+                    badge?.count !== undefined ? (
+                      <Badge size="xs" circle color={badge.color}>
+                        {badge.count}
+                      </Badge>
+                    ) : badge?.dot ? (
+                      <Indicator color={badge.color} size={6} processing={false} />
+                    ) : undefined
+                  }
+                >
+                  {INSTANCE_TAB_LABELS[t]}
                 </Tabs.Tab>
               )
             })}
           </Tabs.List>
-        </div>
+        </Box>
+        <NativeSelect
+          hiddenFrom="sm"
+          value={tab}
+          onChange={(e) => navigate(`/instances/${id}/${e.currentTarget.value}`)}
+          data={INSTANCE_TABS.map((t) => ({
+            value: t,
+            label: badges[t]?.count ? `${INSTANCE_TAB_LABELS[t]} (${badges[t]?.count})` : INSTANCE_TAB_LABELS[t],
+          }))}
+          aria-label="Instance section"
+        />
         <Suspense fallback={<Center py="xl"><Loader /></Center>}>
           <Tabs.Panel value="overview" pt="md"><OverviewTab id={id} /></Tabs.Panel>
           <Tabs.Panel value="console" pt="md"><ConsoleTab key={id} id={id} /></Tabs.Panel>
