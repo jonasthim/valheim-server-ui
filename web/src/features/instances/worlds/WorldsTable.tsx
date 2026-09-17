@@ -5,6 +5,7 @@ import { openConfirmWorldAction } from './openConfirmWorldAction'
 import { api } from '../../../api/client'
 import type { World } from '../../../api/types'
 import { fmtAgo, fmtBytes } from '../../../lib/format'
+import { EmptyState } from '../../../ui'
 
 export function WorldsTable({
   id,
@@ -68,9 +69,11 @@ export function WorldsTable({
 
   if (worlds.length === 0) {
     return (
-      <Text c="dimmed" size="sm" p="lg">
-        No worlds found in the save directory yet.
-      </Text>
+      <EmptyState
+        compact
+        title="No worlds found in the save directory yet."
+        description="Upload a world or start the server to create one."
+      />
     )
   }
 

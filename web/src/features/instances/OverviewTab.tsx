@@ -35,10 +35,9 @@ import { API_BASE } from '../../api/client'
 import { fmtAgo, fmtBytes, fmtPercent, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
-import { LoadError, SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
+import { EmptyState, LoadError, SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
 import { useModsOverview } from '../mods/useMods'
 import { useAgent, WorldCard } from '../agent'
-import { CheckModUpdatesButton } from '../mods/CheckModUpdatesButton'
 import { useInstance } from './useInstance'
 import { useCheckForUpdate, useInstanceEvents, useInstanceStatus, useSetAutostart } from './instanceActions'
 import { stateColor, stateLabel } from './instanceHelpers'
@@ -248,7 +247,6 @@ export function OverviewTab({ id }: { id: string }) {
               </Text>
             </div>
             <Group gap="xs">
-              {canOperate && bepinex?.installed && <CheckModUpdatesButton id={id} />}
               <Button size="xs" variant="light" onClick={() => navigate(`/instances/${id}/mods`)}>
                 Open Mods
               </Button>
@@ -350,9 +348,7 @@ export function OverviewTab({ id }: { id: string }) {
           <LoadError error={jobsQuery.error} title="Could not load recent jobs" onRetry={() => jobsQuery.refetch()} />
         )}
         {!jobsQuery.isLoading && !jobsQuery.isError && jobs.length === 0 && (
-          <Text c="dimmed" size="sm" p="lg">
-            No jobs yet for this instance.
-          </Text>
+          <EmptyState compact title="No jobs yet" description="Backups, updates and restarts will show up here." />
         )}
         {jobs.length > 0 && (
           <Table.ScrollContainer minWidth={480}>

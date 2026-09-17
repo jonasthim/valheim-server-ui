@@ -62,6 +62,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { to: '/users', label: 'Users', icon: IconUsers, min: 'admin' },
       { to: '/settings', label: 'Settings', icon: IconSettings, min: 'admin' },
       { to: '/audit', label: 'Audit log', icon: IconHistory, min: 'admin' },
+      { to: '/account', label: 'Account', icon: IconUserCircle, min: 'viewer' },
     ],
   },
 ]

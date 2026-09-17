@@ -6,6 +6,7 @@ import { Alert, Anchor, Group, Skeleton, Stack, Text } from '@mantine/core'
 import { IconAlertTriangle, IconDownload } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
 import type { Instance } from '../../api/types'
+import { docsUrl } from '../../lib/docs'
 import { AppUpdateBanner, useSystemInfo } from '../system'
 
 export function SystemStrip({ instances }: { instances: Instance[] }) {
@@ -28,7 +29,11 @@ export function SystemStrip({ instances }: { instances: Instance[] }) {
           icon={<IconAlertTriangle size={16} />}
           title="SteamCMD is not installed"
         >
-          Run the installer (see docs/RUNBOOK.md) before installing any instance.
+          Run the installer (see docs/
+          <Anchor href={docsUrl('RUNBOOK.md')} target="_blank" rel="noreferrer">
+            RUNBOOK.md
+          </Anchor>
+          ) before installing any instance.
         </Alert>
       )}
 

@@ -20,10 +20,11 @@ import {
   TextInput,
   Tooltip,
 } from '@mantine/core'
-import { IconAlertTriangle, IconCheck, IconCopy, IconPlugConnected, IconRefresh, IconRocket } from '@tabler/icons-react'
+import { IconAlertTriangle, IconCheck, IconCopy, IconPlugConnected, IconRocket } from '@tabler/icons-react'
 import { api, ApiError } from '../../api/client'
 import { useAuth } from '../../auth/useAuth'
 import type { Settings } from '../../api/types'
+import { docsUrl } from '../../lib/docs'
 import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { PageHeader, SectionCard, LoadError } from '../../ui'
@@ -100,6 +101,12 @@ export function SettingsPage() {
         const fields = err.fieldErrors()
         if (Object.keys(fields).length) {
           form.setErrors(fields)
+          // NotificationsCard's channel rows are local component state, not
+          // Mantine form fields, so form.setErrors alone won't draw the eye
+          // there the way it does for the rest of the form — add a toast too.
+          if (Object.keys(fields).some((k) => k.startsWith('notifications.'))) {
+            notifyError(err, 'Could not save settings')
+          }
           return
         }
       }
@@ -163,11 +170,7 @@ export function SettingsPage() {
               <Text size="sm" c="dimmed">
                 Setup guide with provider recipes (Authelia, Keycloak, Authentik, Pocket ID, Google, Entra ID) and
                 troubleshooting:{' '}
-                <Anchor
-                  href="https://github.com/jonasthim/valheim-server-ui/blob/main/docs/OIDC.md"
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <Anchor href={docsUrl('OIDC.md')} target="_blank" rel="noreferrer">
                   docs/OIDC.md
                 </Anchor>
               </Text>
@@ -298,25 +301,10 @@ export function SettingsPage() {
             value={form.values.notifications}
             onChange={(v) => form.setFieldValue('notifications', v)}
             resetToken={settingsQ.dataUpdatedAt}
+            errors={form.errors}
           />
 
-          <SectionCard
-            title="Application"
-            actions={
-              canAdmin && (
-                <Tooltip label="Check for a new Valheim Server UI release now">
-                  <ActionIcon
-                    variant="subtle"
-                    loading={checkAppUpdate.isPending}
-                    onClick={() => checkAppUpdate.mutate()}
-                    aria-label="Check for application update"
-                  >
-                    <IconRefresh size={16} />
-                  </ActionIcon>
-                </Tooltip>
-              )
-            }
-          >
+          <SectionCard title="Application">
             <Stack gap="md">
               {systemQ.isLoading && <Skeleton height={80} />}
 

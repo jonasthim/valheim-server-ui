@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { ActionIcon, Button, Group, Select, Stack, Text, TextInput } from '@mantine/core'
 import { IconPlus, IconTrash } from '@tabler/icons-react'
 import type { Role } from '../../api/types'
+import { newKey } from '../../lib/keys'
 import { ROLE_MAP_OPTIONS } from './options'
 
 interface Row {
@@ -11,7 +12,7 @@ interface Row {
 }
 
 function toRows(value: Record<string, Role>): Row[] {
-  return Object.entries(value).map(([group, role]) => ({ id: crypto.randomUUID(), group, role }))
+  return Object.entries(value).map(([group, role]) => ({ id: newKey(), group, role }))
 }
 
 function toRecord(rows: Row[]): Record<string, Role> {
@@ -86,7 +87,7 @@ export function RoleMappingEditor({
         variant="subtle"
         size="xs"
         leftSection={<IconPlus size={14} />}
-        onClick={() => update([...rows, { id: crypto.randomUUID(), group: '', role: 'viewer' }])}
+        onClick={() => update([...rows, { id: newKey(), group: '', role: 'viewer' }])}
       >
         Add mapping
       </Button>

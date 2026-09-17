@@ -3,7 +3,7 @@ import { IconUserOff } from '@tabler/icons-react'
 import { Link } from 'react-router-dom'
 import type { OnlinePlayer, PlayersResponse } from '../../../api/types'
 import { fmtAgo } from '../../../lib/format'
-import { SectionCard, StatusPill } from '../../../ui'
+import { EmptyState, SectionCard, StatusPill } from '../../../ui'
 import { BroadcastButton, ChatButton } from '../../agent'
 import { openConfirmKick } from '../../agent/openConfirmKick'
 import { COUNT_SOURCE_LABELS } from './constants'
@@ -57,9 +57,7 @@ export function PlayersOnlinePanel({
       )}
 
       {!isLoading && online.length === 0 && (
-        <Text c="dimmed" size="sm" p="lg">
-          No players are connected right now.
-        </Text>
+        <EmptyState compact title="No players are connected right now." description="Players appear here as they join." />
       )}
 
       {!isLoading && online.length > 0 && (

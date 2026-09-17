@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import type { ReactNode } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import {
   ActionIcon,
+  Badge,
   Button,
   Divider,
   Group,
@@ -11,12 +13,16 @@ import {
   Select,
   Stack,
   Switch,
+  Table,
   Text,
   TextInput,
+  Tooltip,
 } from '@mantine/core'
 import { IconPlus, IconSend, IconTrash } from '@tabler/icons-react'
 import { api } from '../../api/client'
-import type { AlertKind, NotifyChannel, NotifyChannelType, NotifySettings } from '../../api/types'
+import type { AlertKind, NotificationLogEntry, NotifyChannel, NotifyChannelType, NotifySettings } from '../../api/types'
+import { fmtAgo } from '../../lib/format'
+import { newKey } from '../../lib/keys'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { SectionCard } from '../../ui'
 import { useInstances } from '../instances'
@@ -50,16 +56,43 @@ interface ChannelRow extends NotifyChannel {
   key: string
 }
 
+interface RowErrors {
+  name?: ReactNode
+  type?: ReactNode
+  url?: ReactNode
+  secret?: ReactNode
+  events?: ReactNode
+  instances?: ReactNode
+}
+
 function emptyRow(): ChannelRow {
-  return { key: crypto.randomUUID(), id: '', type: 'discord', name: '', enabled: true, url: '', secret: '', events: [], instances: [] }
+  return { key: newKey(), id: '', type: 'discord', name: '', enabled: true, url: '', secret: '', events: [], instances: [] }
 }
 
 function toRows(channels: NotifyChannel[]): ChannelRow[] {
-  return channels.map((c) => ({ ...c, key: crypto.randomUUID() }))
+  return channels.map((c) => ({ ...c, key: newKey() }))
 }
 
 function toChannels(rows: ChannelRow[]): NotifyChannel[] {
   return rows.map(({ key: _key, ...c }) => c)
+}
+
+/** Field errors for channel row `i`, keyed by the server's `notifications.channels.<i>.<field>` paths. */
+function channelRowErrors(errors: Record<string, ReactNode> | undefined, i: number): RowErrors {
+  const prefix = `notifications.channels.${i}.`
+  return {
+    name: errors?.[`${prefix}name`],
+    type: errors?.[`${prefix}type`],
+    url: errors?.[`${prefix}url`],
+    secret: errors?.[`${prefix}secret`],
+    events: errors?.[`${prefix}events`],
+    instances: errors?.[`${prefix}instances`],
+  }
+}
+
+/** The configured channel's name for a log entry's channel_id, falling back to the id (e.g. a since-removed channel). */
+function channelLabel(channels: NotifyChannel[], channelId: string): string {
+  return channels.find((c) => c.id === channelId)?.name || channelId
 }
 
 function TestButton({ channelId }: { channelId: string }) {
@@ -85,11 +118,13 @@ function TestButton({ channelId }: { channelId: string }) {
 function ChannelRowEditor({
   row,
   instanceOptions,
+  errors,
   onChange,
   onRemove,
 }: {
   row: ChannelRow
   instanceOptions: { value: string; label: string }[]
+  errors?: RowErrors
   onChange: (next: ChannelRow) => void
   onRemove: () => void
 }) {
@@ -105,12 +140,14 @@ function ChannelRowEditor({
           value={row.type}
           onChange={(v) => v && onChange({ ...row, type: v as NotifyChannelType })}
           allowDeselect={false}
+          error={errors?.type}
           w={140}
         />
         <TextInput
           label="Name"
           value={row.name}
           onChange={(e) => onChange({ ...row, name: e.currentTarget.value })}
+          error={errors?.name}
           style={{ flex: 1, minWidth: 160 }}
         />
         <Switch
@@ -129,6 +166,7 @@ function ChannelRowEditor({
         description={urlHidden ? 'Carries the webhook/bot credential; never shown again after saving. Leave blank to keep it.' : undefined}
         value={row.url ?? ''}
         onChange={(e) => onChange({ ...row, url: e.currentTarget.value })}
+        error={errors?.url}
       />
       <PasswordInput
         label="Secret"
@@ -136,6 +174,7 @@ function ChannelRowEditor({
         description="Leave blank to keep the current value"
         value={row.secret ?? ''}
         onChange={(e) => onChange({ ...row, secret: e.currentTarget.value })}
+        error={errors?.secret}
       />
       <MultiSelect
         label="Events"
@@ -143,6 +182,7 @@ function ChannelRowEditor({
         data={ALERT_KIND_OPTIONS}
         value={row.events}
         onChange={(v) => onChange({ ...row, events: v as AlertKind[] })}
+        error={errors?.events}
       />
       <MultiSelect
         label="Instances"
@@ -151,6 +191,7 @@ function ChannelRowEditor({
         data={instanceOptions}
         value={row.instances}
         onChange={(v) => onChange({ ...row, instances: v })}
+        error={errors?.instances}
       />
 
       <Group justify="flex-end">
@@ -171,14 +212,25 @@ export function NotificationsCard({
   value,
   onChange,
   resetToken,
+  errors,
 }: {
   value: NotifySettings
   onChange: (next: NotifySettings) => void
   resetToken: number
+  /** Server-side field errors from the last save attempt (`form.errors`), keyed by `notifications.…` paths. */
+  errors?: Record<string, ReactNode>
 }) {
   const [rows, setRows] = useState<ChannelRow[]>(() => toRows(value.channels))
   const instancesQ = useInstances()
   const instanceOptions = (instancesQ.data ?? []).map((i) => ({ value: i.id, label: i.name }))
+
+  // Display-only: recent delivery attempts across all channels. Not part of
+  // the settings form's values, so it never affects the Save submit path.
+  const deliveriesQ = useQuery({
+    queryKey: ['notifications', 'log'],
+    queryFn: () => api.get<{ entries: NotificationLogEntry[] }>('/notifications', { limit: 20 }),
+    refetchInterval: 30_000,
+  })
 
   useEffect(() => {
     setRows(toRows(value.channels))
@@ -210,6 +262,7 @@ export function NotificationsCard({
               key={row.key}
               row={row}
               instanceOptions={instanceOptions}
+              errors={channelRowErrors(errors, i)}
               onChange={(next) => update(rows.map((r, j) => (j === i ? next : r)))}
               onRemove={() => update(rows.filter((_, j) => j !== i))}
             />
@@ -229,7 +282,56 @@ export function NotificationsCard({
           max={100}
           value={value.disk_low_percent}
           onChange={(v) => onChange({ ...value, disk_low_percent: typeof v === 'number' ? v : 0 })}
+          error={errors?.['notifications.disk_low_percent']}
         />
+
+        <Divider label="Recent deliveries" labelPosition="left" />
+        {deliveriesQ.isLoading ? null : deliveriesQ.isError ? (
+          <Text size="sm" c="dimmed">
+            Could not load recent deliveries.
+          </Text>
+        ) : (deliveriesQ.data?.entries.length ?? 0) === 0 ? (
+          <Text size="sm" c="dimmed">
+            No deliveries yet.
+          </Text>
+        ) : (
+          <Table.ScrollContainer minWidth={560}>
+            <Table verticalSpacing="xs">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>When</Table.Th>
+                  <Table.Th>Channel</Table.Th>
+                  <Table.Th>Kind</Table.Th>
+                  <Table.Th>Instance</Table.Th>
+                  <Table.Th>Result</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {deliveriesQ.data?.entries.map((entry) => (
+                  <Table.Tr key={entry.id}>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {fmtAgo(entry.at)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>{channelLabel(value.channels, entry.channel_id)}</Table.Td>
+                    <Table.Td>{entry.kind}</Table.Td>
+                    <Table.Td>{entry.instance_id ?? '—'}</Table.Td>
+                    <Table.Td>
+                      {entry.ok ? (
+                        <Badge color="moss">sent</Badge>
+                      ) : (
+                        <Tooltip label={entry.error} disabled={!entry.error}>
+                          <Badge color="blood">failed</Badge>
+                        </Tooltip>
+                      )}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
       </Stack>
     </SectionCard>
   )
