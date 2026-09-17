@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Button } from '@mantine/core'
 import { IconPlus } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
-import { SectionCard } from '../../ui'
+import { LoadError, SectionCard } from '../../ui'
 import { ScheduleModal } from './schedules/ScheduleModal'
 import { SchedulesTable } from './schedules/SchedulesTable'
 import { useDeleteSchedule, useRunSchedule, useSchedules, useUpdateSchedule } from './schedules/useSchedules'
@@ -28,6 +28,10 @@ export function SchedulesTab({ id }: { id: string }) {
   function openEdit(schedule: Schedule) {
     setEditing(schedule)
     setModalOpened(true)
+  }
+
+  if (schedulesQ.isError) {
+    return <LoadError error={schedulesQ.error} title="Could not load schedules" onRetry={() => schedulesQ.refetch()} />
   }
 
   return (

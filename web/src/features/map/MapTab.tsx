@@ -24,7 +24,7 @@ import {
 import type { ExploredInfo } from "../../api/types";
 import { useAuth } from "../../auth/useAuth";
 import { fmtAgo } from "../../lib/format";
-import { SectionCard, StatusPill } from "../../ui";
+import { LoadError, SectionCard, StatusPill } from "../../ui";
 import { AgentSetupNotice, BroadcastButton, useAgent, useAgentCommand } from "../agent";
 import { MapPlayerList } from "./MapPlayerList";
 import type { MapIconName } from "./MapIcons";
@@ -361,7 +361,14 @@ export function MapTab({ id }: { id: string }) {
   if (map.isLoading) {
     return <Skeleton height={480} />;
   }
-  if (!data) return <Text c="dimmed">Map unavailable.</Text>;
+  if (!data)
+    return (
+      <LoadError
+        error={map.error}
+        title="Could not load the map"
+        onRetry={() => map.refetch()}
+      />
+    );
 
   let overlay: React.ReactNode = null;
   if (!showImage) {

@@ -35,7 +35,7 @@ import { API_BASE } from '../../api/client'
 import { fmtAgo, fmtBytes, fmtPercent, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
-import { SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
+import { LoadError, SectionCard, StatTile, StatusDot, StatusPill } from '../../ui'
 import { useModsOverview } from '../mods/useMods'
 import { useAgent, WorldCard } from '../agent'
 import { CheckModUpdatesButton } from '../mods/CheckModUpdatesButton'
@@ -346,7 +346,10 @@ export function OverviewTab({ id }: { id: string }) {
             <Skeleton height={80} />
           </div>
         )}
-        {!jobsQuery.isLoading && jobs.length === 0 && (
+        {jobsQuery.isError && (
+          <LoadError error={jobsQuery.error} title="Could not load recent jobs" onRetry={() => jobsQuery.refetch()} />
+        )}
+        {!jobsQuery.isLoading && !jobsQuery.isError && jobs.length === 0 && (
           <Text c="dimmed" size="sm" p="lg">
             No jobs yet for this instance.
           </Text>

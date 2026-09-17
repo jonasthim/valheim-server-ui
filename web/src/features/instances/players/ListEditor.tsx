@@ -3,6 +3,7 @@ import { ActionIcon, Button, Group, Skeleton, Stack, Table, Text, TextInput, Too
 import { modals } from '@mantine/modals'
 import { IconPlus, IconTrash } from '@tabler/icons-react'
 import type { ListKind } from '../../../api/types'
+import { LoadError } from '../../../ui'
 import { usePlayerList, useSavePlayerList } from './usePlayers'
 import { PLATFORM_ID_PATTERN } from './constants'
 
@@ -81,7 +82,11 @@ export function ListEditor({ id, kind, canEdit }: { id: string; kind: ListKind; 
     <Stack gap="sm">
       {query.isLoading && <Skeleton height={100} />}
 
-      {!query.isLoading && (
+      {query.isError && (
+        <LoadError error={query.error} title="Could not load the list" onRetry={() => query.refetch()} />
+      )}
+
+      {!query.isLoading && !query.isError && (
         <Table.ScrollContainer minWidth={480}>
           <Table verticalSpacing="xs">
             <Table.Thead>
@@ -159,7 +164,7 @@ export function ListEditor({ id, kind, canEdit }: { id: string; kind: ListKind; 
                       leftSection={<IconPlus size={14} />}
                       onClick={addEntry}
                       loading={save.isPending}
-                      disabled={!newId.trim()}
+                      disabled={!newId.trim() || !query.isSuccess}
                     >
                       Add
                     </Button>

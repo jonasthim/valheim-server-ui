@@ -1,6 +1,6 @@
 import { Stack, Tabs } from '@mantine/core'
 import { useAuth } from '../../auth/useAuth'
-import { SectionCard } from '../../ui'
+import { LoadError, SectionCard } from '../../ui'
 import { ListEditor } from './players/ListEditor'
 import { KnownPlayersTable } from './players/KnownPlayersTable'
 import { PlayersOnlinePanel } from './players/PlayersOnlinePanel'
@@ -17,6 +17,14 @@ export function PlayersTab({ id }: { id: string }) {
   const agent = useAgent(id)
   const agentCommand = useAgentCommand(id)
   const canKick = canManage && !!agent.data?.connected
+
+  if (playersQ.isError) {
+    return (
+      <Stack gap="md">
+        <LoadError error={playersQ.error} title="Could not load players" onRetry={() => playersQ.refetch()} />
+      </Stack>
+    )
+  }
 
   return (
     <Stack gap="md">

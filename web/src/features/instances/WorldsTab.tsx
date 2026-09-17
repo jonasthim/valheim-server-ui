@@ -1,6 +1,6 @@
 import { Anchor, Skeleton, Stack, Text } from '@mantine/core'
 import { useAuth } from '../../auth/useAuth'
-import { SectionCard } from '../../ui'
+import { LoadError, SectionCard } from '../../ui'
 import { useInstance } from './useInstance'
 import { useDeleteWorld, useRegenerateWorld, useSetActiveWorld, useWorlds } from './worlds/useWorlds'
 import { WorldsTable } from './worlds/WorldsTable'
@@ -17,6 +17,14 @@ export function WorldsTab({ id }: { id: string }) {
   const regenerateWorld = useRegenerateWorld(id)
 
   if (instanceQ.isLoading) return <Skeleton height={200} />
+
+  if (worldsQ.isError) {
+    return (
+      <Stack gap="md">
+        <LoadError error={worldsQ.error} title="Could not load worlds" onRetry={() => worldsQ.refetch()} />
+      </Stack>
+    )
+  }
 
   const config = instanceQ.data?.config
   const state = instanceQ.data?.status.state

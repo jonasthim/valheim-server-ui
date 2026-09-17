@@ -6,7 +6,7 @@ import { IconHistory, IconSearch } from '@tabler/icons-react'
 import { api } from '../../api/client'
 import type { AuditEntry } from '../../api/types'
 import { fmtTime } from '../../lib/format'
-import { EmptyState, PageHeader, SectionCard } from '../../ui'
+import { EmptyState, LoadError, PageHeader, SectionCard } from '../../ui'
 
 interface AuditResponse {
   entries: AuditEntry[]
@@ -191,7 +191,18 @@ export function AuditPage() {
                     </Table.Td>
                   </Table.Tr>
                 ))}
-              {!query.isLoading && entries.length === 0 && (
+              {query.isError && (
+                <Table.Tr>
+                  <Table.Td colSpan={6}>
+                    <LoadError
+                      error={query.error}
+                      title="Could not load the audit log"
+                      onRetry={() => query.refetch()}
+                    />
+                  </Table.Td>
+                </Table.Tr>
+              )}
+              {!query.isLoading && !query.isError && entries.length === 0 && (
                 <Table.Tr>
                   <Table.Td colSpan={6}>
                     <EmptyState icon={<IconHistory size={22} />} title="No audit entries match these filters." />

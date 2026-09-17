@@ -8,7 +8,7 @@ import { IconEye, IconListCheck, IconSearch, IconX } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtTime } from '../../lib/format'
 import type { Job, JobStatus } from '../../api/types'
-import { EmptyState, PageHeader, SectionCard, StatusPill } from '../../ui'
+import { EmptyState, LoadError, PageHeader, SectionCard, StatusPill } from '../../ui'
 import { useJobs, useCancelJob } from './useJobs'
 import { jobStatusColor, jobTypeLabel, jobDuration, isJobCancellable, jobInstancePath } from './jobHelpers'
 import { JobDrawerHost } from './JobDrawerHost'
@@ -126,7 +126,18 @@ function JobsPageContent() {
                     </Table.Td>
                   </Table.Tr>
                 ))}
-              {!jobsQuery.isLoading && jobs.length === 0 && (
+              {jobsQuery.isError && (
+                <Table.Tr>
+                  <Table.Td colSpan={8}>
+                    <LoadError
+                      error={jobsQuery.error}
+                      title="Could not load jobs"
+                      onRetry={() => jobsQuery.refetch()}
+                    />
+                  </Table.Td>
+                </Table.Tr>
+              )}
+              {!jobsQuery.isLoading && !jobsQuery.isError && jobs.length === 0 && (
                 <Table.Tr>
                   <Table.Td colSpan={8}>
                     <EmptyState icon={<IconListCheck size={22} />} title="No jobs match these filters." />

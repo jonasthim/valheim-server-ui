@@ -1,5 +1,6 @@
 import { Stack } from '@mantine/core'
 import { useAuth } from '../../auth/useAuth'
+import { LoadError } from '../../ui'
 import { useInstance } from './useInstance'
 import { BackupNowCard } from './backups/BackupNowCard'
 import { BackupUploadCard } from './backups/BackupUploadCard'
@@ -15,6 +16,14 @@ export function BackupsTab({ id }: { id: string }) {
   const backupsQ = useBackups(id)
   const restore = useRestoreBackup(id)
   const del = useDeleteBackup(id)
+
+  if (backupsQ.isError) {
+    return (
+      <Stack gap="md">
+        <LoadError error={backupsQ.error} title="Could not load backups" onRetry={() => backupsQ.refetch()} />
+      </Stack>
+    )
+  }
 
   return (
     <Stack gap="md">

@@ -14,13 +14,17 @@ import {
   UploadModCard,
   useModsOverview,
 } from '../mods'
-import { SectionCard } from '../../ui'
+import { LoadError, SectionCard } from '../../ui'
 import { AgentCard } from '../agent'
 
 export function ModsTab({ id }: { id: string }) {
   const { hasRole } = useAuth()
   const overview = useModsOverview(id)
   const [browserOpen, browserHandlers] = useDisclosure(false)
+
+  if (overview.isError) {
+    return <LoadError error={overview.error} title="Could not load mods" onRetry={() => overview.refetch()} />
+  }
 
   return (
     <Stack gap="lg">
