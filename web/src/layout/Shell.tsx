@@ -17,7 +17,7 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from '@mantine/core'
-import { Suspense } from 'react'
+import { Fragment, Suspense } from 'react'
 import { useDisclosure } from '@mantine/hooks'
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
@@ -37,7 +37,8 @@ import { useEvents } from '../events/useEvents'
 import { ActivityIndicator } from '../features/jobs/ActivityIndicator'
 import { JobDrawerHost } from '../features/jobs/JobDrawerHost'
 import { LiveStatusBadge, useSystemInfo } from '../features/system'
-import { BrandMark, ErrorBoundary } from '../ui'
+import { stateColor, useInstances } from '../features/instances'
+import { BrandMark, ErrorBoundary, StatusDot } from '../ui'
 import classes from './Shell.module.css'
 
 type Role = 'viewer' | 'operator' | 'admin'
@@ -84,9 +85,15 @@ export function Shell() {
   const loc = useLocation()
   const navigate = useNavigate()
   const system = useSystemInfo()
+  const instances = useInstances()
   useEvents(!!user)
 
   const initials = (user?.display_name || user?.username || '?').slice(0, 1).toUpperCase()
+
+  const allInstances = instances.data ?? []
+  const visibleInstances = allInstances.slice(0, 12)
+  const hasMoreInstances = allInstances.length > 12
+  const showInstancesGroup = allInstances.length > 0 && hasRole('viewer')
 
   const userMenu = (
     <Menu shadow="md" width={220} position="top-start" withinPortal>
@@ -159,34 +166,78 @@ export function Shell() {
           <ScrollArea style={{ flex: 1 }} px="xs" py="xs">
             {NAV_GROUPS.map((group) => {
               const items = group.items.filter((n) => hasRole(n.min))
-              if (items.length === 0) return null
               return (
-                <div key={group.label}>
-                  <span className={classes.groupLabel}>{group.label}</span>
-                  <Stack gap={2}>
-                    {items.map((n) => {
-                      const active =
-                        n.to === '/' ? loc.pathname === '/' || loc.pathname.startsWith('/instances') : loc.pathname.startsWith(n.to)
-                      return (
-                        <NavLink
-                          key={n.to}
-                          component={Link}
-                          to={n.to}
-                          label={n.label}
-                          className={classes.link}
-                          leftSection={
-                            <span className={classes.linkIcon}>
-                              <n.icon size={18} stroke={1.8} />
-                            </span>
-                          }
-                          active={active}
-                          variant="subtle"
-                          onClick={close}
-                        />
-                      )
-                    })}
-                  </Stack>
-                </div>
+                <Fragment key={group.label}>
+                  {items.length > 0 && (
+                    <div>
+                      <span className={classes.groupLabel}>{group.label}</span>
+                      <Stack gap={2}>
+                        {items.map((n) => {
+                          const active = n.to === '/' ? loc.pathname === '/' : loc.pathname.startsWith(n.to)
+                          return (
+                            <NavLink
+                              key={n.to}
+                              component={Link}
+                              to={n.to}
+                              label={n.label}
+                              className={classes.link}
+                              leftSection={
+                                <span className={classes.linkIcon}>
+                                  <n.icon size={18} stroke={1.8} />
+                                </span>
+                              }
+                              active={active}
+                              variant="subtle"
+                              onClick={close}
+                            />
+                          )
+                        })}
+                      </Stack>
+                    </div>
+                  )}
+                  {group.label === 'Servers' && showInstancesGroup && (
+                    <div>
+                      <span className={classes.groupLabel}>Instances</span>
+                      <Stack gap={2}>
+                        {visibleInstances.map((instance) => {
+                          const active = loc.pathname.startsWith(`/instances/${instance.id}/`)
+                          return (
+                            <NavLink
+                              key={instance.id}
+                              component={Link}
+                              to={`/instances/${instance.id}/overview`}
+                              label={instance.name}
+                              className={classes.link}
+                              leftSection={
+                                <StatusDot color={stateColor(instance.status.state)} pulse={instance.status.state === 'running'} />
+                              }
+                              rightSection={
+                                instance.status.players_online > 0 ? (
+                                  <Text size="xs" c="dimmed">
+                                    {instance.status.players_online}
+                                  </Text>
+                                ) : undefined
+                              }
+                              active={active}
+                              variant="subtle"
+                              onClick={close}
+                            />
+                          )
+                        })}
+                        {hasMoreInstances && (
+                          <NavLink
+                            component={Link}
+                            to="/"
+                            label="All instances"
+                            className={classes.link}
+                            variant="subtle"
+                            onClick={close}
+                          />
+                        )}
+                      </Stack>
+                    </div>
+                  )}
+                </Fragment>
               )
             })}
           </ScrollArea>

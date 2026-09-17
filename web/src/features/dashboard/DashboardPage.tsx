@@ -1,23 +1,17 @@
 import { ActionIcon, Button, SimpleGrid, Skeleton, Stack, Tooltip } from '@mantine/core'
-import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { IconCpu, IconDatabase, IconDeviceSdCard, IconPlus, IconRefresh, IconRocket, IconServer2, IconUsers } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
-import { api } from '../../api/client'
-import type { Instance } from '../../api/types'
 import { fmtBytes, fmtPercent } from '../../lib/format'
 import { EmptyState, LoadError, PageHeader, StatTile } from '../../ui'
 import { useCheckAppUpdate, useSystemInfo } from '../system'
+import { useInstances } from '../instances'
 import { SystemStrip } from './SystemStrip'
 import { InstanceCard } from './InstanceCard'
 
 export function DashboardPage() {
   const { hasRole } = useAuth()
-  const instancesQuery = useQuery({
-    queryKey: ['instances', 'list'],
-    queryFn: () => api.get<{ instances: Instance[] }>('/instances').then((r) => r.instances),
-    refetchInterval: 15_000,
-  })
+  const instancesQuery = useInstances()
   const system = useSystemInfo()
   const checkAppUpdate = useCheckAppUpdate()
 

@@ -2,6 +2,7 @@
 // can reuse its hooks/helpers without reaching into individual files, e.g.:
 //   import { useStartInstance, stateColor } from '../instances'
 export { useInstance } from './useInstance'
+export { useInstances } from './useInstances'
 export {
   useInstanceStatus,
   useStartInstance,
