@@ -3,7 +3,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { API_BASE } from '../api/client'
-import type { AgentInfo, InstanceEvent, InstanceStatus, Job, UpdateInfo } from '../api/types'
+import type { AgentInfo, ChatLogEntry, InstanceEvent, InstanceStatus, Job, UpdateInfo } from '../api/types'
 
 export type LogEvent = { instance_id: string; line: string }
 export type JobLogEvent = { job_id: string; line: string }
@@ -123,6 +123,16 @@ export function useEvents(enabled: boolean) {
         // the next GET, which useAgent() also polls.
         qc.setQueryData<AgentInfo | undefined>(['instances', ev.instance_id, 'agent'], (prev) =>
           prev ? { ...prev, ...ev.agent, enabled: prev.enabled } : ev.agent,
+        )
+      })
+      source.addEventListener('agent.chat', (e) => {
+        const entry = safeParse<ChatLogEntry>(e)
+        if (!entry) return
+        // The default (unsearched) chat query key; a query key with a q
+        // dimension (useAgentChat's search) is left alone, refreshed only
+        // when the search commits again.
+        qc.setQueryData<{ entries: ChatLogEntry[] } | undefined>(['instances', entry.instance_id, 'chat'], (prev) =>
+          prev ? { entries: [entry, ...prev.entries].slice(0, 500) } : prev,
         )
       })
       source.addEventListener('instance.players', (e) => {

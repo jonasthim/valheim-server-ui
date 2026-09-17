@@ -218,6 +218,11 @@ type AgentService interface {
 	WaterMaskPNG(ctx context.Context, instanceID string) (png []byte, etag string, err error)
 	ExploredPNG(ctx context.Context, instanceID string) (path string, info *domain.ExploredInfo, err error)
 	RenderMap(ctx context.Context, instanceID string, req domain.MapRenderRequest) (*domain.MapInfo, error)
+	// ChatHistory returns instanceID's stored chat lines, newest first,
+	// optionally filtered by q and paged with a before-id cursor (0 = none;
+	// F-2.3). Unlike Chat (a live passthrough), this works whether or not
+	// the agent is currently connected.
+	ChatHistory(ctx context.Context, instanceID string, limit int, before int64, q string) ([]domain.ChatLogEntry, error)
 }
 
 // SessionService lists and revokes the calling user's own sessions (F-2.7).

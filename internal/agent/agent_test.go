@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -401,5 +403,276 @@ func TestService_StatusArraysNeverNull(t *testing.T) {
 		if !strings.Contains(string(raw), `"global_keys":[]`) || !strings.Contains(string(raw), `"players":[]`) || !strings.Contains(string(raw), `"pings":[]`) {
 			t.Fatalf("%s must carry empty arrays, got %s", name, raw)
 		}
+	}
+}
+
+// chatFeed scripts what a fake agent's /v1/status (uptime) and /v1/chat
+// report, to exercise poll's chat cursor and restart-reset logic (F-2.3)
+// end-to-end. chat() always returns the FULL accumulated message list,
+// ignoring ?since — like the pre-existing fakeAgent stub above, which never
+// looked at query parameters either — so a growing feed makes two polls'
+// responses overlap on purpose: the assertions prove the manager's own
+// chatSeq-based filtering (not the agent's) is what prevents duplicate
+// inserts.
+type chatFeed struct {
+	mu       sync.Mutex
+	uptime   float64
+	messages []domain.AgentChatMessage
+}
+
+func (f *chatFeed) setUptime(v float64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.uptime = v
+}
+
+func (f *chatFeed) push(m domain.AgentChatMessage) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.messages = append(f.messages, m)
+}
+
+// resetMessages simulates the plugin's own recent-window buffer starting
+// over after a world restart (its seq numbers restart from 1).
+func (f *chatFeed) resetMessages() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.messages = nil
+}
+
+func (f *chatFeed) status() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return fmt.Sprintf(`{"agent_version":"1.9.0","uptime_seconds":%g,"ready":true,`+
+		`"captured_at":"2026-09-10T12:00:00Z",`+
+		`"world":{"name":"Midgard","seed":1,"day":1,"day_fraction":0.1,"is_night":false,"time_seconds":100},`+
+		`"global_keys":[],"players":[]}`, f.uptime)
+}
+
+func (f *chatFeed) chat() domain.AgentChat {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := domain.AgentChat{Messages: append([]domain.AgentChatMessage{}, f.messages...)}
+	for _, m := range f.messages {
+		if m.Seq > out.Next {
+			out.Next = m.Seq
+		}
+	}
+	return out
+}
+
+// newChatFakeAgent starts a minimal fake agent serving only /v1/status and
+// /v1/chat from feed; every other route (e.g. the fog endpoints poll also
+// calls) 404s, which the service treats as "this agent doesn't support
+// that" and ignores.
+func newChatFakeAgent(t *testing.T, token string, feed *chatFeed) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	auth := func(w http.ResponseWriter, r *http.Request) bool {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			w.WriteHeader(401)
+			return false
+		}
+		return true
+	}
+	mux.HandleFunc("/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(w, r) {
+			return
+		}
+		_, _ = w.Write([]byte(feed.status()))
+	})
+	mux.HandleFunc("/v1/chat", func(w http.ResponseWriter, r *http.Request) {
+		if !auth(w, r) {
+			return
+		}
+		b, _ := json.Marshal(feed.chat())
+		_, _ = w.Write(b)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// fakeChatStore implements agent.ChatStore for tests: an in-memory,
+// insert-only log plus a List good enough to exercise ChatHistory.
+type fakeChatStore struct {
+	mu      sync.Mutex
+	entries []domain.ChatLogEntry
+}
+
+func (f *fakeChatStore) Insert(_ context.Context, e domain.ChatLogEntry) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	e.ID = int64(len(f.entries) + 1)
+	f.entries = append(f.entries, e)
+	return e.ID, nil
+}
+
+func (f *fakeChatStore) List(_ context.Context, instanceID string, limit int, before int64, q string) ([]domain.ChatLogEntry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []domain.ChatLogEntry
+	for i := len(f.entries) - 1; i >= 0; i-- {
+		e := f.entries[i]
+		if e.InstanceID != instanceID {
+			continue
+		}
+		if before > 0 && e.ID >= before {
+			continue
+		}
+		if q != "" && !strings.Contains(strings.ToLower(e.Text), strings.ToLower(q)) &&
+			!strings.Contains(strings.ToLower(e.Sender), strings.ToLower(q)) {
+			continue
+		}
+		out = append(out, e)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeChatStore) snapshot() []domain.ChatLogEntry {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]domain.ChatLogEntry(nil), f.entries...)
+}
+
+// TestService_PollChat_DedupesOverlappingSeqsAndInsertsOnce: two polls whose
+// /v1/chat responses overlap (the feed always serves its full list) must
+// still store and publish each message exactly once.
+func TestService_PollChat_DedupesOverlappingSeqsAndInsertsOnce(t *testing.T) {
+	paths := testPaths(t)
+	installPlugin(t, paths, "1.9.0")
+	cfg, err := EnsureConfig(paths, 2456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed := &chatFeed{uptime: 100}
+	srv := newChatFakeAgent(t, cfg.Token, feed)
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning},
+	}}
+	bus := &fakeBus{}
+	store := &fakeChatStore{}
+	s := NewService(fi, bus, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	s.http = srv.Client()
+	s.baseURL = func(int) string { return srv.URL }
+	s.SetChatStore(store)
+
+	feed.push(domain.AgentChatMessage{Seq: 1, At: time.Now(), Type: "normal", Sender: "Bjorn", Text: "hi"})
+	feed.push(domain.AgentChatMessage{Seq: 2, At: time.Now(), Type: "normal", Sender: "Freya", Text: "hello"})
+	s.tick(context.Background())
+	if got := store.snapshot(); len(got) != 2 {
+		t.Fatalf("after poll 1: expected 2 stored messages, got %d: %+v", len(got), got)
+	}
+
+	// A third message arrives; the feed keeps serving its FULL list
+	// regardless of ?since, so poll 2's response overlaps poll 1's on seq 1
+	// and 2.
+	feed.push(domain.AgentChatMessage{Seq: 3, At: time.Now(), Type: "normal", Sender: "Bjorn", Text: "brb"})
+	s.tick(context.Background())
+
+	got := store.snapshot()
+	if len(got) != 3 {
+		t.Fatalf("after poll 2: expected 3 stored messages (no duplicates), got %d: %+v", len(got), got)
+	}
+	seen := map[string]int{}
+	for _, e := range got {
+		seen[e.Text]++
+	}
+	for text, n := range seen {
+		if n != 1 {
+			t.Errorf("message %q stored %d times, want exactly once", text, n)
+		}
+	}
+
+	var chatEvents int
+	for _, ev := range bus.events {
+		if ev.Name != domain.EventAgentChat {
+			continue
+		}
+		chatEvents++
+		if ev.InstanceID != "main" {
+			t.Errorf("expected instance id main on the chat event, got %+v", ev)
+		}
+	}
+	if chatEvents != 3 {
+		t.Fatalf("expected one agent.chat event per message (3 total), got %d", chatEvents)
+	}
+}
+
+// TestService_PollChat_UptimeDropResetsCursor: a lower uptime than last seen
+// means the world restarted and the agent's own seq counter started over,
+// so the cursor resets and a message reusing a low seq is stored again
+// (distinguished by run_seq).
+func TestService_PollChat_UptimeDropResetsCursor(t *testing.T) {
+	paths := testPaths(t)
+	installPlugin(t, paths, "1.9.0")
+	cfg, err := EnsureConfig(paths, 2456)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed := &chatFeed{uptime: 500}
+	srv := newChatFakeAgent(t, cfg.Token, feed)
+	fi := &fakeInstances{paths: paths, inst: domain.Instance{
+		ID: "main", Config: domain.InstanceConfig{Port: 2456, BepInExEnabled: true},
+		Status: domain.InstanceStatus{InstanceID: "main", State: domain.StateRunning},
+	}}
+	bus := &fakeBus{}
+	store := &fakeChatStore{}
+	s := NewService(fi, bus, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
+	s.http = srv.Client()
+	s.baseURL = func(int) string { return srv.URL }
+	s.SetChatStore(store)
+
+	feed.push(domain.AgentChatMessage{Seq: 1, At: time.Now(), Type: "normal", Sender: "Bjorn", Text: "hello"})
+	s.tick(context.Background())
+	first := store.snapshot()
+	if len(first) != 1 || first[0].RunSeq != 0 {
+		t.Fatalf("expected one message from the first run (run_seq 0), got %+v", first)
+	}
+
+	// The world restarts: uptime drops and the plugin's own recent-window
+	// buffer starts over, so its first message after the restart reuses
+	// seq 1.
+	feed.setUptime(5)
+	feed.resetMessages()
+	feed.push(domain.AgentChatMessage{Seq: 1, At: time.Now(), Type: "normal", Sender: "Bjorn", Text: "back online"})
+	s.tick(context.Background())
+
+	got := store.snapshot()
+	if len(got) != 2 {
+		t.Fatalf("expected the low-seq message to be stored again after the restart, got %d: %+v", len(got), got)
+	}
+	if got[1].Text != "back online" || got[1].RunSeq == got[0].RunSeq {
+		t.Fatalf("expected the post-restart message with a different run_seq than %d, got %+v", got[0].RunSeq, got[1])
+	}
+}
+
+// TestService_ChatHistory: a nil chat store answers empty (no error); a
+// configured store's List is delegated to, scoped by instance.
+func TestService_ChatHistory(t *testing.T) {
+	s := NewService(&fakeInstances{}, nil, nil, nil)
+	entries, err := s.ChatHistory(context.Background(), "main", 100, 0, "")
+	if err != nil || len(entries) != 0 {
+		t.Fatalf("expected no entries without a chat store, got %+v err=%v", entries, err)
+	}
+
+	store := &fakeChatStore{}
+	if _, err := store.Insert(context.Background(), domain.ChatLogEntry{InstanceID: "main", Sender: "Bjorn", Text: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Insert(context.Background(), domain.ChatLogEntry{InstanceID: "other", Sender: "Odin", Text: "hey"}); err != nil {
+		t.Fatal(err)
+	}
+	s.SetChatStore(store)
+	entries, err = s.ChatHistory(context.Background(), "main", 100, 0, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Sender != "Bjorn" {
+		t.Fatalf("expected the one main entry, got %+v", entries)
 	}
 }

@@ -45,6 +45,7 @@ const ALERT_KIND_OPTIONS: { value: AlertKind; label: string }[] = [
   { value: 'disk_low', label: 'Disk space low' },
   { value: 'player_join', label: 'Player joined' },
   { value: 'player_leave', label: 'Player left' },
+  { value: 'chat', label: 'Chat message' },
 ]
 
 // discord/slack/telegram URLs carry the credential (webhook path / bot

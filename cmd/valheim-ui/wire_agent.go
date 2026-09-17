@@ -8,6 +8,7 @@ import (
 
 	"github.com/jonasthim/valheim-server-ui/internal/agent"
 	"github.com/jonasthim/valheim-server-ui/internal/api"
+	"github.com/jonasthim/valheim-server-ui/internal/db"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 	"github.com/jonasthim/valheim-server-ui/internal/instance"
 	"github.com/jonasthim/valheim-server-ui/internal/selfupdate"
@@ -27,6 +28,9 @@ func wireAgent(ctx context.Context, deps *api.Deps, inst *instance.Service) *age
 	bundle := agent.NewBundle(version, deps.Cfg.CacheDir(), releases, &http.Client{Timeout: 2 * time.Minute})
 
 	svc := agent.NewService(inst, deps.Bus, deps.Log, bundle)
+	// F-2.3: persistent chat history, stored by the poller and served back
+	// through deps.Agent.ChatHistory.
+	svc.SetChatStore(db.NewChatLogRepo(deps.DB))
 	inst.RegisterEnricher(svc)
 	inst.RegisterPreStart(svc.PreStart)
 	deps.Agent = svc

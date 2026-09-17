@@ -95,6 +95,12 @@ func TestAlertsFor(t *testing.T) {
 			ev:        domain.Event{Name: domain.EventInstanceLog, InstanceID: "main", TS: now, Data: map[string]string{"line": "hi"}},
 			wantKinds: nil,
 		},
+		{
+			name: "agent chat",
+			ev: domain.Event{Name: domain.EventAgentChat, InstanceID: "main", TS: now,
+				Data: domain.ChatLogEntry{InstanceID: "main", Sender: "Bjorn", Text: "gg"}},
+			wantKinds: []string{domain.AlertChat},
+		},
 	}
 
 	for _, tc := range cases {

@@ -26,6 +26,8 @@ func registerAgentRoutes(r chi.Router, d *Deps) {
 		Get("/instances/{instanceId}/agent/catalog", getAgentCatalogHandler(d))
 	r.With(RequireRole(domain.RoleViewer), guard).
 		Get("/instances/{instanceId}/agent/chat", getAgentChatHandler(d))
+	r.With(RequireRole(domain.RoleViewer), guard).
+		Get("/instances/{instanceId}/chat", getChatHistoryHandler(d))
 	r.With(RequireRole(domain.RoleOperator), modsGuard).
 		Post("/instances/{instanceId}/agent/install", installAgentHandler(d))
 
@@ -463,5 +465,59 @@ func getAgentChatHandler(d *Deps) http.HandlerFunc {
 			return
 		}
 		WriteJSON(w, http.StatusOK, ch)
+	}
+}
+
+const (
+	defaultChatLimit = 100
+	maxChatLimit     = 500
+)
+
+// getChatHistoryHandler is GET /instances/{instanceId}/chat?limit=&before=&q=
+// (F-2.3): the manager's own stored chat_log, newest first, searchable and
+// available whether or not the agent is currently connected. Distinct from
+// GET .../agent/chat, which passes through the live agent's own
+// recent-window buffer.
+func getChatHistoryHandler(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		q := r.URL.Query()
+
+		limit := defaultChatLimit
+		if v := q.Get("limit"); v != "" {
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 {
+				WriteValidation(w, domain.FieldError{Field: "limit", Message: "must be a positive integer"})
+				return
+			}
+			limit = n
+		}
+		if limit > maxChatLimit {
+			limit = maxChatLimit
+		}
+
+		var before int64
+		if v := q.Get("before"); v != "" {
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				WriteValidation(w, domain.FieldError{Field: "before", Message: "must be an integer id"})
+				return
+			}
+			before = n
+		}
+
+		entries, err := d.Agent.ChatHistory(r.Context(), id, limit, before, q.Get("q"))
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if entries == nil {
+			entries = []domain.ChatLogEntry{}
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"entries": entries})
 	}
 }

@@ -30,12 +30,14 @@ const (
 	AlertDiskLow     = "disk_low"
 	AlertPlayerJoin  = "player_join"
 	AlertPlayerLeave = "player_leave"
+	// AlertChat fires on every in-game chat line (F-2.3).
+	AlertChat = "chat"
 )
 
 // AllAlertKinds lists every known alert kind, for validation and the UI.
 var AllAlertKinds = []string{
 	AlertCrashed, AlertDown, AlertJobFailed, AlertGameUpdate,
-	AlertAppUpdate, AlertDiskLow, AlertPlayerJoin, AlertPlayerLeave,
+	AlertAppUpdate, AlertDiskLow, AlertPlayerJoin, AlertPlayerLeave, AlertChat,
 }
 
 // NotifyChannel is one configured outbound notification destination.

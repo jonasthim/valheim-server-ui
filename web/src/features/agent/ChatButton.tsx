@@ -1,22 +1,26 @@
 // A live in-game chat panel: shouts and normal messages from the running
-// world (GET /agent/chat, polled while open), with a composer that sends a
-// server message through the `say` command. Whispers never reach the agent,
-// so they never appear here.
+// world, stored server-side (GET /instances/{id}/chat) and pushed live over
+// the agent.chat SSE event, with a search box over the history and a
+// composer that sends a server message through the `say` command. Whispers
+// never reach the agent, so they never appear here.
 import { useEffect, useRef, useState } from 'react'
 import { Badge, Button, Group, Modal, ScrollArea, Stack, Text, TextInput } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
-import { IconMessage } from '@tabler/icons-react'
+import { IconMessage, IconSearch } from '@tabler/icons-react'
 import { fmtAgo } from '../../lib/format'
 import { useAgentChat, useAgentCommand } from './useAgent'
 
 export function ChatButton({ id, disabled, canSay }: { id: string; disabled?: boolean; canSay: boolean }) {
   const [opened, { open, close }] = useDisclosure(false)
-  const chat = useAgentChat(id, opened)
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  const chat = useAgentChat(id, opened, search)
   const command = useAgentCommand(id)
   const [text, setText] = useState('')
   const viewport = useRef<HTMLDivElement>(null)
 
-  const messages = chat.data?.messages ?? []
+  // The API returns newest-first; a chat feed reads top-to-bottom oldest-first.
+  const messages = [...(chat.data?.entries ?? [])].reverse()
 
   // Keep the newest message in view as the feed grows.
   useEffect(() => {
@@ -39,15 +43,24 @@ export function ChatButton({ id, disabled, canSay }: { id: string; disabled?: bo
       </Button>
       <Modal opened={opened} onClose={close} title="In-game chat" centered size="lg">
         <Stack gap="sm">
+          <TextInput
+            placeholder="Search chat history"
+            leftSection={<IconSearch size={14} />}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') setSearch(searchInput.trim())
+            }}
+          />
           <ScrollArea h={360} viewportRef={viewport} type="auto">
             <Stack gap={8} pr="sm">
               {messages.length === 0 && (
                 <Text size="sm" c="dimmed">
-                  {chat.isLoading ? 'Loading…' : 'No chat yet. Shouts and messages from players show up here.'}
+                  {chat.isLoading ? 'Loading…' : search ? 'No chat matches your search.' : 'No chat yet. Shouts and messages from players show up here.'}
                 </Text>
               )}
               {messages.map((m) => (
-                <Group key={m.seq} gap="xs" align="baseline" wrap="nowrap">
+                <Group key={m.id} gap="xs" align="baseline" wrap="nowrap">
                   {m.type === 'shout' && (
                     <Badge size="xs" variant="light" color="straw">
                       shout

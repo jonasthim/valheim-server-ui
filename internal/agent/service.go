@@ -33,6 +33,13 @@ type Versioner interface {
 	Version() string
 }
 
+// ChatStore persists chat lines the poller sees and serves them back for
+// history (internal/db.ChatLogRepo satisfies this; F-2.3).
+type ChatStore interface {
+	Insert(ctx context.Context, e domain.ChatLogEntry) (int64, error)
+	List(ctx context.Context, instanceID string, limit int, before int64, q string) ([]domain.ChatLogEntry, error)
+}
+
 type state struct {
 	explored        *domain.ExploredInfo
 	connected       bool
@@ -41,6 +48,16 @@ type state struct {
 	status          *domain.AgentStatus
 	lastPublished   time.Time
 	lastFingerprint string
+	// Chat cursor (F-2.3): chatSeq is the "since" for the next /v1/chat
+	// fetch, advanced to that fetch's Next once processed. chatUptime is the
+	// last uptime_seconds seen, to detect a restart (a lower uptime than
+	// last time means the world restarted and the agent's own seq counter
+	// started over). chatRun disambiguates seq numbers across restarts in
+	// the stored rows (run_seq): it increments every time a restart is
+	// detected.
+	chatSeq    int64
+	chatUptime float64
+	chatRun    int64
 }
 
 // Service polls agents, enriches instance status and executes commands.
@@ -55,6 +72,17 @@ type Service struct {
 	states  map[string]*state
 	maps    map[string]*mapState
 	now     func() time.Time
+	// chatStore persists chat lines poll sees; nil (the default) means chat
+	// history is unavailable and polling never fetches it.
+	chatStore ChatStore
+}
+
+// SetChatStore wires the chat_log repository (F-2.3). Without it the poller
+// never fetches chat and ChatHistory answers empty.
+func (s *Service) SetChatStore(store ChatStore) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.chatStore = store
 }
 
 // NewService wires the agent integration. bundle may be nil (no bundled
@@ -194,6 +222,7 @@ func (s *Service) poll(ctx context.Context, id string, port int, paths domain.In
 		s.setDisconnected(id, err.Error())
 		return
 	}
+	s.pollChat(ctx, id, c, st.UptimeSeconds)
 	// Fog state rides along so the map hears about new masks within a
 	// poll instead of its own slower refresh.
 	s.mu.Lock()
@@ -253,6 +282,91 @@ func (s *Service) poll(ctx context.Context, id string, port int, paths domain.In
 	if info != nil {
 		s.publish(id, info)
 	}
+}
+
+// pollChat fetches new chat lines since id's cursor, stores each one and
+// publishes one agent.chat event per message (F-2.3). uptime is this poll's
+// status.uptime_seconds: a drop from the last value seen means the world
+// restarted, so the agent's own seq counter started over and the cursor
+// resets. A chat fetch or store failure is logged and left for the next
+// poll to retry; it never marks the agent disconnected.
+func (s *Service) pollChat(ctx context.Context, id string, c *Client, uptime float64) {
+	s.mu.Lock()
+	if s.chatStore == nil {
+		s.mu.Unlock()
+		return
+	}
+	store := s.chatStore
+	x := s.states[id]
+	if x == nil {
+		x = &state{}
+		s.states[id] = x
+	}
+	if uptime < x.chatUptime {
+		x.chatSeq = 0
+		x.chatRun++
+	}
+	x.chatUptime = uptime
+	since := x.chatSeq
+	run := x.chatRun
+	s.mu.Unlock()
+
+	cctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	chat, err := c.Chat(cctx, since, 200)
+	cancel()
+	if err != nil {
+		s.log.Debug("agent: chat fetch", "instance", id, "err", err)
+		return
+	}
+
+	next := since
+	for _, m := range chat.Messages {
+		if next < m.Seq {
+			next = m.Seq
+		}
+		// Guard against an agent that (like a naive/older implementation)
+		// answers with more than strictly-newer lines: only what we have not
+		// already advanced past goes in, so a repeated response never
+		// duplicates a row.
+		if m.Seq <= since {
+			continue
+		}
+		entry := domain.ChatLogEntry{
+			InstanceID: id,
+			At:         m.At,
+			Type:       m.Type,
+			Sender:     m.Sender,
+			Text:       m.Text,
+			RunSeq:     run,
+		}
+		if m.Position != nil {
+			px, pz := m.Position.X, m.Position.Z
+			entry.X, entry.Z = &px, &pz
+		}
+		entryID, err := store.Insert(ctx, entry)
+		if err != nil {
+			s.log.Warn("agent: chat insert", "instance", id, "err", err)
+			continue
+		}
+		entry.ID = entryID
+		s.publishChat(id, entry)
+	}
+	if chat.Next > next {
+		next = chat.Next
+	}
+
+	s.mu.Lock()
+	if x2 := s.states[id]; x2 != nil && next > x2.chatSeq {
+		x2.chatSeq = next
+	}
+	s.mu.Unlock()
+}
+
+func (s *Service) publishChat(id string, entry domain.ChatLogEntry) {
+	if s.bus == nil {
+		return
+	}
+	s.bus.Publish(domain.Event{Name: domain.EventAgentChat, InstanceID: id, Data: entry})
 }
 
 func (s *Service) setDisconnected(id, reason string) {
@@ -458,4 +572,27 @@ func (s *Service) Chat(ctx context.Context, id string, since int64, limit int) (
 		return nil, domain.Wrap(domain.CodeUpstreamError, "agent chat", err)
 	}
 	return ch, nil
+}
+
+// ChatHistory returns id's stored chat lines, newest first, optionally
+// filtered by q and paged with a before-id cursor (0 = none). Unlike Chat
+// (a live passthrough to the running agent's own recent-window buffer),
+// this reads the poller's own store and works whether or not the agent is
+// currently connected. A service with no chat store configured (nil,
+// SetChatStore never called) answers an empty slice, not an error.
+func (s *Service) ChatHistory(ctx context.Context, id string, limit int, before int64, q string) ([]domain.ChatLogEntry, error) {
+	s.mu.Lock()
+	store := s.chatStore
+	s.mu.Unlock()
+	if store == nil {
+		return []domain.ChatLogEntry{}, nil
+	}
+	entries, err := store.List(ctx, id, limit, before, q)
+	if err != nil {
+		return nil, fmt.Errorf("chat history: %w", err)
+	}
+	if entries == nil {
+		entries = []domain.ChatLogEntry{}
+	}
+	return entries, nil
 }

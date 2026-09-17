@@ -4,7 +4,7 @@
 // key (see events/useEvents.ts).
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { AgentCatalog, AgentChat, AgentCommandRequest, AgentCommandResult, AgentInfo, Job } from '../../api/types'
+import type { AgentCatalog, AgentCommandRequest, AgentCommandResult, AgentInfo, ChatLogEntry, Job } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
 
 export function agentKey(id: string) {
@@ -63,13 +63,18 @@ export function useAgentCatalog(id: string, enabled: boolean) {
   })
 }
 
-/** GET /instances/{id}/agent/chat, polled while the panel is open. */
-export function useAgentChat(id: string, enabled: boolean) {
+/** GET /instances/{id}/chat: stored chat history, newest first (F-2.3). No
+ * polling — the `agent.chat` SSE event (see events/useEvents.ts) pushes new
+ * lines into the same (unsearched) query key as they arrive. Passing a
+ * non-empty q gives that search its own cached, one-off query, fed by a
+ * local state committed in ChatButton. */
+export function useAgentChat(id: string, enabled: boolean, q = '') {
+  const key = q ? (['instances', id, 'chat', q] as const) : (['instances', id, 'chat'] as const)
   return useQuery({
-    queryKey: ['instances', id, 'agent', 'chat'],
-    queryFn: () => api.get<AgentChat>(`/instances/${id}/agent/chat?limit=100`),
+    queryKey: key,
+    queryFn: () => api.get<{ entries: ChatLogEntry[] }>(`/instances/${id}/chat?limit=100${q ? `&q=${encodeURIComponent(q)}` : ''}`),
     enabled: !!id && enabled,
-    refetchInterval: enabled ? 5_000 : false,
+    staleTime: 60_000,
   })
 }
 

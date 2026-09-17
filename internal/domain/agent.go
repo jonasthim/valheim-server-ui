@@ -175,6 +175,24 @@ type AgentChatMessage struct {
 	Position *Vec3     `json:"position,omitempty"`
 }
 
+// ChatLogEntry is one stored row of the chat_log table (F-2.3): an in-game
+// chat line the agent poller has seen, kept across agent reconnects and
+// world restarts so it survives longer than the plugin's own recent-window
+// buffer (AgentChat). RunSeq disambiguates the agent's own per-run Seq
+// (AgentChatMessage.Seq) across world restarts, when the plugin's counter
+// starts over from zero.
+type ChatLogEntry struct {
+	ID         int64     `json:"id"`
+	InstanceID string    `json:"instance_id"`
+	At         time.Time `json:"at"`
+	Type       string    `json:"type"` // shout|normal
+	Sender     string    `json:"sender"`
+	Text       string    `json:"text"`
+	X          *float64  `json:"x,omitempty"`
+	Z          *float64  `json:"z,omitempty"`
+	RunSeq     int64     `json:"run_seq"`
+}
+
 // MapInfo is the plugin's render state for the world map (GET /v1/map/info).
 type MapInfo struct {
 	State          string  `json:"state"` // idle|rendering|encoding|ready|failed

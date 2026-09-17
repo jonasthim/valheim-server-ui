@@ -16,6 +16,10 @@ const (
 	EventAppUpdateAvailable = "app.update_available"
 	EventInstanceCrashed    = "instance.crashed"
 	EventHeartbeat          = "heartbeat"
+	// EventAgentChat carries one ChatLogEntry as soon as the poller stores it
+	// (F-2.3); the browser appends it to the cached chat history instead of
+	// polling GET /instances/{id}/chat.
+	EventAgentChat = "agent.chat"
 )
 
 // Event is one message on the in-process bus / SSE stream.

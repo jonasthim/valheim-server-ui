@@ -40,6 +40,8 @@ func alertsFor(ev domain.Event, prev *playersSnapshot) []Message {
 		return appUpdateAlert(ev)
 	case domain.EventInstancePlayers:
 		return playerAlerts(ev, prev)
+	case domain.EventAgentChat:
+		return chatAlert(ev)
 	default:
 		return nil
 	}
@@ -105,6 +107,18 @@ func appUpdateAlert(ev domain.Event) []Message {
 		Title: "Manager update available",
 		Body:  fmt.Sprintf("%s -> %s", info.CurrentVersion, info.LatestVersion),
 		At:    ev.TS,
+	}}
+}
+
+// chatAlert reports one in-game chat line (F-2.3).
+func chatAlert(ev domain.Event) []Message {
+	e, ok := ev.Data.(domain.ChatLogEntry)
+	if !ok {
+		return nil
+	}
+	return []Message{{
+		Kind: domain.AlertChat, Title: fmt.Sprintf("%s in %s", e.Sender, ev.InstanceID),
+		Body: e.Text, InstanceID: ev.InstanceID, At: ev.TS,
 	}}
 }
 

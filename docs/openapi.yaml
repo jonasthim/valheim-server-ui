@@ -1178,6 +1178,30 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/AgentChat' }
         '409': { description: 'Agent not installed or instance not running', $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/chat:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [agent]
+      summary: Stored chat history, newest first, searchable (F-2.3)
+      description: |
+        Unlike GET .../agent/chat (a passthrough to the live agent's own
+        recent-window buffer), this reads the manager's own chat_log: every
+        line the poller has seen, kept and searchable across agent
+        reconnects and world restarts.
+      x-role: viewer
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 500 } }
+        - { name: before, in: query, schema: { type: integer, format: int64 }, description: Cursor; only entries with a strictly smaller id }
+        - { name: q, in: query, schema: { type: string }, description: Case-insensitive substring match against sender or text }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [entries]
+                properties:
+                  entries: { type: array, items: { $ref: '#/components/schemas/ChatLogEntry' } }
   /instances/{instanceId}/agent/install:
     parameters: [{ $ref: '#/components/parameters/instanceId' }]
     post:
@@ -1585,6 +1609,7 @@ paths:
         - `instance.log`: { instance_id, line }
         - `instance.players`: { instance_id, online: OnlinePlayer[] }
         - `agent.status`: { instance_id, agent: AgentInfo } (hidden players' positions omitted)
+        - `agent.chat`: ChatLogEntry (with instance_id), one per new chat line as the poller stores it
         - `job.updated`: Job
         - `job.log`: { job_id, line }
         - `instance.crashed`: InstanceEvent (with instance_id)
@@ -1862,7 +1887,7 @@ components:
 
     AlertKind:
       type: string
-      enum: [crashed, down, job_failed, game_update, app_update, disk_low, player_join, player_leave]
+      enum: [crashed, down, job_failed, game_update, app_update, disk_low, player_join, player_leave, chat]
 
     NotifyChannel:
       type: object
@@ -2703,6 +2728,27 @@ components:
         sender: { type: string }
         text: { type: string }
         position: { $ref: '#/components/schemas/Vec3' }
+
+    ChatLogEntry:
+      type: object
+      description: |
+        One stored in-game chat line (F-2.3), kept across agent reconnects and
+        world restarts in the manager's own chat_log — unlike AgentChat, the
+        live agent's own recent-window buffer.
+      required: [id, instance_id, at, type, sender, text, run_seq]
+      properties:
+        id: { type: integer, format: int64, readOnly: true }
+        instance_id: { type: string }
+        at: { type: string, format: date-time }
+        type: { type: string, enum: [shout, normal] }
+        sender: { type: string }
+        text: { type: string }
+        x: { type: number }
+        z: { type: number }
+        run_seq:
+          type: integer
+          format: int64
+          description: Disambiguates the agent's own per-run sequence number (AgentChatMessage.seq) across world restarts.
 
     JobType:
       type: string

@@ -2852,6 +2852,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/chat": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Stored chat history, newest first, searchable (F-2.3)
+         * @description Unlike GET .../agent/chat (a passthrough to the live agent's own
+         *     recent-window buffer), this reads the manager's own chat_log: every
+         *     line the poller has seen, kept and searchable across agent
+         *     reconnects and world restarts.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    /** @description Cursor; only entries with a strictly smaller id */
+                    before?: number;
+                    /** @description Case-insensitive substring match against sender or text */
+                    q?: string;
+                };
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            entries: components["schemas"]["ChatLogEntry"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/agent/install": {
         parameters: {
             query?: never;
@@ -3825,6 +3878,7 @@ export interface paths {
          *     - `instance.log`: { instance_id, line }
          *     - `instance.players`: { instance_id, online: OnlinePlayer[] }
          *     - `agent.status`: { instance_id, agent: AgentInfo } (hidden players' positions omitted)
+         *     - `agent.chat`: ChatLogEntry (with instance_id), one per new chat line as the poller stores it
          *     - `job.updated`: Job
          *     - `job.log`: { job_id, line }
          *     - `instance.crashed`: InstanceEvent (with instance_id)
@@ -4070,7 +4124,7 @@ export interface components {
         /** @enum {string} */
         NotifyChannelType: "discord" | "slack" | "ntfy" | "telegram" | "webhook" | "email";
         /** @enum {string} */
-        AlertKind: "crashed" | "down" | "job_failed" | "game_update" | "app_update" | "disk_low" | "player_join" | "player_leave";
+        AlertKind: "crashed" | "down" | "job_failed" | "game_update" | "app_update" | "disk_low" | "player_join" | "player_leave" | "chat";
         NotifyChannel: {
             readonly id: string;
             type: components["schemas"]["NotifyChannelType"];
@@ -4890,6 +4944,29 @@ export interface components {
             sender: string;
             text: string;
             position?: components["schemas"]["Vec3"];
+        };
+        /**
+         * @description One stored in-game chat line (F-2.3), kept across agent reconnects and
+         *     world restarts in the manager's own chat_log — unlike AgentChat, the
+         *     live agent's own recent-window buffer.
+         */
+        ChatLogEntry: {
+            /** Format: int64 */
+            readonly id: number;
+            instance_id: string;
+            /** Format: date-time */
+            at: string;
+            /** @enum {string} */
+            type: "shout" | "normal";
+            sender: string;
+            text: string;
+            x?: number;
+            z?: number;
+            /**
+             * Format: int64
+             * @description Disambiguates the agent's own per-run sequence number (AgentChatMessage.seq) across world restarts.
+             */
+            run_seq: number;
         };
         /** @enum {string} */
         JobType: "install" | "update" | "backup" | "backup_upload" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "agent_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade" | "restart";
