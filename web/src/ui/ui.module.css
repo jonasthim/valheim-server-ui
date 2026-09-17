@@ -62,10 +62,13 @@
   flex: 1 1 16rem;
   min-width: 0;
 }
-/* Actions stay their natural width and right-align, whether beside the title
-   or wrapped onto their own line below it. */
+/* Actions right-align, beside the title or wrapped onto their own line below
+   it. They may shrink (and their Group wrap) so a long action row never widens
+   the page past a phone viewport — iOS zooms the whole page out when it does. */
 .sectionHeadActions {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   margin-left: auto;
 }
 .sectionBody {

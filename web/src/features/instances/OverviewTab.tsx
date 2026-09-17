@@ -97,11 +97,15 @@ export function OverviewTab({ id }: { id: string }) {
   // Status statement subtitle: the live world clock/weather through the
   // agent when connected, else just the configured world name.
   const world = agentQuery.data?.connected ? agentQuery.data.status?.world : undefined
-  const worldSummary = world
-    ? `world ${world.name ?? instance.config.world}, day ${world.day ?? '?'}, ${
-        world.weather ? world.weather.toLowerCase() : 'unknown weather'
-      }, ${world.is_night ? 'night' : 'day'}`
-    : `world ${instance.config.world}`
+  // While the server is still loading, the agent reports an empty name, day 0
+  // and no weather: fall back to the configured name and say nothing more.
+  const worldName = world?.name || instance.config.world
+  const worldLoaded = !!world && (world.day ?? 0) > 0
+  const worldSummary = worldLoaded
+    ? `world ${worldName}, day ${world.day}${world.weather ? `, ${world.weather.toLowerCase()}` : ''}, ${
+        world.is_night ? 'night' : 'day'
+      }`
+    : `world ${worldName}`
 
   const jobs = jobsQuery.data ?? []
   const events = eventsQuery.data?.events ?? []
