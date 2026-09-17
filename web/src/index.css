@@ -1,5 +1,41 @@
 /* Global styles for the Valheim Server UI design system (see docs/DESIGN.md).
    Tokens come from theme/theme.ts via the Mantine CSS variables resolver. */
+
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('/fonts/SourceSans3-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('/fonts/SourceSans3-SemiBold.woff2') format('woff2');
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('/fonts/SourceSans3-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Valheim Display';
+  src: url('/fonts/CormorantGaramond-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
 html, body, #root { height: 100%; }
 
 body {
@@ -11,7 +47,6 @@ body {
     radial-gradient(800px 480px at 110% -20%, var(--vh-glow-b), transparent 60%);
   background-attachment: fixed;
   background-repeat: no-repeat;
-  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -39,8 +74,6 @@ a:not(.mantine-Anchor-root):hover { text-decoration: none; }
 .mantine-Table-th {
   font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
   color: var(--vh-text-soft);
 }
 .mantine-Table-table {
@@ -74,9 +107,9 @@ a:not(.mantine-Anchor-root):hover { text-decoration: none; }
 
 /* Utility: small uppercase label used above stats and sections. */
 .vh-eyebrow {
-  font-size: 0.72rem;
+  font-size: 0.85rem;
   font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--vh-text-soft);
 }

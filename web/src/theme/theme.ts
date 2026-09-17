@@ -10,6 +10,7 @@ import {
   Paper,
   Table,
   Tabs,
+  Title,
   Tooltip,
   createTheme,
   type CSSVariablesResolver,
@@ -135,20 +136,19 @@ export const theme = createTheme({
     orange: ember,
     violet: spirit,
   },
-  fontFamily:
-    'Inter, "SF Pro Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", Arial, sans-serif',
-  fontFamilyMonospace: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  fontFamily: '"Source Sans 3", system-ui, sans-serif',
+  fontFamilyMonospace: '"JetBrains Mono", ui-monospace, monospace',
   headings: {
-    fontFamily:
-      'Inter, "SF Pro Display", "Segoe UI Variable Display", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif',
-    fontWeight: '650',
+    fontFamily: '"Valheim Display", "Source Sans 3", serif',
+    fontWeight: '700',
     sizes: {
-      h1: { fontSize: '2rem', lineHeight: '1.2' },
-      h2: { fontSize: '1.5rem', lineHeight: '1.25' },
-      h3: { fontSize: '1.125rem', lineHeight: '1.3' },
+      h1: { fontSize: '30px', lineHeight: '1.15' },
+      h2: { fontSize: '24px', lineHeight: '1.2' },
+      h3: { fontSize: '19px', lineHeight: '1.3', fontWeight: '600' },
       h4: { fontSize: '1rem', lineHeight: '1.4' },
     },
   },
+  fontSizes: { xs: '12px', sm: '13px', md: '15px', lg: '17px', xl: '19px' },
   defaultRadius: 'md',
   radius: { xs: '4px', sm: '6px', md: '10px', lg: '14px', xl: '20px' },
   cursorType: 'pointer',
@@ -162,6 +162,9 @@ export const theme = createTheme({
     Tooltip: Tooltip.extend({ defaultProps: { withArrow: true, openDelay: 300 } }),
     Tabs: Tabs.extend({ defaultProps: { radius: 'md' } }),
     Table: Table.extend({ defaultProps: { verticalSpacing: 'sm', horizontalSpacing: 'md', highlightOnHover: true } }),
+    Title: Title.extend({
+      styles: (theme, props) => (props.order === 3 ? { root: { fontFamily: theme.fontFamily } } : {}),
+    }),
   },
 })
 
