@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"regexp"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -285,8 +284,6 @@ func getAgentHandler(d *Deps) http.HandlerFunc {
 	}
 }
 
-const maxAgentMessageLen = 200
-
 func agentCommandHandler(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := InstanceID(r)
@@ -309,7 +306,7 @@ func agentCommandHandler(d *Deps) http.HandlerFunc {
 		if !known {
 			fields = append(fields, domain.FieldError{Field: "command", Message: "must be one of save, kick, ban, unban, broadcast, time, say, setkey, removekey, event, eventstop"})
 		}
-		fields = append(fields, validateAgentCommand(req)...)
+		fields = append(fields, domain.ValidateAgentCommand(req)...)
 		if len(fields) > 0 {
 			WriteValidation(w, fields...)
 			return
@@ -361,71 +358,6 @@ func installAgentHandler(d *Deps) http.HandlerFunc {
 		d.audit(r, "agent.install", id, job.ID, map[string]any{"stop_if_running": req.StopIfRunning})
 		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 	}
-}
-
-// agentKeyPattern mirrors the plugin's global-key rule (Commands.cs).
-var agentKeyPattern = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
-
-// validateAgentCommand checks the 1.11 verbs' arguments before they reach the
-// agent, so a bad request is a 422 with field detail rather than an OK=false
-// round-trip. The command membership is checked by the caller.
-func validateAgentCommand(req domain.AgentCommandRequest) []domain.FieldError {
-	var fields []domain.FieldError
-	switch req.Command {
-	case "kick", "ban", "unban":
-		if req.Target == "" || len(req.Target) > 64 {
-			fields = append(fields, domain.FieldError{Field: "target", Message: "player name or platform id, 1-64 characters"})
-		}
-	case "broadcast":
-		if req.Message == "" || len(req.Message) > maxAgentMessageLen {
-			fields = append(fields, domain.FieldError{Field: "message", Message: "1-200 characters"})
-		}
-		if req.Style != "" && req.Style != "center" && req.Style != "topleft" {
-			fields = append(fields, domain.FieldError{Field: "style", Message: "center or topleft"})
-		}
-	case "say":
-		if req.Message == "" || len(req.Message) > maxAgentMessageLen {
-			fields = append(fields, domain.FieldError{Field: "message", Message: "1-200 characters"})
-		}
-		if len(req.Name) > 32 {
-			fields = append(fields, domain.FieldError{Field: "name", Message: "at most 32 characters"})
-		}
-	case "time":
-		set := 0
-		if req.Skip != "" {
-			set++
-			if req.Skip != "morning" {
-				fields = append(fields, domain.FieldError{Field: "skip", Message: "the only supported value is morning"})
-			}
-		}
-		if req.Fraction != nil {
-			set++
-			if *req.Fraction < 0 || *req.Fraction > 1 {
-				fields = append(fields, domain.FieldError{Field: "fraction", Message: "between 0 and 1"})
-			}
-		}
-		if req.Seconds != nil {
-			set++
-			if *req.Seconds < 1 || *req.Seconds > 86400 {
-				fields = append(fields, domain.FieldError{Field: "seconds", Message: "between 1 and 86400"})
-			}
-		}
-		if set != 1 {
-			fields = append(fields, domain.FieldError{Field: "time", Message: "set exactly one of fraction, skip or seconds"})
-		}
-	case "setkey", "removekey":
-		if !agentKeyPattern.MatchString(req.Key) {
-			fields = append(fields, domain.FieldError{Field: "key", Message: "must match [A-Za-z0-9_]{1,64}"})
-		}
-	case "event":
-		if req.Event == "" || len(req.Event) > 64 {
-			fields = append(fields, domain.FieldError{Field: "event", Message: "event name, 1-64 characters"})
-		}
-		if (req.X == nil) != (req.Z == nil) {
-			fields = append(fields, domain.FieldError{Field: "x", Message: "set both x and z, or neither"})
-		}
-	}
-	return fields
 }
 
 func getAgentCatalogHandler(d *Deps) http.HandlerFunc {

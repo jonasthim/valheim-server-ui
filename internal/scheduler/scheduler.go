@@ -41,8 +41,11 @@ type Hooks struct {
 	UpdateAvailable func(ctx context.Context, instanceID string) (bool, error)
 	// Broadcast sends an on-screen message to a running instance's players
 	// through the agent (nil when no agent is configured). Used to warn
-	// players before a graceful restart.
+	// players before a graceful restart, and by the "announce" schedule kind.
 	Broadcast func(ctx context.Context, instanceID, message string) error
+	// Command sends an agent command to a running instance (nil when no
+	// agent is configured). Used by the "command" and "save" schedule kinds.
+	Command func(ctx context.Context, instanceID string, req domain.AgentCommandRequest) error
 }
 
 // Service implements api.ScheduleService and the cron engine.

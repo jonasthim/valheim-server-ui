@@ -4544,7 +4544,7 @@ export interface components {
             kinds: components["schemas"]["BackupKind"][];
         };
         /** @enum {string} */
-        ScheduleKind: "restart" | "backup" | "update";
+        ScheduleKind: "restart" | "backup" | "update" | "announce" | "command" | "save";
         ScheduleInput: {
             kind: components["schemas"]["ScheduleKind"];
             /** @description Standard 5-field cron, host timezone */
@@ -4553,6 +4553,14 @@ export interface components {
             /** @default true */
             only_when_empty: boolean;
             note?: string;
+            /** @description announce: the text broadcast to players */
+            message?: string;
+            command?: components["schemas"]["AgentCommandRequest"];
+            /**
+             * @description restart: its own warning lead; 0 means the default (120s)
+             * @default 120
+             */
+            lead_seconds: number;
         };
         Schedule: components["schemas"]["ScheduleInput"] & {
             id: number;

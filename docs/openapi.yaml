@@ -2325,7 +2325,7 @@ components:
 
     ScheduleKind:
       type: string
-      enum: [restart, backup, update]
+      enum: [restart, backup, update, announce, command, save]
 
     ScheduleInput:
       type: object
@@ -2336,6 +2336,9 @@ components:
         enabled: { type: boolean }
         only_when_empty: { type: boolean, default: true }
         note: { type: string, maxLength: 100 }
+        message: { type: string, maxLength: 500, description: 'announce: the text broadcast to players' }
+        command: { $ref: '#/components/schemas/AgentCommandRequest' }
+        lead_seconds: { type: integer, minimum: 0, maximum: 3600, default: 120, description: 'restart: its own warning lead; 0 means the default (120s)' }
 
     Schedule:
       allOf:

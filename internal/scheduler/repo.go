@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -11,7 +12,9 @@ import (
 )
 
 // scheduleRow is the persisted shape of one schedules table row
-// (internal/db/migrations/00001_init.sql).
+// (internal/db/migrations/00009_schedules_rebuild.sql). Message/Command are
+// stored together as payload_json (schedulePayload); LeadSeconds is its own
+// column.
 type scheduleRow struct {
 	ID            int64
 	InstanceID    string
@@ -20,6 +23,9 @@ type scheduleRow struct {
 	Enabled       bool
 	OnlyWhenEmpty bool
 	Note          string
+	Message       string
+	Command       *domain.AgentCommandRequest
+	LeadSeconds   int
 	LastRunAt     *time.Time
 	LastResult    string
 	LastJobID     string
@@ -27,22 +33,39 @@ type scheduleRow struct {
 	UpdatedAt     time.Time
 }
 
+// schedulePayload is the payload_json column's shape: the announce message or
+// agent command a schedule carries. Everything else queried or filtered on
+// (kind, cron, lead_seconds, ...) is its own column.
+type schedulePayload struct {
+	Message string                      `json:"message,omitempty"`
+	Command *domain.AgentCommandRequest `json:"command,omitempty"`
+}
+
 const scheduleColumns = `id, instance_id, kind, cron_expr, enabled, only_when_empty, note,
+	payload_json, lead_seconds,
 	last_run_at, last_result, last_job_id, created_at, updated_at`
 
 func scanScheduleRow(scan func(...any) error) (scheduleRow, error) {
 	var (
 		r                      scheduleRow
 		enabled, onlyWhenEmpty int
+		payloadJSON            string
 		lastRunAt              sql.NullString
 		createdAt, updatedAt   string
 	)
 	if err := scan(&r.ID, &r.InstanceID, &r.Kind, &r.CronExpr, &enabled, &onlyWhenEmpty, &r.Note,
+		&payloadJSON, &r.LeadSeconds,
 		&lastRunAt, &r.LastResult, &r.LastJobID, &createdAt, &updatedAt); err != nil {
 		return scheduleRow{}, err
 	}
 	r.Enabled = enabled != 0
 	r.OnlyWhenEmpty = onlyWhenEmpty != 0
+	var p schedulePayload
+	if err := json.Unmarshal([]byte(payloadJSON), &p); err != nil {
+		return scheduleRow{}, fmt.Errorf("decode payload_json for schedule %d: %w", r.ID, err)
+	}
+	r.Message = p.Message
+	r.Command = p.Command
 	if lastRunAt.Valid && lastRunAt.String != "" {
 		if t, err := time.Parse(time.RFC3339, lastRunAt.String); err == nil {
 			r.LastRunAt = &t
@@ -55,6 +78,13 @@ func scanScheduleRow(scan func(...any) error) (scheduleRow, error) {
 		r.UpdatedAt = t
 	}
 	return r, nil
+}
+
+// payloadJSON marshals r's message/command into the payload_json column
+// value. Marshalling a schedulePayload of two optional fields cannot fail.
+func (r scheduleRow) payloadJSON() string {
+	b, _ := json.Marshal(schedulePayload{Message: r.Message, Command: r.Command})
+	return string(b)
 }
 
 // getScheduleRow fetches one schedule by id, regardless of instance.
@@ -125,9 +155,11 @@ func (s *Service) listEnabledScheduleRows(ctx context.Context) ([]scheduleRow, e
 
 func (s *Service) insertScheduleRow(ctx context.Context, r scheduleRow) (int64, error) {
 	q := `INSERT INTO schedules (instance_id, kind, cron_expr, enabled, only_when_empty, note,
+		payload_json, lead_seconds,
 		last_run_at, last_result, last_job_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	res, err := s.db.ExecContext(ctx, q, r.InstanceID, r.Kind, r.CronExpr, boolToInt(r.Enabled), boolToInt(r.OnlyWhenEmpty), r.Note,
+		r.payloadJSON(), r.LeadSeconds,
 		nullableTime(r.LastRunAt), r.LastResult, r.LastJobID, formatTime(r.CreatedAt), formatTime(r.UpdatedAt))
 	if err != nil {
 		return 0, fmt.Errorf("insert schedule: %w", err)
@@ -140,13 +172,15 @@ func (s *Service) insertScheduleRow(ctx context.Context, r scheduleRow) (int64, 
 }
 
 // updateScheduleRow persists the editable fields (kind/cron/enabled/
-// only_when_empty/note/updated_at). It never touches last_run_at/
-// last_result/last_job_id; use updateLastRun/updateLastResult for those.
+// only_when_empty/note/payload/lead_seconds/updated_at). It never touches
+// last_run_at/last_result/last_job_id; use updateLastRun/updateLastResult for
+// those.
 func (s *Service) updateScheduleRow(ctx context.Context, r scheduleRow) error {
-	q := `UPDATE schedules SET kind = ?, cron_expr = ?, enabled = ?, only_when_empty = ?, note = ?, updated_at = ?
+	q := `UPDATE schedules SET kind = ?, cron_expr = ?, enabled = ?, only_when_empty = ?, note = ?,
+		payload_json = ?, lead_seconds = ?, updated_at = ?
 		WHERE id = ?`
 	res, err := s.db.ExecContext(ctx, q, r.Kind, r.CronExpr, boolToInt(r.Enabled), boolToInt(r.OnlyWhenEmpty), r.Note,
-		formatTime(r.UpdatedAt), r.ID)
+		r.payloadJSON(), r.LeadSeconds, formatTime(r.UpdatedAt), r.ID)
 	if err != nil {
 		return fmt.Errorf("update schedule %d: %w", r.ID, err)
 	}

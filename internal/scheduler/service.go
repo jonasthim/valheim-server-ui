@@ -48,6 +48,9 @@ func (s *Service) Create(ctx context.Context, instanceID string, in domain.Sched
 		Enabled:       in.Enabled,
 		OnlyWhenEmpty: in.OnlyWhenEmpty,
 		Note:          in.Note,
+		Message:       in.Message,
+		Command:       in.Command,
+		LeadSeconds:   in.LeadSeconds,
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
@@ -80,6 +83,9 @@ func (s *Service) Update(ctx context.Context, instanceID string, id int64, in do
 	row.Enabled = in.Enabled
 	row.OnlyWhenEmpty = in.OnlyWhenEmpty
 	row.Note = in.Note
+	row.Message = in.Message
+	row.Command = in.Command
+	row.LeadSeconds = in.LeadSeconds
 	row.UpdatedAt = s.now().UTC()
 	if err := s.updateScheduleRow(ctx, row); err != nil {
 		return nil, err
@@ -165,6 +171,9 @@ func (s *Service) toDomain(r scheduleRow) domain.Schedule {
 			Enabled:       r.Enabled,
 			OnlyWhenEmpty: r.OnlyWhenEmpty,
 			Note:          r.Note,
+			Message:       r.Message,
+			Command:       r.Command,
+			LeadSeconds:   r.LeadSeconds,
 		},
 		ID:         r.ID,
 		InstanceID: r.InstanceID,

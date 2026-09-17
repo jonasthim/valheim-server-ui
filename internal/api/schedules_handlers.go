@@ -158,7 +158,13 @@ func runScheduleHandler(d *Deps) http.HandlerFunc {
 			WriteError(w, err)
 			return
 		}
-		d.audit(r, "schedule.run", id, strconv.FormatInt(scheduleID, 10), map[string]any{"job_id": job.ID})
+		// announce/command/save schedules are instant agent actions with no
+		// job to show (scheduler.Service.RunNow returns a nil job for them).
+		jobID := ""
+		if job != nil {
+			jobID = job.ID
+		}
+		d.audit(r, "schedule.run", id, strconv.FormatInt(scheduleID, 10), map[string]any{"job_id": jobID})
 		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 	}
 }

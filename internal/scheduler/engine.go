@@ -151,10 +151,19 @@ func (s *Service) safeExecute(ctx context.Context, sched scheduleRow, requestedB
 // execute runs one schedule's action per ARCHITECTURE.md §11:
 //   - restart: skipped if only_when_empty and players are known to be online;
 //     otherwise enqueues a scheduled_restart job that itself no-ops (without
-//     failing) when the instance is not running.
+//     failing) when the instance is not running. Uses the schedule's own
+//     lead_seconds when set, else the default.
 //   - backup: delegates to hooks.Backup.
 //   - update: skipped if no update is available, or if only_when_empty and
 //     players are known to be online; otherwise delegates to hooks.Update.
+//   - announce: broadcasts the schedule's message through hooks.Broadcast.
+//   - command: sends the schedule's agent command through hooks.Command.
+//   - save: sends a "save" agent command through hooks.Command.
+//
+// announce, command and save are instant, synchronous actions (unlike
+// backup/update/restart, they are not "long-running or exclusive" per
+// ARCHITECTURE.md §9), so they never enqueue a job: success is (nil, "", nil),
+// same shape as runAndRecord already expects from a job-less success.
 func (s *Service) execute(ctx context.Context, sched scheduleRow, requestedBy string) (*domain.Job, string, error) {
 	switch domain.ScheduleKind(sched.Kind) {
 	case domain.ScheduleRestart:
@@ -164,6 +173,15 @@ func (s *Service) execute(ctx context.Context, sched scheduleRow, requestedBy st
 		return job, "", err
 	case domain.ScheduleUpdate:
 		return s.executeUpdate(ctx, sched, requestedBy)
+	case domain.ScheduleAnnounce:
+		return s.executeAnnounce(ctx, sched)
+	case domain.ScheduleCommand:
+		if sched.Command == nil {
+			return nil, "", domain.Ef(domain.CodeInternal, "schedule %d: command kind has no command", sched.ID)
+		}
+		return s.executeCommand(ctx, sched, *sched.Command)
+	case domain.ScheduleSave:
+		return s.executeCommand(ctx, sched, domain.AgentCommandRequest{Command: "save"})
 	default:
 		return nil, "", domain.Ef(domain.CodeInternal, "unknown schedule kind %q", sched.Kind)
 	}
@@ -174,6 +192,11 @@ func (s *Service) executeRestart(ctx context.Context, sched scheduleRow, request
 		return nil, reason, nil
 	}
 
+	lead := scheduledRestartLeadSeconds
+	if sched.LeadSeconds > 0 {
+		lead = sched.LeadSeconds
+	}
+
 	instanceID := sched.InstanceID
 	job, err := s.runner.Enqueue(ctx, jobs.Spec{
 		Type:        domain.JobScheduledRestart,
@@ -181,17 +204,38 @@ func (s *Service) executeRestart(ctx context.Context, sched scheduleRow, request
 		Title:       "Scheduled restart",
 		RequestedBy: requestedBy,
 	}, func(ctx context.Context, log *jobs.Logger) error {
-		// Reuse the graceful path: it warns players over the default lead and
-		// waits when anyone is online, and restarts immediately otherwise.
-		return s.gracefulRestart(ctx, instanceID, scheduledRestartLeadSeconds, log)
+		// Reuse the graceful path: it warns players over the lead and waits
+		// when anyone is online, and restarts immediately otherwise.
+		return s.gracefulRestart(ctx, instanceID, lead, log)
 	})
 	return job, "", err
 }
 
 // scheduledRestartLeadSeconds is the warning lead a scheduled restart gives
-// connected players. Manual restarts pick their own delay in the UI; a
-// schedule has no per-rule delay yet, so it uses this default.
+// connected players when it does not carry its own lead_seconds. Manual
+// restarts pick their own delay in the UI.
 const scheduledRestartLeadSeconds = 120
+
+// executeAnnounce broadcasts sched's message to the instance's players
+// through the agent. A nil Broadcast hook (no agent configured) is recorded
+// as a skip, mirroring skipForPlayers, rather than a failure.
+func (s *Service) executeAnnounce(ctx context.Context, sched scheduleRow) (*domain.Job, string, error) {
+	if s.hooks.Broadcast == nil {
+		return nil, "agent not configured", nil
+	}
+	return nil, "", s.hooks.Broadcast(ctx, sched.InstanceID, sched.Message)
+}
+
+// executeCommand sends req to the instance's agent — a scheduled agent
+// command, or the "save" kind's implicit save command. A nil Command hook (no
+// agent configured) is recorded as a skip, mirroring skipForPlayers, rather
+// than a failure.
+func (s *Service) executeCommand(ctx context.Context, sched scheduleRow, req domain.AgentCommandRequest) (*domain.Job, string, error) {
+	if s.hooks.Command == nil {
+		return nil, "agent not configured", nil
+	}
+	return nil, "", s.hooks.Command(ctx, sched.InstanceID, req)
+}
 
 func (s *Service) executeUpdate(ctx context.Context, sched scheduleRow, requestedBy string) (*domain.Job, string, error) {
 	avail, err := s.hooks.UpdateAvailable(ctx, sched.InstanceID)

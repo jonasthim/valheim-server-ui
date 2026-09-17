@@ -81,6 +81,89 @@ func TestValidateInput(t *testing.T) {
 			in:      domain.ScheduleInput{Kind: "bogus", Cron: ""},
 			wantErr: []string{"kind", "cron"},
 		},
+		{
+			name: "valid announce",
+			in:   domain.ScheduleInput{Kind: domain.ScheduleAnnounce, Cron: "@daily", Enabled: true, Message: "Server restarting soon"},
+		},
+		{
+			name: "valid announce with max-length message",
+			in:   domain.ScheduleInput{Kind: domain.ScheduleAnnounce, Cron: "@daily", Message: strings.Repeat("m", 500)},
+		},
+		{
+			name:    "announce missing message",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleAnnounce, Cron: "@daily"},
+			wantErr: []string{"message"},
+		},
+		{
+			name:    "announce blank message",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleAnnounce, Cron: "@daily", Message: "   "},
+			wantErr: []string{"message"},
+		},
+		{
+			name:    "announce message too long",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleAnnounce, Cron: "@daily", Message: strings.Repeat("m", 501)},
+			wantErr: []string{"message"},
+		},
+		{
+			name: "valid command",
+			in:   domain.ScheduleInput{Kind: domain.ScheduleCommand, Cron: "@daily", Command: &domain.AgentCommandRequest{Command: "save"}},
+		},
+		{
+			name:    "command missing",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleCommand, Cron: "@daily"},
+			wantErr: []string{"command"},
+		},
+		{
+			name:    "command with invalid args surfaces prefixed field",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleCommand, Cron: "@daily", Command: &domain.AgentCommandRequest{Command: "kick"}},
+			wantErr: []string{"command.target"},
+		},
+		{
+			name:    "command with an unknown name is rejected at save time",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleCommand, Cron: "@daily", Command: &domain.AgentCommandRequest{Command: "reboot"}},
+			wantErr: []string{"command.command"},
+		},
+		{
+			name: "valid save",
+			in:   domain.ScheduleInput{Kind: domain.ScheduleSave, Cron: "@daily"},
+		},
+		{
+			name: "valid restart with lead_seconds",
+			in:   domain.ScheduleInput{Kind: domain.ScheduleRestart, Cron: "@daily", LeadSeconds: 30},
+		},
+		{
+			name: "valid restart with zero lead_seconds (use default)",
+			in:   domain.ScheduleInput{Kind: domain.ScheduleRestart, Cron: "@daily", LeadSeconds: 0},
+		},
+		{
+			name: "valid restart with max lead_seconds",
+			in:   domain.ScheduleInput{Kind: domain.ScheduleRestart, Cron: "@daily", LeadSeconds: 3600},
+		},
+		{
+			name:    "restart lead_seconds too high",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleRestart, Cron: "@daily", LeadSeconds: 3601},
+			wantErr: []string{"lead_seconds"},
+		},
+		{
+			name:    "restart lead_seconds negative",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleRestart, Cron: "@daily", LeadSeconds: -1},
+			wantErr: []string{"lead_seconds"},
+		},
+		{
+			name:    "backup must not carry a message",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleBackup, Cron: "@daily", Message: "nope"},
+			wantErr: []string{"message"},
+		},
+		{
+			name:    "restart must not carry a command",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleRestart, Cron: "@daily", Command: &domain.AgentCommandRequest{Command: "save"}},
+			wantErr: []string{"command"},
+		},
+		{
+			name:    "update must not carry a message or command",
+			in:      domain.ScheduleInput{Kind: domain.ScheduleUpdate, Cron: "@daily", Message: "nope", Command: &domain.AgentCommandRequest{Command: "save"}},
+			wantErr: []string{"message", "command"},
+		},
 	}
 
 	for _, tc := range cases {

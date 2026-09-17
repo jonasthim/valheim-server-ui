@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -38,21 +39,37 @@ type testHarness struct {
 	runner  *jobs.Runner
 	players *fakePlayers
 
-	backupCalls  []hookCall
-	updateCalls  []hookCall
-	availChecked []string
+	backupCalls    []hookCall
+	updateCalls    []hookCall
+	availChecked   []string
+	broadcastCalls []broadcastCall
+	commandCalls   []commandCall
 
-	backupErr  error
-	updateErr  error
-	availErr   error
-	available  bool
-	failBackup bool // when true, the backup hook's enqueued job Func returns an error
-	failUpdate bool
+	backupErr    error
+	updateErr    error
+	availErr     error
+	broadcastErr error
+	commandErr   error
+	available    bool
+	failBackup   bool // when true, the backup hook's enqueued job Func returns an error
+	failUpdate   bool
 }
 
 type hookCall struct {
 	instanceID  string
 	requestedBy string
+}
+
+// broadcastCall/commandCall record one hooks.Broadcast/hooks.Command
+// invocation; unlike Backup/Update, neither hook takes a requestedBy.
+type broadcastCall struct {
+	instanceID string
+	message    string
+}
+
+type commandCall struct {
+	instanceID string
+	req        domain.AgentCommandRequest
 }
 
 func newTestHarness(t *testing.T, opts ...Option) *testHarness {
@@ -97,6 +114,14 @@ func newTestHarness(t *testing.T, opts ...Option) *testHarness {
 		UpdateAvailable: func(_ context.Context, instanceID string) (bool, error) {
 			h.availChecked = append(h.availChecked, instanceID)
 			return h.available, h.availErr
+		},
+		Broadcast: func(_ context.Context, instanceID, message string) error {
+			h.broadcastCalls = append(h.broadcastCalls, broadcastCall{instanceID, message})
+			return h.broadcastErr
+		},
+		Command: func(_ context.Context, instanceID string, req domain.AgentCommandRequest) error {
+			h.commandCalls = append(h.commandCalls, commandCall{instanceID, req})
+			return h.commandErr
 		},
 	}
 
@@ -355,6 +380,208 @@ func TestExecute_Update_RunsAndInvokesHookWithRequestedBy(t *testing.T) {
 	}
 	if len(h.updateCalls) != 1 || h.updateCalls[0].instanceID != "main" || h.updateCalls[0].requestedBy != "someone" {
 		t.Fatalf("unexpected update hook calls: %+v", h.updateCalls)
+	}
+}
+
+// --- announce ------------------------------------------------------------
+
+func TestExecute_Announce_DispatchesBroadcastWithMessage(t *testing.T) {
+	h := newTestHarness(t)
+	row := mustCreateSchedule(t, h.svc, domain.ScheduleInput{
+		Kind: domain.ScheduleAnnounce, Cron: "* * * * *", Enabled: true, Message: "Server restarting soon",
+	})
+
+	job, skipReason, err := h.svc.runAndRecord(context.Background(), row, "scheduler")
+	if err != nil {
+		t.Fatalf("runAndRecord: %v", err)
+	}
+	if job != nil {
+		t.Fatalf("expected no job for an announce schedule, got %+v", job)
+	}
+	if skipReason != "" {
+		t.Fatalf("expected no skip, got %q", skipReason)
+	}
+	want := broadcastCall{"main", "Server restarting soon"}
+	if len(h.broadcastCalls) != 1 || h.broadcastCalls[0] != want {
+		t.Fatalf("unexpected broadcast calls: %+v, want [%+v]", h.broadcastCalls, want)
+	}
+
+	waitForCondition(t, func() bool {
+		r, err := h.svc.getScheduleRow(context.Background(), row.ID)
+		return err == nil && r.LastResult == resultOK
+	})
+}
+
+func TestExecute_Announce_NilBroadcastHook_Skips(t *testing.T) {
+	h := newTestHarness(t)
+	h.svc.hooks.Broadcast = nil
+	row := mustCreateSchedule(t, h.svc, domain.ScheduleInput{
+		Kind: domain.ScheduleAnnounce, Cron: "* * * * *", Enabled: true, Message: "Hello",
+	})
+
+	job, skipReason, err := h.svc.runAndRecord(context.Background(), row, "scheduler")
+	if err != nil {
+		t.Fatalf("runAndRecord: %v", err)
+	}
+	if job != nil {
+		t.Fatalf("expected no job, got %+v", job)
+	}
+	if skipReason != "agent not configured" {
+		t.Fatalf("expected skip reason %q, got %q", "agent not configured", skipReason)
+	}
+
+	r, err := h.svc.getScheduleRow(context.Background(), row.ID)
+	if err != nil {
+		t.Fatalf("getScheduleRow: %v", err)
+	}
+	if r.LastResult != resultSkipped {
+		t.Fatalf("expected last_result skipped, got %q", r.LastResult)
+	}
+}
+
+// --- command / save --------------------------------------------------------
+
+func TestExecute_Command_DispatchesCommandHookWithRequest(t *testing.T) {
+	h := newTestHarness(t)
+	cmd := &domain.AgentCommandRequest{Command: "broadcast", Message: "hi", Style: "center"}
+	row := mustCreateSchedule(t, h.svc, domain.ScheduleInput{
+		Kind: domain.ScheduleCommand, Cron: "* * * * *", Enabled: true, Command: cmd,
+	})
+
+	job, skipReason, err := h.svc.runAndRecord(context.Background(), row, "scheduler")
+	if err != nil {
+		t.Fatalf("runAndRecord: %v", err)
+	}
+	if job != nil {
+		t.Fatalf("expected no job for a command schedule, got %+v", job)
+	}
+	if skipReason != "" {
+		t.Fatalf("expected no skip, got %q", skipReason)
+	}
+	if len(h.commandCalls) != 1 || h.commandCalls[0].instanceID != "main" || h.commandCalls[0].req != *cmd {
+		t.Fatalf("unexpected command calls: %+v, want instanceID=main req=%+v", h.commandCalls, *cmd)
+	}
+}
+
+func TestExecute_Command_NilCommandHook_Skips(t *testing.T) {
+	h := newTestHarness(t)
+	h.svc.hooks.Command = nil
+	row := mustCreateSchedule(t, h.svc, domain.ScheduleInput{
+		Kind: domain.ScheduleCommand, Cron: "* * * * *", Enabled: true,
+		Command: &domain.AgentCommandRequest{Command: "save"},
+	})
+
+	job, skipReason, err := h.svc.runAndRecord(context.Background(), row, "scheduler")
+	if err != nil {
+		t.Fatalf("runAndRecord: %v", err)
+	}
+	if job != nil {
+		t.Fatalf("expected no job, got %+v", job)
+	}
+	if skipReason != "agent not configured" {
+		t.Fatalf("expected skip reason %q, got %q", "agent not configured", skipReason)
+	}
+}
+
+func TestExecute_Command_NilCommandOnRow_InternalError(t *testing.T) {
+	h := newTestHarness(t)
+	// Create/Update always validate Command != nil for kind "command"
+	// (validate.go); build a row bypassing that to cover execute()'s own
+	// defensive check for a stored row that (somehow) has none.
+	row := mustCreateSchedule(t, h.svc, domain.ScheduleInput{Kind: domain.ScheduleSave, Cron: "* * * * *", Enabled: true})
+	row.Kind = string(domain.ScheduleCommand)
+	row.Command = nil
+
+	_, _, err := h.svc.execute(context.Background(), row, "scheduler")
+	de := requireDomainError(t, err)
+	if de.Code != domain.CodeInternal {
+		t.Fatalf("expected an internal error, got %v", de.Code)
+	}
+}
+
+func TestExecute_Save_DispatchesCommandHookWithSaveRequest(t *testing.T) {
+	h := newTestHarness(t)
+	row := mustCreateSchedule(t, h.svc, domain.ScheduleInput{Kind: domain.ScheduleSave, Cron: "* * * * *", Enabled: true})
+
+	job, skipReason, err := h.svc.runAndRecord(context.Background(), row, "scheduler")
+	if err != nil {
+		t.Fatalf("runAndRecord: %v", err)
+	}
+	if job != nil {
+		t.Fatalf("expected no job for a save schedule, got %+v", job)
+	}
+	if skipReason != "" {
+		t.Fatalf("expected no skip, got %q", skipReason)
+	}
+	want := domain.AgentCommandRequest{Command: "save"}
+	if len(h.commandCalls) != 1 || h.commandCalls[0].instanceID != "main" || h.commandCalls[0].req != want {
+		t.Fatalf("unexpected command calls: %+v, want instanceID=main req=%+v", h.commandCalls, want)
+	}
+}
+
+// --- restart lead_seconds ---------------------------------------------------
+
+func TestExecute_Restart_UsesScheduleLeadSeconds(t *testing.T) {
+	h := newTestHarness(t, WithSleep(func(context.Context, time.Duration) error { return nil }))
+	h.sup.setState("main", supervisor.StateRunning)
+	h.players.set("main", 2)
+	row := mustCreateSchedule(t, h.svc, domain.ScheduleInput{
+		Kind: domain.ScheduleRestart, Cron: "* * * * *", Enabled: true, LeadSeconds: 30,
+	})
+
+	job, skipReason, err := h.svc.runAndRecord(context.Background(), row, "scheduler")
+	if err != nil {
+		t.Fatalf("runAndRecord: %v", err)
+	}
+	if skipReason != "" {
+		t.Fatalf("expected no skip, got %q", skipReason)
+	}
+	finalJob, err := h.runner.WaitFor(context.Background(), job.ID)
+	if err != nil {
+		t.Fatalf("WaitFor: %v", err)
+	}
+	if finalJob.Status != domain.JobSucceeded {
+		t.Fatalf("expected the restart job to succeed, got %v: %s", finalJob.Status, finalJob.Error)
+	}
+
+	// A 30s lead warns at 30 and 10 (the standard marks below 30) rather than
+	// the 120s default's 120,60,30,10 — proving executeRestart used
+	// row.LeadSeconds, not scheduledRestartLeadSeconds.
+	want := []broadcastCall{
+		{"main", "Server restarting in 30 seconds"},
+		{"main", "Server restarting in 10 seconds"},
+		{"main", "Server restarting now"},
+	}
+	if !reflect.DeepEqual(h.broadcastCalls, want) {
+		t.Fatalf("broadcasts = %+v, want %+v", h.broadcastCalls, want)
+	}
+}
+
+func TestExecute_Restart_ZeroLeadSecondsUsesDefault(t *testing.T) {
+	h := newTestHarness(t, WithSleep(func(context.Context, time.Duration) error { return nil }))
+	h.sup.setState("main", supervisor.StateRunning)
+	h.players.set("main", 1)
+	row := mustCreateSchedule(t, h.svc, domain.ScheduleInput{
+		Kind: domain.ScheduleRestart, Cron: "* * * * *", Enabled: true, LeadSeconds: 0,
+	})
+
+	job, _, err := h.svc.runAndRecord(context.Background(), row, "scheduler")
+	if err != nil {
+		t.Fatalf("runAndRecord: %v", err)
+	}
+	if _, err := h.runner.WaitFor(context.Background(), job.ID); err != nil {
+		t.Fatalf("WaitFor: %v", err)
+	}
+
+	want := []broadcastCall{
+		{"main", "Server restarting in 2 minutes"},
+		{"main", "Server restarting in 1 minute"},
+		{"main", "Server restarting in 30 seconds"},
+		{"main", "Server restarting in 10 seconds"},
+		{"main", "Server restarting now"},
+	}
+	if !reflect.DeepEqual(h.broadcastCalls, want) {
+		t.Fatalf("broadcasts = %+v, want %+v", h.broadcastCalls, want)
 	}
 }
 

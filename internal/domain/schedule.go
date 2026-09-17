@@ -5,9 +5,12 @@ import "time"
 type ScheduleKind string
 
 const (
-	ScheduleRestart ScheduleKind = "restart"
-	ScheduleBackup  ScheduleKind = "backup"
-	ScheduleUpdate  ScheduleKind = "update"
+	ScheduleRestart  ScheduleKind = "restart"
+	ScheduleBackup   ScheduleKind = "backup"
+	ScheduleUpdate   ScheduleKind = "update"
+	ScheduleAnnounce ScheduleKind = "announce"
+	ScheduleCommand  ScheduleKind = "command"
+	ScheduleSave     ScheduleKind = "save"
 )
 
 type ScheduleInput struct {
@@ -16,6 +19,13 @@ type ScheduleInput struct {
 	Enabled       bool         `json:"enabled"`
 	OnlyWhenEmpty bool         `json:"only_when_empty"`
 	Note          string       `json:"note,omitempty"`
+	// Message is the text an "announce" schedule broadcasts to players.
+	Message string `json:"message,omitempty"`
+	// Command is the agent command a "command" schedule sends.
+	Command *AgentCommandRequest `json:"command,omitempty"`
+	// LeadSeconds is a "restart" schedule's own warning lead, in seconds; 0
+	// means the scheduler's default (scheduler.scheduledRestartLeadSeconds).
+	LeadSeconds int `json:"lead_seconds"`
 }
 
 type Schedule struct {

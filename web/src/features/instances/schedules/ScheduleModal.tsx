@@ -1,11 +1,15 @@
 import { useState } from 'react'
-import { Button, Divider, Group, Modal, Select, Stack, Switch, Text, TextInput } from '@mantine/core'
+import { Button, Divider, Group, Modal, NumberInput, Select, Stack, Switch, Text, TextInput, Textarea } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { ApiError } from '../../../api/client'
-import type { Schedule, ScheduleInput, ScheduleKind } from '../../../api/types'
+import type { AgentCommandRequest, Schedule, ScheduleInput, ScheduleKind } from '../../../api/types'
 import { CRON_PRESETS, CUSTOM_CRON_PRESET, cronDescribe, presetForExpr, validateCronExpr } from './cron'
 import { SCHEDULE_KIND_HELP, SCHEDULE_KIND_OPTIONS } from './constants'
 import { useCreateSchedule, useUpdateSchedule } from './useSchedules'
+
+// A restart schedule with no lead_seconds override (0) uses the scheduler's
+// own default; mirror that default in the form so the field reads sensibly.
+const DEFAULT_RESTART_LEAD_SECONDS = 120
 
 interface FormValues {
   kind: ScheduleKind
@@ -14,6 +18,10 @@ interface FormValues {
   enabled: boolean
   only_when_empty: boolean
   note: string
+  message: string
+  command: string
+  target: string
+  lead_seconds: number
 }
 
 export function ScheduleModal({
@@ -40,9 +48,16 @@ export function ScheduleModal({
       enabled: schedule?.enabled ?? true,
       only_when_empty: schedule?.only_when_empty ?? true,
       note: schedule?.note ?? '',
+      message: (schedule?.kind === 'command' ? schedule.command?.message : schedule?.message) ?? '',
+      command: schedule?.command?.command ?? '',
+      target: schedule?.command?.target ?? '',
+      lead_seconds: schedule?.lead_seconds || DEFAULT_RESTART_LEAD_SECONDS,
     },
     validate: {
       note: (v) => (v.length <= 100 ? null : 'Max 100 characters'),
+      message: (v, values) =>
+        values.kind === 'announce' && !v.trim() ? 'Required' : v.length <= 500 ? null : 'Max 500 characters',
+      command: (v, values) => (values.kind === 'command' && !v.trim() ? 'Required' : null),
     },
   })
 
@@ -61,6 +76,18 @@ export function ScheduleModal({
       enabled: values.enabled,
       only_when_empty: values.only_when_empty,
       note: values.note.trim() || undefined,
+      // lead_seconds only means something for "restart"; send 0 (unset) for
+      // every other kind rather than a stale value from switching kinds.
+      lead_seconds: values.kind === 'restart' ? values.lead_seconds : 0,
+    }
+    if (values.kind === 'announce') {
+      input.message = values.message.trim()
+    } else if (values.kind === 'command') {
+      input.command = {
+        command: values.command.trim() as AgentCommandRequest['command'],
+        target: values.target.trim() || undefined,
+        message: values.message.trim() || undefined,
+      }
     }
     const onSuccess = () => {
       form.reset()
@@ -95,6 +122,47 @@ export function ScheduleModal({
               description={SCHEDULE_KIND_HELP[form.values.kind]}
               {...form.getInputProps('kind')}
             />
+
+            {form.values.kind === 'announce' && (
+              <Textarea
+                label="Message"
+                placeholder="Server restarting in 5 minutes"
+                maxLength={500}
+                autosize
+                minRows={2}
+                {...form.getInputProps('message')}
+              />
+            )}
+
+            {form.values.kind === 'command' && (
+              <Stack gap="sm">
+                <TextInput
+                  label="Command"
+                  placeholder="broadcast, say, save, kick, ban, unban, ..."
+                  {...form.getInputProps('command')}
+                />
+                <TextInput
+                  label="Target"
+                  placeholder="player name or id (kick, ban, unban)"
+                  {...form.getInputProps('target')}
+                />
+                <TextInput
+                  label="Message"
+                  placeholder="text (broadcast, say)"
+                  {...form.getInputProps('message')}
+                />
+              </Stack>
+            )}
+
+            {form.values.kind === 'restart' && (
+              <NumberInput
+                label="Warn players (seconds)"
+                description="How long before the restart to start warning connected players."
+                min={0}
+                max={3600}
+                {...form.getInputProps('lead_seconds')}
+              />
+            )}
 
             <Select
               label="Schedule"

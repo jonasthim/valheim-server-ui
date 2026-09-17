@@ -62,6 +62,9 @@ export function SchedulesTab({ id }: { id: string }) {
                 enabled,
                 only_when_empty: schedule.only_when_empty,
                 note: schedule.note,
+                message: schedule.message,
+                command: schedule.command,
+                lead_seconds: schedule.lead_seconds,
               },
             })
           }

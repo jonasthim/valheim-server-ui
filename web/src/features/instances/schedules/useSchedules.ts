@@ -58,16 +58,20 @@ export function useDeleteSchedule(id: string) {
   })
 }
 
-/** POST /instances/{id}/schedules/{scheduleId}/run → 202 Job, opened in the job drawer. */
+/**
+ * POST /instances/{id}/schedules/{scheduleId}/run → 202 Job.
+ * announce/command/save schedules are instant agent actions with no job to
+ * follow (`job` is null); every other kind opens its job in the drawer.
+ */
 export function useRunSchedule(id: string) {
   const qc = useQueryClient()
   const { openJob } = useJobDrawer()
   return useMutation({
-    mutationFn: (scheduleId: number) => api.post<{ job: Job }>(`/instances/${id}/schedules/${scheduleId}/run`),
+    mutationFn: (scheduleId: number) => api.post<{ job: Job | null }>(`/instances/${id}/schedules/${scheduleId}/run`),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: schedulesKey(id) })
       notifySuccess('Schedule run started')
-      openJob(res.job.id)
+      if (res.job) openJob(res.job.id)
     },
     onError: (err) => notifyError(err, 'Could not run schedule'),
   })

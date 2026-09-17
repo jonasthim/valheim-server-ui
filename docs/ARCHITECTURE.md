@@ -143,7 +143,7 @@ Authoritative DDL is `internal/db/migrations/00001_init.sql`. Summary:
 | `instances`      | id (slug), name, config_json (InstanceConfig), autostart, pending_restart, installed_buildid, latest_buildid, buildid_checked_at, timestamps |
 | `jobs`           | id (uuid), type, instance_id (nullable), status, requested_by, created/started/finished, error, summary_json |
 | `backups`        | id, instance_id, world_name, kind (manual/scheduled/pre_update/pre_restore/uploaded), filename, size_bytes, note, created_at |
-| `schedules`      | id, instance_id, kind (restart/backup/update), cron_expr, enabled, only_when_empty, last_run_at, last_result, last_job_id |
+| `schedules`      | id, instance_id, kind (restart/backup/update/announce/command/save), cron_expr, enabled, only_when_empty, payload_json, lead_seconds, last_run_at, last_result, last_job_id |
 | `mods`           | id, instance_id, source (thunderstore/manual), owner, name, version, enabled, files_json (relative paths), installed_at, updated_at; unique(instance_id, owner, name) |
 | `players`        | instance_id, platform_id, name, first_seen_at, last_seen_at, session_count; PK(instance_id, platform_id) |
 | `audit_log`      | id, ts, user_id, username, action, instance_id, target, details_json, ip                   |
@@ -361,7 +361,11 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
   optional seconds disabled; standard 5-field, validated on write, timezone = host).
 - Kinds: `restart` (skip if `only_when_empty` and A2S players > 0), `backup`,
   `update` (check remote buildid; if newer, run an `update` job, respecting
-  `only_when_empty`).
+  `only_when_empty`), and three instant agent actions that produce no job:
+  `announce` (broadcast `message` to players), `command` (send the stored
+  agent `command`, validated like `POST /agent/command`) and `save`. With no
+  agent configured these record `skipped`, not `failed`. `message`/`command`
+  live in `payload_json`; a `restart` row carries its own `lead_seconds`.
 - Remote build id: `steamcmd +login anonymous +app_info_update 1 +app_info_print 896660 +quit`,
   regex `"public"\s*\{[^}]*?"buildid"\s*"(\d+)"`. Installed build id: `"buildid"\s*"(\d+)"`
   in `server/steamapps/appmanifest_896660.acf`. A global ticker checks every
@@ -372,7 +376,8 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
   endpoint and scheduled restarts) broadcasts a shrinking countdown to connected
   players through the agent, waits, then restarts; with nobody online (or no
   agent) it restarts immediately. The manual restart picks the delay in the UI;
-  scheduled restarts use a fixed default lead (`scheduledRestartLeadSeconds`).
+  a scheduled restart uses its own `lead_seconds`, falling back to
+  `scheduledRestartLeadSeconds` (120) when unset.
   `POST /instances/{id}/restart` takes `delay_seconds` (0 = instant, 200 status;
   >0 = a `restart` job, 202) — see docs/openapi.yaml.
 

@@ -8,6 +8,16 @@ import { useJobDrawer } from '../../jobs'
 import { cronDescribe } from './cron'
 import { LAST_RESULT_COLORS, SCHEDULE_KIND_LABELS } from './constants'
 
+// scheduleSummary is a short, kind-aware description shown where the note
+// otherwise would be: an announce schedule's message, or a command
+// schedule's "command target"; every other kind (and a command/announce
+// schedule with nothing to summarize) falls back to the note.
+function scheduleSummary(s: Schedule): string {
+  if (s.kind === 'announce' && s.message) return s.message
+  if (s.kind === 'command' && s.command) return [s.command.command, s.command.target].filter(Boolean).join(' ')
+  return s.note || '-'
+}
+
 export function SchedulesTable({
   schedules,
   isLoading,
@@ -102,7 +112,7 @@ export function SchedulesTable({
                 />
               </Table.Td>
               <Table.Td>{s.only_when_empty ? 'Yes' : 'No'}</Table.Td>
-              <Table.Td>{s.note || '-'}</Table.Td>
+              <Table.Td>{scheduleSummary(s)}</Table.Td>
               <Table.Td>{s.next_run_at ? fmtTime(s.next_run_at) : '-'}</Table.Td>
               <Table.Td>
                 {s.last_run_at ? (

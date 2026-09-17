@@ -71,6 +71,79 @@ func TestCreate_Success(t *testing.T) {
 	}
 }
 
+// TestCreate_AnnounceRoundTripsMessage proves payload_json actually persists
+// and decodes: Message travels through insertScheduleRow's marshal and
+// scanScheduleRow's unmarshal via both the Create response and a fresh List.
+func TestCreate_AnnounceRoundTripsMessage(t *testing.T) {
+	svc, _ := newTestService(t)
+	sc, err := svc.Create(context.Background(), "main", domain.ScheduleInput{
+		Kind: domain.ScheduleAnnounce, Cron: "@daily", Enabled: true, Message: "Server restarting soon",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if sc.Message != "Server restarting soon" {
+		t.Fatalf("expected message to round-trip on Create, got %q", sc.Message)
+	}
+
+	list, err := svc.List(context.Background(), "main")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 || list[0].Message != "Server restarting soon" {
+		t.Fatalf("expected the message to persist through List, got %+v", list)
+	}
+}
+
+// TestCreate_CommandRoundTripsCommand proves the Command sub-object survives
+// the payload_json JSON round trip (encoding/json on write, decode on read).
+func TestCreate_CommandRoundTripsCommand(t *testing.T) {
+	svc, _ := newTestService(t)
+	cmd := &domain.AgentCommandRequest{Command: "broadcast", Message: "hi", Style: "center"}
+	sc, err := svc.Create(context.Background(), "main", domain.ScheduleInput{
+		Kind: domain.ScheduleCommand, Cron: "@daily", Enabled: true, Command: cmd,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if sc.Command == nil || *sc.Command != *cmd {
+		t.Fatalf("expected command to round-trip, got %+v", sc.Command)
+	}
+
+	list, err := svc.List(context.Background(), "main")
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(list) != 1 || list[0].Command == nil || *list[0].Command != *cmd {
+		t.Fatalf("expected the command to persist through List, got %+v", list)
+	}
+}
+
+// TestScheduleLeadSeconds_RoundTripsThroughCreateAndUpdate proves
+// lead_seconds is its own column, independent of payload_json.
+func TestScheduleLeadSeconds_RoundTripsThroughCreateAndUpdate(t *testing.T) {
+	svc, _ := newTestService(t)
+	sc, err := svc.Create(context.Background(), "main", domain.ScheduleInput{
+		Kind: domain.ScheduleRestart, Cron: "@daily", Enabled: true, LeadSeconds: 45,
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if sc.LeadSeconds != 45 {
+		t.Fatalf("expected lead_seconds to round-trip on Create, got %d", sc.LeadSeconds)
+	}
+
+	updated, err := svc.Update(context.Background(), "main", sc.ID, domain.ScheduleInput{
+		Kind: domain.ScheduleRestart, Cron: "@daily", Enabled: true, LeadSeconds: 90,
+	})
+	if err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if updated.LeadSeconds != 90 {
+		t.Fatalf("expected updated lead_seconds to round-trip, got %d", updated.LeadSeconds)
+	}
+}
+
 func TestNextRunAt_KnownExpressions(t *testing.T) {
 	fixedNow := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
 	svc, _ := newTestService(t, WithClock(func() time.Time { return fixedNow }), WithLocation(time.UTC))

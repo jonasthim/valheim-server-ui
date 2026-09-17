@@ -26,6 +26,18 @@ import (
 //
 
 func wireScheduler(ctx context.Context, deps *api.Deps, inst *instance.Service, runner *jobs.Runner, players domain.PlayerCounter, hooks scheduler.Hooks) *scheduler.Service {
+	// hooks.Command forwards to the agent service's Command, discarding the
+	// result, exactly like hooks.Broadcast (wire.go): a no-op when deps.Agent
+	// is not configured. deps.Agent is wired after the scheduler; the closure
+	// reads it at call time, by which point it is set.
+	hooks.Command = func(ctx context.Context, id string, req domain.AgentCommandRequest) error {
+		if deps.Agent == nil {
+			return nil
+		}
+		_, err := deps.Agent.Command(ctx, id, req)
+		return err
+	}
+
 	svc := scheduler.New(deps.DB, inst, runner, players, hooks, deps.Log)
 	deps.Schedules = svc
 	go func() {
