@@ -129,92 +129,92 @@ export function Shell() {
   )
 
   return (
-    <AppShell
-      header={{ height: 56 }}
-      navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
-      padding={{ base: 'md', md: 'xl' }}
-    >
-      <AppShell.Header className={classes.header}>
-        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
-          <Group gap="sm" wrap="nowrap">
-            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
-            <Link to="/" className={classes.brand} onClick={close}>
-              <BrandMark size={26} />
-              <Stack gap={0}>
-                <span className={classes.brandName}>Valheim</span>
-                <span className={classes.brandSub}>Server UI</span>
-              </Stack>
-            </Link>
-          </Group>
-          <Group gap="xs" wrap="nowrap">
-            <LiveStatusBadge />
-            <ActivityIndicator />
-            <ColorSchemeToggle />
-          </Group>
-        </Group>
-      </AppShell.Header>
-
-      <AppShell.Navbar className={classes.navbar}>
-        <ScrollArea style={{ flex: 1 }} px="xs" py="xs">
-          {NAV_GROUPS.map((group) => {
-            const items = group.items.filter((n) => hasRole(n.min))
-            if (items.length === 0) return null
-            return (
-              <div key={group.label}>
-                <span className={classes.groupLabel}>{group.label}</span>
-                <Stack gap={2}>
-                  {items.map((n) => {
-                    const active =
-                      n.to === '/' ? loc.pathname === '/' || loc.pathname.startsWith('/instances') : loc.pathname.startsWith(n.to)
-                    return (
-                      <NavLink
-                        key={n.to}
-                        component={Link}
-                        to={n.to}
-                        label={n.label}
-                        className={classes.link}
-                        leftSection={
-                          <span className={classes.linkIcon}>
-                            <n.icon size={18} stroke={1.8} />
-                          </span>
-                        }
-                        active={active}
-                        variant="subtle"
-                        onClick={close}
-                      />
-                    )
-                  })}
+    <JobDrawerHost>
+      <AppShell
+        header={{ height: 56 }}
+        navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
+        padding={{ base: 'md', md: 'xl' }}
+      >
+        <AppShell.Header className={classes.header}>
+          <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+            <Group gap="sm" wrap="nowrap">
+              <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
+              <Link to="/" className={classes.brand} onClick={close}>
+                <BrandMark size={26} />
+                <Stack gap={0}>
+                  <span className={classes.brandName}>Valheim</span>
+                  <span className={classes.brandSub}>Server UI</span>
                 </Stack>
-              </div>
-            )
-          })}
-        </ScrollArea>
-        <div className={classes.navFooter}>
-          {userMenu}
-          <Group justify="space-between" px={8} pt={6}>
-            <Text size="xs" c="dimmed">
-              {system.data?.version ? `v${system.data.version.replace(/^v/, '')}` : ''}
-            </Text>
-            {system.data?.app_update?.update_available && (
-              <Badge size="xs" color="ember" variant="filled" component={Link} to="/settings" style={{ cursor: 'pointer' }}>
-                Update
-              </Badge>
-            )}
+              </Link>
+            </Group>
+            <Group gap="xs" wrap="nowrap">
+              <LiveStatusBadge />
+              <ActivityIndicator />
+              <ColorSchemeToggle />
+            </Group>
           </Group>
-        </div>
-      </AppShell.Navbar>
+        </AppShell.Header>
 
-      <AppShell.Main className={classes.main}>
-        <div className={classes.content}>
-          <JobDrawerHost>
+        <AppShell.Navbar className={classes.navbar}>
+          <ScrollArea style={{ flex: 1 }} px="xs" py="xs">
+            {NAV_GROUPS.map((group) => {
+              const items = group.items.filter((n) => hasRole(n.min))
+              if (items.length === 0) return null
+              return (
+                <div key={group.label}>
+                  <span className={classes.groupLabel}>{group.label}</span>
+                  <Stack gap={2}>
+                    {items.map((n) => {
+                      const active =
+                        n.to === '/' ? loc.pathname === '/' || loc.pathname.startsWith('/instances') : loc.pathname.startsWith(n.to)
+                      return (
+                        <NavLink
+                          key={n.to}
+                          component={Link}
+                          to={n.to}
+                          label={n.label}
+                          className={classes.link}
+                          leftSection={
+                            <span className={classes.linkIcon}>
+                              <n.icon size={18} stroke={1.8} />
+                            </span>
+                          }
+                          active={active}
+                          variant="subtle"
+                          onClick={close}
+                        />
+                      )
+                    })}
+                  </Stack>
+                </div>
+              )
+            })}
+          </ScrollArea>
+          <div className={classes.navFooter}>
+            {userMenu}
+            <Group justify="space-between" px={8} pt={6}>
+              <Text size="xs" c="dimmed">
+                {system.data?.version ? `v${system.data.version.replace(/^v/, '')}` : ''}
+              </Text>
+              {system.data?.app_update?.update_available && (
+                <Badge size="xs" color="ember" variant="filled" component={Link} to="/settings" style={{ cursor: 'pointer' }}>
+                  Update
+                </Badge>
+              )}
+            </Group>
+          </div>
+        </AppShell.Navbar>
+
+        <AppShell.Main className={classes.main}>
+          <div className={classes.content}>
             <ErrorBoundary key={loc.pathname}>
               <Suspense fallback={<Center h="50vh"><Loader /></Center>}>
                 <Outlet />
               </Suspense>
             </ErrorBoundary>
-          </JobDrawerHost>
-        </div>
-      </AppShell.Main>
-    </AppShell>
+          </div>
+        </AppShell.Main>
+      </AppShell>
+    </JobDrawerHost>
   )
 }

@@ -27,7 +27,7 @@ import { onEvent } from '../../events/useEvents'
 import { fmtTime } from '../../lib/format'
 import { StatusPill } from '../../ui'
 import { useJob, useCancelJob } from './useJobs'
-import { jobStatusColor, jobTypeLabel, isJobTerminal, isJobCancellable } from './jobHelpers'
+import { jobStatusColor, jobTypeLabel, isJobTerminal, isJobCancellable, jobInstancePath } from './jobHelpers'
 
 export function JobDrawer({ jobId, onClose }: { jobId: string | null; onClose: () => void }) {
   return (
@@ -144,6 +144,7 @@ function JobDrawerBody({ jobId }: { jobId: string }) {
   }
 
   const summaryEntries = job.summary ? Object.entries(job.summary) : []
+  const instancePath = jobInstancePath(job)
 
   return (
     <Stack gap="md">
@@ -156,8 +157,8 @@ function JobDrawerBody({ jobId }: { jobId: string }) {
             {job.status}
           </StatusPill>
           <Badge variant="outline">{jobTypeLabel(job.type)}</Badge>
-          {job.instance_id && (
-            <Anchor component={Link} to={`/instances/${job.instance_id}/overview`} size="sm">
+          {instancePath && (
+            <Anchor component={Link} to={instancePath} size="sm">
               {job.instance_id}
             </Anchor>
           )}

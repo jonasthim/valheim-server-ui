@@ -10,7 +10,7 @@ import { fmtAgo, fmtTime } from '../../lib/format'
 import type { Job, JobStatus } from '../../api/types'
 import { EmptyState, PageHeader, SectionCard, StatusPill } from '../../ui'
 import { useJobs, useCancelJob } from './useJobs'
-import { jobStatusColor, jobTypeLabel, jobDuration, isJobCancellable } from './jobHelpers'
+import { jobStatusColor, jobTypeLabel, jobDuration, isJobCancellable, jobInstancePath } from './jobHelpers'
 import { JobDrawerHost } from './JobDrawerHost'
 import { useJobDrawer } from './useJobDrawer'
 
@@ -133,59 +133,62 @@ function JobsPageContent() {
                   </Table.Td>
                 </Table.Tr>
               )}
-              {jobs.map((job) => (
-                <Table.Tr key={job.id} onClick={() => openRow(job.id)} style={{ cursor: 'pointer' }}>
-                  <Table.Td>
-                    <StatusPill color={jobStatusColor(job.status)} pulse={job.status === 'running'}>
-                      {job.status}
-                    </StatusPill>
-                  </Table.Td>
-                  <Table.Td>{jobTypeLabel(job.type)}</Table.Td>
-                  <Table.Td>{job.title || <Text c="dimmed">-</Text>}</Table.Td>
-                  <Table.Td>
-                    {job.instance_id ? (
-                      <Anchor
-                        component={Link}
-                        to={`/instances/${job.instance_id}/overview`}
-                        onClick={(e) => e.stopPropagation()}
-                        size="sm"
-                      >
-                        {job.instance_id}
-                      </Anchor>
-                    ) : (
-                      <Text c="dimmed">-</Text>
-                    )}
-                  </Table.Td>
-                  <Table.Td>{job.requested_by || <Text c="dimmed">-</Text>}</Table.Td>
-                  <Table.Td>
-                    <Text size="sm" title={fmtTime(job.created_at)}>
-                      {fmtAgo(job.created_at)}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>{jobDuration(job)}</Table.Td>
-                  <Table.Td>
-                    <Group gap={4} wrap="nowrap" justify="flex-end" onClick={(e) => e.stopPropagation()}>
-                      <Tooltip label="Open log">
-                        <ActionIcon variant="subtle" aria-label="Open log" onClick={() => openRow(job.id)}>
-                          <IconEye size={16} />
-                        </ActionIcon>
-                      </Tooltip>
-                      {isJobCancellable(job.status) && hasRole('operator') && (
-                        <Tooltip label="Cancel job">
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            aria-label="Cancel job"
-                            onClick={() => requestCancel(job)}
-                          >
-                            <IconX size={16} />
+              {jobs.map((job) => {
+                const instancePath = jobInstancePath(job)
+                return (
+                  <Table.Tr key={job.id} onClick={() => openRow(job.id)} style={{ cursor: 'pointer' }}>
+                    <Table.Td>
+                      <StatusPill color={jobStatusColor(job.status)} pulse={job.status === 'running'}>
+                        {job.status}
+                      </StatusPill>
+                    </Table.Td>
+                    <Table.Td>{jobTypeLabel(job.type)}</Table.Td>
+                    <Table.Td>{job.title || <Text c="dimmed">-</Text>}</Table.Td>
+                    <Table.Td>
+                      {instancePath ? (
+                        <Anchor
+                          component={Link}
+                          to={instancePath}
+                          onClick={(e) => e.stopPropagation()}
+                          size="sm"
+                        >
+                          {job.instance_id}
+                        </Anchor>
+                      ) : (
+                        <Text c="dimmed">-</Text>
+                      )}
+                    </Table.Td>
+                    <Table.Td>{job.requested_by || <Text c="dimmed">-</Text>}</Table.Td>
+                    <Table.Td>
+                      <Text size="sm" title={fmtTime(job.created_at)}>
+                        {fmtAgo(job.created_at)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>{jobDuration(job)}</Table.Td>
+                    <Table.Td>
+                      <Group gap={4} wrap="nowrap" justify="flex-end" onClick={(e) => e.stopPropagation()}>
+                        <Tooltip label="Open log">
+                          <ActionIcon variant="subtle" aria-label="Open log" onClick={() => openRow(job.id)}>
+                            <IconEye size={16} />
                           </ActionIcon>
                         </Tooltip>
-                      )}
-                    </Group>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
+                        {isJobCancellable(job.status) && hasRole('operator') && (
+                          <Tooltip label="Cancel job">
+                            <ActionIcon
+                              variant="subtle"
+                              color="red"
+                              aria-label="Cancel job"
+                              onClick={() => requestCancel(job)}
+                            >
+                              <IconX size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                        )}
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
+                )
+              })}
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>

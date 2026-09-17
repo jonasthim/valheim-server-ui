@@ -1,6 +1,7 @@
 // Pure helpers shared by the jobs feature and reused by other WPs (backups,
 // mods, schedules tabs) to render job status/type consistently.
 import type { Job, JobStatus, JobType } from '../../api/types'
+import type { InstanceTab } from '../instances/tabs'
 
 const JOB_STATUS_COLORS: Record<JobStatus, string> = {
   queued: 'gray',
@@ -34,6 +35,31 @@ const JOB_TYPE_LABELS: Record<JobType, string> = {
 
 export function jobTypeLabel(type: JobType): string {
   return JOB_TYPE_LABELS[type]
+}
+
+/** Which instance tab a job of this type was produced from/for. */
+export function jobTabFor(type: JobType): InstanceTab {
+  switch (type) {
+    case 'backup':
+    case 'restore':
+      return 'backups'
+    case 'world_import':
+    case 'world_regenerate':
+      return 'worlds'
+    case 'mod_install':
+    case 'mod_update':
+    case 'mod_uninstall':
+    case 'bepinex_install':
+    case 'agent_install':
+      return 'mods'
+    default:
+      return 'overview'
+  }
+}
+
+/** Path to the instance tab that produced this job, or null for global jobs (no instance_id). */
+export function jobInstancePath(job: Job): string | null {
+  return job.instance_id ? `/instances/${job.instance_id}/${jobTabFor(job.type)}` : null
 }
 
 /** True once a job has reached a terminal status (no further job.log lines expected). */
