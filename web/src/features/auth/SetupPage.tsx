@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { Alert, Button, Card, Center, Loader, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core'
+import { Alert, Button, Center, Loader, PasswordInput, Stack, TextInput } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
@@ -63,41 +63,32 @@ export function SetupPage() {
   }
 
   return (
-    <AuthLayout>
-      <Card withBorder shadow="sm" padding="xl" w={420}>
-        <Stack gap="md">
-          <Stack gap={4} align="center">
-            <Title order={2}>Create the administrator account</Title>
-            <Text c="dimmed" size="sm" ta="center">
-              This is the first run: the account you create here becomes the server administrator.
-            </Text>
-          </Stack>
-
-          {loading ? (
-            <Center py="md">
-              <Loader />
-            </Center>
-          ) : (
-            <form onSubmit={form.onSubmit(handleSubmit)}>
-              <Stack gap="sm">
-                {formError && (
-                  <Alert color="red" icon={<IconAlertCircle size={16} />}>
-                    {formError}
-                  </Alert>
-                )}
-                <TextInput label="Username" autoFocus required {...form.getInputProps('username')} />
-                <TextInput label="Display name" {...form.getInputProps('display_name')} />
-                <TextInput label="Email" type="email" {...form.getInputProps('email')} />
-                <PasswordInput label="Password" required {...form.getInputProps('password')} />
-                <PasswordInput label="Confirm password" required {...form.getInputProps('confirm')} />
-                <Button type="submit" fullWidth loading={submitting}>
-                  Create account
-                </Button>
-              </Stack>
-            </form>
-          )}
-        </Stack>
-      </Card>
+    <AuthLayout intro="Create the first admin account.">
+      <Stack gap="md">
+        {loading ? (
+          <Center py="md">
+            <Loader />
+          </Center>
+        ) : (
+          <form onSubmit={form.onSubmit(handleSubmit)}>
+            <Stack gap="sm">
+              {formError && (
+                <Alert color="red" icon={<IconAlertCircle size={16} />}>
+                  {formError}
+                </Alert>
+              )}
+              <TextInput label="Username" autoFocus required {...form.getInputProps('username')} />
+              <TextInput label="Display name" {...form.getInputProps('display_name')} />
+              <TextInput label="Email" type="email" {...form.getInputProps('email')} />
+              <PasswordInput label="Password" required {...form.getInputProps('password')} />
+              <PasswordInput label="Confirm password" required {...form.getInputProps('confirm')} />
+              <Button type="submit" fullWidth loading={submitting}>
+                Create account
+              </Button>
+            </Stack>
+          </form>
+        )}
+      </Stack>
     </AuthLayout>
   )
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
-import { Alert, Button, Card, Center, Divider, Loader, PasswordInput, Stack, Text, TextInput, Title } from '@mantine/core'
+import { Alert, Button, Center, Divider, Loader, PasswordInput, Stack, Text, TextInput } from '@mantine/core'
 import { useForm } from '@mantine/form'
 import { IconAlertCircle, IconFingerprint } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
@@ -68,73 +68,64 @@ export function LoginPage() {
   const oidcHref = `/api/v1/auth/oidc/login?next=${encodeURIComponent(next)}`
 
   return (
-    <AuthLayout>
-      <Card withBorder shadow="sm" padding="xl" w={380}>
-        <Stack gap="md">
-          <Stack gap={4} align="center">
-            <Title order={2}>Valheim Server UI</Title>
-            <Text c="dimmed" size="sm">
-              Sign in to manage your servers
-            </Text>
-          </Stack>
+    <AuthLayout intro="Sign in to manage your servers.">
+      <Stack gap="md">
+        {oidcError && (
+          <Alert color="red" icon={<IconAlertCircle size={16} />} title="Sign-in failed">
+            {errorMessage(oidcError, 'Single sign-on failed.')}
+          </Alert>
+        )}
 
-          {oidcError && (
-            <Alert color="red" icon={<IconAlertCircle size={16} />} title="Sign-in failed">
-              {errorMessage(oidcError, 'Single sign-on failed.')}
-            </Alert>
-          )}
+        {loading ? (
+          <Center py="md">
+            <Loader />
+          </Center>
+        ) : (
+          <>
+            {status?.local_login_enabled && (
+              <form onSubmit={form.onSubmit(handleSubmit)}>
+                <Stack gap="sm">
+                  {formError && (
+                    <Alert color="red" icon={<IconAlertCircle size={16} />}>
+                      {formError}
+                    </Alert>
+                  )}
+                  <TextInput
+                    label="Username"
+                    autoFocus
+                    autoComplete="username"
+                    required
+                    {...form.getInputProps('username')}
+                  />
+                  <PasswordInput
+                    label="Password"
+                    autoComplete="current-password"
+                    required
+                    {...form.getInputProps('password')}
+                  />
+                  <Button type="submit" fullWidth loading={submitting}>
+                    Log in
+                  </Button>
+                </Stack>
+              </form>
+            )}
 
-          {loading ? (
-            <Center py="md">
-              <Loader />
-            </Center>
-          ) : (
-            <>
-              {status?.local_login_enabled && (
-                <form onSubmit={form.onSubmit(handleSubmit)}>
-                  <Stack gap="sm">
-                    {formError && (
-                      <Alert color="red" icon={<IconAlertCircle size={16} />}>
-                        {formError}
-                      </Alert>
-                    )}
-                    <TextInput
-                      label="Username"
-                      autoFocus
-                      autoComplete="username"
-                      required
-                      {...form.getInputProps('username')}
-                    />
-                    <PasswordInput
-                      label="Password"
-                      autoComplete="current-password"
-                      required
-                      {...form.getInputProps('password')}
-                    />
-                    <Button type="submit" fullWidth loading={submitting}>
-                      Log in
-                    </Button>
-                  </Stack>
-                </form>
-              )}
+            {status?.local_login_enabled && status.oidc_enabled && <Divider label="or" labelPosition="center" />}
 
-              {status?.local_login_enabled && status.oidc_enabled && <Divider label="or" labelPosition="center" />}
+            {status?.oidc_enabled && (
+              <Button component="a" href={oidcHref} variant="default" fullWidth leftSection={<IconFingerprint size={16} />}>
+                Continue with {status.oidc_provider_name || 'SSO'}
+              </Button>
+            )}
 
-              {status?.oidc_enabled && (
-                <Button component="a" href={oidcHref} variant="default" fullWidth leftSection={<IconFingerprint size={16} />}>
-                  Continue with {status.oidc_provider_name || 'SSO'}
-                </Button>
-              )}
-
-              {status && !status.local_login_enabled && !status.oidc_enabled && (
-                <Text c="dimmed" size="sm" ta="center">
-                  No login method is available. Contact your administrator.
-                </Text>
-              )}
-            </>
-          )}
-        </Stack>
-      </Card>
+            {status && !status.local_login_enabled && !status.oidc_enabled && (
+              <Text c="dimmed" size="sm" ta="center">
+                No login method is available. Contact your administrator.
+              </Text>
+            )}
+          </>
+        )}
+      </Stack>
     </AuthLayout>
   )
 }
