@@ -574,6 +574,135 @@ func TestOpenLog(t *testing.T) {
 	}
 }
 
+func TestListLogFiles(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "main", "Main", validConfig(2456), false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	paths := svc.Paths("main")
+	if err := os.WriteFile(paths.ConsoleLog(), []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rotated := filepath.Join(paths.Logs, "console-20260101T000000Z.log")
+	if err := os.WriteFile(rotated, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.BepInExDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.BepInExDir(), "LogOutput.log"), []byte("bep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := svc.ListLogFiles(ctx, "main")
+	if err != nil {
+		t.Fatalf("ListLogFiles: %v", err)
+	}
+	if len(files) != 3 {
+		t.Fatalf("expected 3 log files, got %+v", files)
+	}
+	if files[0].Name != "console.log" || files[0].Kind != "console" {
+		t.Errorf("files[0] = %+v, want console.log/console", files[0])
+	}
+	if files[1].Name != "console-20260101T000000Z.log" || files[1].Kind != "rotated" {
+		t.Errorf("files[1] = %+v, want the rotated file", files[1])
+	}
+	if files[2].Name != "LogOutput.log" || files[2].Kind != "bepinex" {
+		t.Errorf("files[2] = %+v, want LogOutput.log/bepinex", files[2])
+	}
+}
+
+func TestListLogFiles_NotFound(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	_, err := svc.ListLogFiles(context.Background(), "missing")
+	de := requireDomainError(t, err)
+	if de.Code != domain.CodeNotFound {
+		t.Errorf("expected not_found, got %v", de.Code)
+	}
+}
+
+func TestOpenLogFile_RejectsTraversalAndOpensListed(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "main", "Main", validConfig(2456), false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	paths := svc.Paths("main")
+	rotatedName := "console-20260101T000000Z.log"
+	if err := os.WriteFile(filepath.Join(paths.Logs, rotatedName), []byte("rotated content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, name := range []string{"../etc/passwd", "nope.log", "", ".."} {
+		if _, err := svc.OpenLogFile(ctx, "main", name); domain.AsError(err).Code != domain.CodeNotFound {
+			t.Errorf("OpenLogFile(%q): expected not_found, got %v", name, err)
+		}
+	}
+
+	rc, err := svc.OpenLogFile(ctx, "main", rotatedName)
+	if err != nil {
+		t.Fatalf("OpenLogFile(%q): %v", rotatedName, err)
+	}
+	defer rc.Close()
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "rotated content\n" {
+		t.Errorf("unexpected content: %q", data)
+	}
+}
+
+func TestOpenLogFile_NotFoundInstance(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	_, err := svc.OpenLogFile(context.Background(), "missing", "console.log")
+	de := requireDomainError(t, err)
+	if de.Code != domain.CodeNotFound {
+		t.Errorf("expected not_found, got %v", de.Code)
+	}
+}
+
+func TestSearchLogs(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "main", "Main", validConfig(2456), false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	paths := svc.Paths("main")
+	if err := os.WriteFile(paths.ConsoleLog(), []byte("alpha needle\nbravo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rotated := filepath.Join(paths.Logs, "console-20260101T000000Z.log")
+	if err := os.WriteFile(rotated, []byte("charlie needle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	matches, err := svc.SearchLogs(ctx, "main", "needle", false, 0)
+	if err != nil {
+		t.Fatalf("SearchLogs: %v", err)
+	}
+	if len(matches) != 2 {
+		t.Fatalf("expected 2 matches, got %+v", matches)
+	}
+	if matches[0].File != "console.log" {
+		t.Errorf("expected the live console.log's match first, got %+v", matches[0])
+	}
+
+	if _, err := svc.SearchLogs(ctx, "main", "", false, 0); domain.AsError(err).Code != domain.CodeValidationFailed {
+		t.Errorf("expected validation_failed for empty q, got %v", err)
+	}
+}
+
+func TestSearchLogs_NotFound(t *testing.T) {
+	svc, _, _ := newTestService(t)
+	_, err := svc.SearchLogs(context.Background(), "missing", "x", false, 0)
+	de := requireDomainError(t, err)
+	if de.Code != domain.CodeNotFound {
+		t.Errorf("expected not_found, got %v", de.Code)
+	}
+}
+
 func TestPollOnce_PublishesOnStateChange(t *testing.T) {
 	svc, sup, bus := newTestService(t)
 	ctx := context.Background()

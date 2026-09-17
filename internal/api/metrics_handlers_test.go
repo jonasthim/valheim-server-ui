@@ -228,3 +228,15 @@ func TestInstanceMetricsRoutes_ServiceNotConfigured(t *testing.T) {
 		t.Fatalf("expected 500 when the metrics history service is not configured, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
+
+func (f *metricsFakeInstanceService) ListLogFiles(context.Context, string) ([]domain.LogFileInfo, error) {
+	return nil, nil
+}
+
+func (f *metricsFakeInstanceService) OpenLogFile(context.Context, string, string) (io.ReadCloser, error) {
+	return nil, domain.NotFound("log file")
+}
+
+func (f *metricsFakeInstanceService) SearchLogs(context.Context, string, string, bool, int) ([]domain.LogMatch, error) {
+	return nil, nil
+}

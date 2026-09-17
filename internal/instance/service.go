@@ -517,6 +517,81 @@ func (s *Service) OpenLog(ctx context.Context, id string) (io.ReadCloser, error)
 	return f, nil
 }
 
+// defaultSearchLimit/maxSearchLimit bound SearchLogs' limit (openapi.yaml
+// GET /logs/search).
+const (
+	defaultSearchLimit = 500
+	maxSearchLimit     = 2000
+)
+
+// ListLogFiles lists the console log, rotated console logs, and BepInEx's
+// LogOutput.log available for id, each only if present (F-2.6).
+func (s *Service) ListLogFiles(ctx context.Context, id string) ([]domain.LogFileInfo, error) {
+	if _, err := s.getRow(ctx, id); err != nil {
+		return nil, err
+	}
+	files, err := listLogFiles(s.Paths(id))
+	if err != nil {
+		return nil, domain.Wrap(domain.CodeInternal, "list log files", err)
+	}
+	out := make([]domain.LogFileInfo, len(files))
+	for i, f := range files {
+		out[i] = f.Info
+	}
+	return out, nil
+}
+
+// OpenLogFile opens one log file by its base name, as returned by
+// ListLogFiles. name is only ever used as a key into that listing, never
+// joined onto a directory: a name that is not a plain basename, or that does
+// not exactly match a listed file, is a not-found error before any file is
+// opened.
+func (s *Service) OpenLogFile(ctx context.Context, id, name string) (io.ReadCloser, error) {
+	if _, err := s.getRow(ctx, id); err != nil {
+		return nil, err
+	}
+	if name == "" || filepath.Base(name) != name {
+		return nil, domain.NotFound("log file")
+	}
+	files, err := listLogFiles(s.Paths(id))
+	if err != nil {
+		return nil, domain.Wrap(domain.CodeInternal, "list log files", err)
+	}
+	for _, f := range files {
+		if f.Info.Name != name {
+			continue
+		}
+		file, err := os.Open(f.Path) //nolint:gosec // f.Path came from listLogFiles, not user input
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, domain.NotFound("log file")
+			}
+			return nil, domain.Wrap(domain.CodeInternal, "open log file", err)
+		}
+		return file, nil
+	}
+	return nil, domain.NotFound("log file")
+}
+
+// SearchLogs searches every log file available for id, newest match first
+// (F-2.6). limit <= 0 defaults to 500 and is capped at 2000.
+func (s *Service) SearchLogs(ctx context.Context, id, q string, useRegex bool, limit int) ([]domain.LogMatch, error) {
+	if _, err := s.getRow(ctx, id); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+	if limit > maxSearchLimit {
+		limit = maxSearchLimit
+	}
+	files, err := listLogFiles(s.Paths(id))
+	if err != nil {
+		return nil, domain.Wrap(domain.CodeInternal, "list log files", err)
+	}
+	return searchLogFiles(files, q, useRegex, limit)
+}
+
 // ---------------------------------------------------------------- helpers for other packages
 
 // MarkPendingRestart flags id as needing a restart to apply a change made

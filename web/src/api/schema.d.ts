@@ -1346,6 +1346,175 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/logs/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List the console log, rotated console logs, and BepInEx's LogOutput.log */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            files: components["schemas"]["LogFileInfo"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/logs/files/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+                /** @description A file name as returned by GET .../logs/files */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /** Tail of one log file (as picked from GET .../logs/files) */
+        get: {
+            parameters: {
+                query?: {
+                    lines?: number;
+                };
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                    /** @description A file name as returned by GET .../logs/files */
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            lines: string[];
+                        };
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/logs/files/{name}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                    name: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "text/plain": string;
+                    };
+                };
+                404: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/logs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search every log file (console.log, rotated console logs, BepInEx's LogOutput.log), newest match first */
+        get: {
+            parameters: {
+                query: {
+                    q: string;
+                    regex?: boolean;
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            matches: components["schemas"]["LogMatch"][];
+                        };
+                    };
+                };
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/events": {
         parameters: {
             query?: never;
@@ -3989,6 +4158,19 @@ export interface components {
             /** @enum {string} */
             kind: "start" | "ready" | "stop" | "crash" | "update";
             detail?: string;
+        };
+        LogFileInfo: {
+            name: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /** Format: date-time */
+            modified_at: string;
+            /** @enum {string} */
+            kind: "console" | "rotated" | "bepinex";
+        };
+        LogMatch: {
+            file: string;
+            line: string;
         };
         Instance: {
             id: string;

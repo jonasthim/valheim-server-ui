@@ -537,6 +537,89 @@ paths:
         '200':
           content:
             text/plain: { schema: { type: string } }
+  /instances/{instanceId}/logs/files:
+    get:
+      tags: [instances]
+      summary: List the console log, rotated console logs, and BepInEx's LogOutput.log
+      x-role: viewer
+      parameters: [{ $ref: '#/components/parameters/instanceId' }]
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [files]
+                properties:
+                  files: { type: array, items: { $ref: '#/components/schemas/LogFileInfo' } }
+  /instances/{instanceId}/logs/files/{name}:
+    parameters:
+      - { $ref: '#/components/parameters/instanceId' }
+      - in: path
+        name: name
+        required: true
+        schema: { type: string }
+        description: A file name as returned by GET .../logs/files
+    get:
+      tags: [instances]
+      summary: Tail of one log file (as picked from GET .../logs/files)
+      x-role: viewer
+      parameters:
+        - in: query
+          name: lines
+          schema: { type: integer, default: 500, maximum: 5000 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [lines]
+                properties:
+                  lines: { type: array, items: { type: string } }
+        '404': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/logs/files/{name}/download:
+    get:
+      tags: [instances]
+      x-role: viewer
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          content:
+            text/plain: { schema: { type: string } }
+        '404': { $ref: '#/components/responses/Error' }
+  /instances/{instanceId}/logs/search:
+    get:
+      tags: [instances]
+      summary: Search every log file (console.log, rotated console logs, BepInEx's LogOutput.log), newest match first
+      x-role: viewer
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - in: query
+          name: q
+          required: true
+          schema: { type: string }
+        - in: query
+          name: regex
+          schema: { type: boolean, default: false }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 500, maximum: 2000 }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [matches]
+                properties:
+                  matches: { type: array, items: { $ref: '#/components/schemas/LogMatch' } }
+        '422': { $ref: '#/components/responses/Error' }
   /instances/{instanceId}/events:
     get:
       tags: [instances]
@@ -1920,6 +2003,22 @@ components:
         at: { type: string, format: date-time }
         kind: { type: string, enum: [start, ready, stop, crash, update] }
         detail: { type: string }
+
+    LogFileInfo:
+      type: object
+      required: [name, size_bytes, modified_at, kind]
+      properties:
+        name: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        modified_at: { type: string, format: date-time }
+        kind: { type: string, enum: [console, rotated, bepinex] }
+
+    LogMatch:
+      type: object
+      required: [file, line]
+      properties:
+        file: { type: string }
+        line: { type: string }
 
     Instance:
       type: object

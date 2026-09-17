@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -34,6 +35,10 @@ func registerInstanceRoutes(r chi.Router, d *Deps) {
 
 			r.With(RequireRole(domain.RoleViewer)).Get("/logs", d.instanceLogs)
 			r.With(RequireRole(domain.RoleViewer)).Get("/logs/download", d.instanceLogsDownload)
+			r.With(RequireRole(domain.RoleViewer)).Get("/logs/files", d.instanceLogFiles)
+			r.With(RequireRole(domain.RoleViewer)).Get("/logs/files/{name}", d.instanceLogFileTail)
+			r.With(RequireRole(domain.RoleViewer)).Get("/logs/files/{name}/download", d.instanceLogFileDownload)
+			r.With(RequireRole(domain.RoleViewer)).Get("/logs/search", d.instanceLogSearch)
 
 			r.With(RequireRole(domain.RoleViewer)).Get("/events", d.instanceEvents)
 		})
@@ -384,6 +389,129 @@ func (d *Deps) instanceLogsDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-console.log"`, id))
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, rc)
+}
+
+func (d *Deps) instanceLogFiles(w http.ResponseWriter, r *http.Request) {
+	id, err := InstanceID(r)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	files, err := d.Instances.ListLogFiles(r.Context(), id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	if files == nil {
+		files = []domain.LogFileInfo{}
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"files": files})
+}
+
+// tailReader returns the last n lines read from r, scanning with a 1 MiB
+// buffer (some BepInEx log lines exceed bufio.Scanner's 64 KiB default).
+func tailReader(r io.Reader, n int) ([]string, error) {
+	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	kept := make([]string, 0, n)
+	for scanner.Scan() {
+		kept = append(kept, scanner.Text())
+		if len(kept) > n {
+			kept = kept[1:]
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return kept, nil
+}
+
+func (d *Deps) instanceLogFileTail(w http.ResponseWriter, r *http.Request) {
+	id, err := InstanceID(r)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	lines := defaultLogLines
+	if v := r.URL.Query().Get("lines"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			WriteValidation(w, domain.FieldError{Field: "lines", Message: "must be a non-negative integer"})
+			return
+		}
+		lines = n
+	}
+	if lines > maxLogLines {
+		lines = maxLogLines
+	}
+	name := chi.URLParam(r, "name")
+	rc, err := d.Instances.OpenLogFile(r.Context(), id, name)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	defer func() { _ = rc.Close() }()
+	out, err := tailReader(rc, lines)
+	if err != nil {
+		WriteError(w, domain.Wrap(domain.CodeInternal, "read log file", err))
+		return
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"lines": out})
+}
+
+func (d *Deps) instanceLogFileDownload(w http.ResponseWriter, r *http.Request) {
+	id, err := InstanceID(r)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	name := chi.URLParam(r, "name")
+	rc, err := d.Instances.OpenLogFile(r.Context(), id, name)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	defer func() { _ = rc.Close() }()
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s"`, id, name))
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, rc)
+}
+
+const (
+	defaultLogSearchLimit = 500
+	maxLogSearchLimit     = 2000
+)
+
+func (d *Deps) instanceLogSearch(w http.ResponseWriter, r *http.Request) {
+	id, err := InstanceID(r)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	q := r.URL.Query()
+	useRegex, _ := strconv.ParseBool(q.Get("regex"))
+	limit := defaultLogSearchLimit
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			WriteValidation(w, domain.FieldError{Field: "limit", Message: "must be a non-negative integer"})
+			return
+		}
+		limit = n
+	}
+	if limit > maxLogSearchLimit {
+		limit = maxLogSearchLimit
+	}
+	matches, err := d.Instances.SearchLogs(r.Context(), id, q.Get("q"), useRegex, limit)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	if matches == nil {
+		matches = []domain.LogMatch{}
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"matches": matches})
 }
 
 // instanceAuditView is the subset of an instance that users edit through

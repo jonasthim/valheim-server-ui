@@ -357,6 +357,22 @@ type InstanceEvent struct {
 	Detail     string    `json:"detail,omitempty"`
 }
 
+// LogFileInfo describes one log file available for an instance (F-2.6): the
+// live console.log, a rotated console-<ts>.log, or BepInEx's LogOutput.log.
+type LogFileInfo struct {
+	Name       string    `json:"name"`
+	SizeBytes  int64     `json:"size_bytes"`
+	ModifiedAt time.Time `json:"modified_at"`
+	Kind       string    `json:"kind"` // console|rotated|bepinex
+}
+
+// LogMatch is one line found by an instance log search (F-2.6): a query run
+// across every log file, newest match first.
+type LogMatch struct {
+	File string `json:"file"`
+	Line string `json:"line"`
+}
+
 // HostMetrics is the manager host's resource usage for the dashboard.
 type HostMetrics struct {
 	CPUPercent    float64 `json:"cpu_percent"` // 0-100 across all cores

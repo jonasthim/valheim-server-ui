@@ -468,6 +468,164 @@ func TestInstances_LogsEmpty(t *testing.T) {
 	}
 }
 
+func TestInstances_LogFilesList(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+	paths := api.svc.Paths("main")
+	if err := os.WriteFile(paths.ConsoleLog(), []byte("live\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rotated := filepath.Join(paths.Logs, "console-20260101T000000Z.log")
+	if err := os.WriteFile(rotated, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(paths.BepInExDir(), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(paths.BepInExDir(), "LogOutput.log"), []byte("bep\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := api.do(t, http.MethodGet, "/api/v1/instances/main/logs/files", "viewer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logs/files: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Files []domain.LogFileInfo `json:"files"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Files) != 3 {
+		t.Fatalf("expected 3 files, got %+v", body.Files)
+	}
+	if body.Files[0].Name != "console.log" || body.Files[0].Kind != "console" {
+		t.Errorf("files[0] = %+v, want console.log/console", body.Files[0])
+	}
+	if body.Files[1].Name != "console-20260101T000000Z.log" || body.Files[1].Kind != "rotated" {
+		t.Errorf("files[1] = %+v, want the rotated file", body.Files[1])
+	}
+	if body.Files[2].Name != "LogOutput.log" || body.Files[2].Kind != "bepinex" {
+		t.Errorf("files[2] = %+v, want LogOutput.log/bepinex", body.Files[2])
+	}
+}
+
+func TestInstances_LogFileTail(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+	paths := api.svc.Paths("main")
+	rotated := filepath.Join(paths.Logs, "console-20260101T000000Z.log")
+	content := "line1\nline2\nline3\n"
+	if err := os.WriteFile(rotated, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := api.do(t, http.MethodGet, "/api/v1/instances/main/logs/files/console-20260101T000000Z.log?lines=2", "viewer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("logs/files/{name}: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Lines []string `json:"lines"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Lines) != 2 || body.Lines[0] != "line2" || body.Lines[1] != "line3" {
+		t.Errorf("unexpected tail: %v", body.Lines)
+	}
+}
+
+func TestInstances_LogFileTail_TraversalNamesAre404(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+
+	// An encoded slash: chi keeps this as a single path segment (the {name}
+	// param), so it must be rejected once decoded, never joined onto a directory.
+	rec := api.do(t, http.MethodGet, "/api/v1/instances/main/logs/files/..%2Fetc%2Fpasswd", "viewer", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("encoded traversal: expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// A plain ".." segment.
+	rec = api.do(t, http.MethodGet, "/api/v1/instances/main/logs/files/..", "viewer", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("plain '..': expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// A name that is a plain basename but simply does not exist.
+	rec = api.do(t, http.MethodGet, "/api/v1/instances/main/logs/files/nope.log", "viewer", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown name: expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInstances_LogFileDownload(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+	paths := api.svc.Paths("main")
+	if err := os.WriteFile(paths.ConsoleLog(), []byte("hello download\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := api.do(t, http.MethodGet, "/api/v1/instances/main/logs/files/console.log/download", "viewer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("download: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec.Body.String() != "hello download\n" {
+		t.Errorf("downloaded body = %q", rec.Body.String())
+	}
+	wantDisposition := `attachment; filename="main-console.log"`
+	if cd := rec.Header().Get("Content-Disposition"); cd != wantDisposition {
+		t.Errorf("Content-Disposition = %q, want %q", cd, wantDisposition)
+	}
+
+	rec = api.do(t, http.MethodGet, "/api/v1/instances/main/logs/files/missing.log/download", "viewer", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing file download: expected 404, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInstances_LogSearch_RequiresQ(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+
+	rec := api.do(t, http.MethodGet, "/api/v1/instances/main/logs/search", "viewer", nil)
+	// Same validation_failed code (and status) as every other endpoint that
+	// rejects bad input via domain.Validation/WriteValidation.
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("search without q: expected 422, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	errObj, _ := body["error"].(map[string]any)
+	if errObj["code"] != "validation_failed" {
+		t.Errorf("expected validation_failed code, got %v", body)
+	}
+}
+
+func TestInstances_LogSearch_ReturnsMatches(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+	paths := api.svc.Paths("main")
+	if err := os.WriteFile(paths.ConsoleLog(), []byte("alpha needle\nbravo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := api.do(t, http.MethodGet, "/api/v1/instances/main/logs/search?q=needle", "viewer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("search: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Matches []domain.LogMatch `json:"matches"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Matches) != 1 || body.Matches[0].Line != "alpha needle" || body.Matches[0].File != "console.log" {
+		t.Fatalf("unexpected matches: %+v", body.Matches)
+	}
+}
+
 func TestInstances_GetEvents(t *testing.T) {
 	api := newTestAPI(t)
 	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))

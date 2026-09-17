@@ -1,6 +1,7 @@
 package instance
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -153,6 +155,164 @@ func tailFile(path string, n int) ([]string, error) {
 		lines = lines[len(lines)-n:]
 	}
 	return lines, nil
+}
+
+// Kinds for domain.LogFileInfo.Kind (F-2.6).
+const (
+	logKindConsole = "console"
+	logKindRotated = "rotated"
+	logKindBepInEx = "bepinex"
+)
+
+// bepInExLogName is the log BepInEx itself writes under BepInExDir().
+const bepInExLogName = "LogOutput.log"
+
+// scanBufferSize is the max single-line size tailReader/searchOneFile will
+// buffer (bufio.Scanner's default 64 KiB token limit is too small for some
+// BepInEx log lines).
+const scanBufferSize = 1024 * 1024
+
+// logFile pairs a domain.LogFileInfo with its absolute path on disk. Kept
+// unexported so a caller can only ever open a file by looking its name up in
+// a list this package produced, never by re-joining a name onto a directory
+// itself (ARCHITECTURE.md security rule: a user-supplied name is a key into
+// what we listed, not a path component).
+type logFile struct {
+	Info domain.LogFileInfo
+	Path string
+}
+
+// listLogFiles enumerates every log file available for an instance (F-2.6):
+// the live console.log, rotated console-<ts>.log files, and BepInEx's
+// LogOutput.log, each included only if present. Ordered console first, then
+// rotated newest-modified first, then bepinex, matching the order an
+// operator most likely wants (also the order SearchLogs scans in).
+func listLogFiles(paths domain.InstancePaths) ([]logFile, error) {
+	var out []logFile
+
+	if fi, err := os.Stat(paths.ConsoleLog()); err == nil {
+		out = append(out, logFile{
+			Info: domain.LogFileInfo{Name: "console.log", SizeBytes: fi.Size(), ModifiedAt: fi.ModTime().UTC(), Kind: logKindConsole},
+			Path: paths.ConsoleLog(),
+		})
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("stat console.log: %w", err)
+	}
+
+	entries, err := os.ReadDir(paths.Logs)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("read logs dir: %w", err)
+	}
+	var rotated []logFile
+	for _, e := range entries {
+		name := e.Name()
+		if e.IsDir() || !strings.HasPrefix(name, "console-") || !strings.HasSuffix(name, ".log") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		rotated = append(rotated, logFile{
+			Info: domain.LogFileInfo{Name: name, SizeBytes: info.Size(), ModifiedAt: info.ModTime().UTC(), Kind: logKindRotated},
+			Path: filepath.Join(paths.Logs, name),
+		})
+	}
+	sort.SliceStable(rotated, func(i, j int) bool {
+		return rotated[i].Info.ModifiedAt.After(rotated[j].Info.ModifiedAt)
+	})
+	out = append(out, rotated...)
+
+	bepinexLog := filepath.Join(paths.BepInExDir(), bepInExLogName)
+	if fi, err := os.Stat(bepinexLog); err == nil {
+		out = append(out, logFile{
+			Info: domain.LogFileInfo{Name: bepInExLogName, SizeBytes: fi.Size(), ModifiedAt: fi.ModTime().UTC(), Kind: logKindBepInEx},
+			Path: bepinexLog,
+		})
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("stat %s: %w", bepInExLogName, err)
+	}
+
+	return out, nil
+}
+
+// searchLogFiles scans files (in the order given, newest-first per
+// listLogFiles) for q, stopping once limit matches have been collected.
+// Within each file only the most recent matches are kept, newest line first;
+// a file's matches are always returned before the next file's, so the result
+// is newest-first both across files and within one. Plain mode is a
+// case-insensitive substring match; useRegex compiles q as a regexp. An
+// empty q or an invalid regexp is a validation error on field "q".
+func searchLogFiles(files []logFile, q string, useRegex bool, limit int) ([]domain.LogMatch, error) {
+	if q == "" {
+		return nil, domain.Validation([]domain.FieldError{{Field: "q", Message: "must not be empty"}})
+	}
+	var re *regexp.Regexp
+	if useRegex {
+		var err error
+		re, err = regexp.Compile(q)
+		if err != nil {
+			return nil, domain.Validation([]domain.FieldError{{Field: "q", Message: "invalid regular expression: " + err.Error()}})
+		}
+	}
+	needle := strings.ToLower(q)
+	matchLine := func(line string) bool {
+		if re != nil {
+			return re.MatchString(line)
+		}
+		return strings.Contains(strings.ToLower(line), needle)
+	}
+
+	var out []domain.LogMatch
+	for _, f := range files {
+		remaining := limit - len(out)
+		if remaining <= 0 {
+			break
+		}
+		fileMatches, err := searchOneFile(f, matchLine, remaining)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, fileMatches...)
+	}
+	return out, nil
+}
+
+// searchOneFile scans f for lines matchLine accepts, keeping only the most
+// recent (up to) remaining matches, newest first. A missing file yields no
+// matches, not an error (a rotated log could be pruned mid-search).
+func searchOneFile(f logFile, matchLine func(string) bool, remaining int) ([]domain.LogMatch, error) {
+	file, err := os.Open(f.Path) //nolint:gosec // f.Path came from listLogFiles, not user input
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("open %s: %w", f.Path, err)
+	}
+	defer func() { _ = file.Close() }()
+
+	scanner := bufio.NewScanner(file)
+	scanner.Buffer(make([]byte, 0, 64*1024), scanBufferSize)
+	var kept []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !matchLine(line) {
+			continue
+		}
+		kept = append(kept, line)
+		if len(kept) > remaining {
+			kept = kept[1:] // trim the oldest kept match, keep the most recent `remaining`
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan %s: %w", f.Path, err)
+	}
+
+	out := make([]domain.LogMatch, len(kept))
+	for i, line := range kept {
+		out[len(kept)-1-i] = domain.LogMatch{File: f.Info.Name, Line: line} // reverse: newest (last scanned) first
+	}
+	return out, nil
 }
 
 // removeTree deletes an instance directory, refusing anything outside

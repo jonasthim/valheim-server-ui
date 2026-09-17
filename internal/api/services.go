@@ -28,6 +28,14 @@ type InstanceService interface {
 	OpenLog(ctx context.Context, id string) (io.ReadCloser, error)
 	// InstanceEvents returns id's lifecycle timeline, newest first (F-1.2).
 	InstanceEvents(ctx context.Context, id string, limit int, before *time.Time) ([]domain.InstanceEvent, error)
+	// ListLogFiles lists the console log, rotated console logs, and BepInEx's
+	// LogOutput.log available for id, each only if present (F-2.6).
+	ListLogFiles(ctx context.Context, id string) ([]domain.LogFileInfo, error)
+	// OpenLogFile opens one log file by its base name, as returned by
+	// ListLogFiles (F-2.6).
+	OpenLogFile(ctx context.Context, id, name string) (io.ReadCloser, error)
+	// SearchLogs searches every log file available for id, newest match first (F-2.6).
+	SearchLogs(ctx context.Context, id, q string, useRegex bool, limit int) ([]domain.LogMatch, error)
 }
 
 // WP-04 (+ WP-05 for the instance-scoped job kinds)
