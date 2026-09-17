@@ -446,6 +446,29 @@ paths:
         '200':
           content:
             text/plain: { schema: { type: string } }
+  /instances/{instanceId}/events:
+    get:
+      tags: [instances]
+      summary: Lifecycle timeline (start/ready/stop/crash/update), newest first
+      x-role: viewer
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 100, maximum: 500 }
+        - in: query
+          name: before
+          schema: { type: string, format: date-time }
+          description: Only events strictly before this timestamp
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events: { type: array, items: { $ref: '#/components/schemas/InstanceEvent' } }
 
   # ------------------------------------------------------------------ players & lists
   /instances/{instanceId}/players:
@@ -1222,6 +1245,7 @@ paths:
         - `agent.status`: { instance_id, agent: AgentInfo } (hidden players' positions omitted)
         - `job.updated`: Job
         - `job.log`: { job_id, line }
+        - `instance.crashed`: InstanceEvent (with instance_id)
         - `update.available`: UpdateInfo
         - `app.update_available`: AppUpdateInfo
         - `heartbeat`: { ts }
@@ -1603,6 +1627,19 @@ components:
         active_job: { $ref: '#/components/schemas/Job' }
         cpu_percent: { type: number, description: Game process CPU, percent of one core (like top); absent until two samples exist }
         memory_bytes: { type: integer, format: int64, description: Game process resident memory }
+        crash_count_24h: { type: integer, description: Unexpected exits detected by the poll loop in the last 24h }
+        last_crash_at: { type: string, format: date-time }
+        last_exit_detail: { type: string, description: 'e.g. "exit status 139", "signal 11"' }
+
+    InstanceEvent:
+      type: object
+      required: [id, instance_id, at, kind]
+      properties:
+        id: { type: integer }
+        instance_id: { type: string }
+        at: { type: string, format: date-time }
+        kind: { type: string, enum: [start, ready, stop, crash, update] }
+        detail: { type: string }
 
     Instance:
       type: object

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/config"
 	"github.com/jonasthim/valheim-server-ui/internal/db"
@@ -537,7 +538,7 @@ func TestPollOnce_PublishesOnStateChange(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	last := map[string]domain.InstanceState{}
+	last := map[string]pollState{}
 	svc.pollOnce(ctx, last)
 	if len(bus.all()) != 1 {
 		t.Fatalf("expected one publish on first poll, got %d", len(bus.all()))
@@ -554,6 +555,167 @@ func TestPollOnce_PublishesOnStateChange(t *testing.T) {
 	svc.pollOnce(ctx, last)
 	if len(bus.all()) != 2 {
 		t.Fatalf("expected a publish once the supervisor state changes, got %d", len(bus.all()))
+	}
+}
+
+// crashEventCount counts instance.crashed events published to the bus.
+func crashEventCount(events []domain.Event) int {
+	n := 0
+	for _, ev := range events {
+		if ev.Name == domain.EventInstanceCrashed {
+			n++
+		}
+	}
+	return n
+}
+
+func TestPollOnce_RestartsIncreaseWithNoExpectedTransitionIsACrash(t *testing.T) {
+	svc, sup, bus := newTestService(t)
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "main", "Main", validConfig(2456), false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sup.setStatus("main", supervisor.Status{State: supervisor.StateRunning, PID: 1, Since: time.Now()})
+
+	last := map[string]pollState{}
+	svc.pollOnce(ctx, last) // baseline: restarts=0
+
+	// systemd's Restart=always kicked in behind our back: NRestarts moved
+	// without any Start/Stop/Restart call on the service (so nothing marked
+	// an expected transition).
+	sup.setStatus("main", supervisor.Status{State: supervisor.StateRunning, PID: 2, Since: time.Now(),
+		Restarts: 1, ExitDetail: "exit status 139"})
+	svc.pollOnce(ctx, last)
+
+	if n := crashEventCount(bus.all()); n != 1 {
+		t.Fatalf("expected exactly one instance.crashed event, got %d (events: %+v)", n, bus.all())
+	}
+
+	events, err := svc.events.List(ctx, "main", 10, nil)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(events) != 1 || events[0].Kind != "crash" || events[0].Detail != "exit status 139" {
+		t.Fatalf("expected one crash row, got %+v", events)
+	}
+}
+
+func TestPollOnce_ManagerInitiatedRestartIsNotACrash(t *testing.T) {
+	svc, _, bus := newTestService(t)
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "main", "Main", validConfig(2456), false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	markInstalled(t, svc, "main")
+	if _, err := svc.Start(ctx, "main"); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	last := map[string]pollState{}
+	svc.pollOnce(ctx, last) // baseline
+
+	// A manager-initiated Restart() marks the expected-transition window and
+	// the fake supervisor reports a new Since (and PID), just like a real
+	// restart would.
+	if _, err := svc.Restart(ctx, "main"); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	svc.pollOnce(ctx, last)
+
+	if n := crashEventCount(bus.all()); n != 0 {
+		t.Fatalf("expected zero instance.crashed events after a manager-initiated restart, got %d (events: %+v)", n, bus.all())
+	}
+	events, err := svc.events.List(ctx, "main", 10, nil)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, e := range events {
+		if e.Kind == "crash" {
+			t.Fatalf("expected no crash rows after a manager-initiated restart, got %+v", events)
+		}
+	}
+}
+
+func TestPollOnce_RecordsStartAndStopEvents(t *testing.T) {
+	svc, sup, _ := newTestService(t)
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "main", "Main", validConfig(2456), false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// Installed, so a stopped supervisor state composes to "stopped" rather
+	// than "not_installed" (which recordLifecycleTransition never records).
+	markInstalled(t, svc, "main")
+
+	last := map[string]pollState{}
+	svc.pollOnce(ctx, last) // baseline: not_installed
+
+	sup.setStatus("main", supervisor.Status{State: supervisor.StateRunning, PID: 1, Since: time.Now()})
+	svc.pollOnce(ctx, last) // not_installed -> running
+
+	sup.setStatus("main", supervisor.Status{State: supervisor.StateStopped})
+	svc.pollOnce(ctx, last) // running -> stopped
+
+	events, err := svc.events.List(ctx, "main", 10, nil)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(events) != 2 || events[0].Kind != "stop" || events[1].Kind != "start" {
+		t.Fatalf("expected [stop start] newest-first, got %+v", events)
+	}
+}
+
+func TestStatus_ReflectsCrashSummaryAfterPoll(t *testing.T) {
+	svc, sup, _ := newTestService(t)
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "main", "Main", validConfig(2456), false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sup.setStatus("main", supervisor.Status{State: supervisor.StateRunning, PID: 1, Since: time.Now()})
+
+	last := map[string]pollState{}
+	svc.pollOnce(ctx, last) // baseline
+
+	sup.setStatus("main", supervisor.Status{State: supervisor.StateRunning, PID: 2, Since: time.Now(),
+		Restarts: 1, ExitDetail: "exit status 11"})
+	svc.pollOnce(ctx, last) // crash detected, cache refreshed
+
+	st, err := svc.Status(ctx, "main")
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st.CrashCount24h != 1 {
+		t.Errorf("expected CrashCount24h=1, got %d", st.CrashCount24h)
+	}
+	if st.LastExitDetail != "exit status 11" {
+		t.Errorf("expected LastExitDetail=%q, got %q", "exit status 11", st.LastExitDetail)
+	}
+	if st.LastCrashAt == nil {
+		t.Errorf("expected LastCrashAt to be set")
+	}
+}
+
+func TestInstanceEvents_ReturnsNewestFirst(t *testing.T) {
+	svc, sup, _ := newTestService(t)
+	ctx := context.Background()
+	if _, err := svc.Create(ctx, "main", "Main", validConfig(2456), false); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	last := map[string]pollState{}
+	svc.pollOnce(ctx, last)
+	sup.setStatus("main", supervisor.Status{State: supervisor.StateRunning, PID: 1, Since: time.Now()})
+	svc.pollOnce(ctx, last)
+
+	events, err := svc.InstanceEvents(ctx, "main", 10, nil)
+	if err != nil {
+		t.Fatalf("InstanceEvents: %v", err)
+	}
+	if len(events) != 1 || events[0].Kind != "start" {
+		t.Fatalf("expected a single start event, got %+v", events)
+	}
+
+	if _, err := svc.InstanceEvents(ctx, "missing", 10, nil); err == nil {
+		t.Fatalf("expected a not_found error for a missing instance")
 	}
 }
 

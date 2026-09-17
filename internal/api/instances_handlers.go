@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -33,6 +34,8 @@ func registerInstanceRoutes(r chi.Router, d *Deps) {
 
 			r.With(RequireRole(domain.RoleViewer)).Get("/logs", d.instanceLogs)
 			r.With(RequireRole(domain.RoleViewer)).Get("/logs/download", d.instanceLogsDownload)
+
+			r.With(RequireRole(domain.RoleViewer)).Get("/events", d.instanceEvents)
 		})
 	})
 }
@@ -322,6 +325,47 @@ func (d *Deps) instanceLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	WriteJSON(w, http.StatusOK, map[string]any{"lines": out})
+}
+
+const defaultInstanceEventsLimit = 100
+
+func (d *Deps) instanceEvents(w http.ResponseWriter, r *http.Request) {
+	id, err := InstanceID(r)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	q := r.URL.Query()
+
+	limit := defaultInstanceEventsLimit
+	if v := q.Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 {
+			WriteValidation(w, domain.FieldError{Field: "limit", Message: "must be a positive integer"})
+			return
+		}
+		limit = n
+	}
+
+	var before *time.Time
+	if v := q.Get("before"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			WriteValidation(w, domain.FieldError{Field: "before", Message: "must be an RFC3339 timestamp"})
+			return
+		}
+		before = &t
+	}
+
+	events, err := d.Instances.InstanceEvents(r.Context(), id, limit, before)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	if events == nil {
+		events = []domain.InstanceEvent{}
+	}
+	WriteJSON(w, http.StatusOK, map[string]any{"events": events})
 }
 
 func (d *Deps) instanceLogsDownload(w http.ResponseWriter, r *http.Request) {

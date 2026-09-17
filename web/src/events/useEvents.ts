@@ -3,7 +3,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { API_BASE } from '../api/client'
-import type { AgentInfo, InstanceStatus, Job, UpdateInfo } from '../api/types'
+import type { AgentInfo, InstanceEvent, InstanceStatus, Job, UpdateInfo } from '../api/types'
 
 export type LogEvent = { instance_id: string; line: string }
 export type JobLogEvent = { job_id: string; line: string }
@@ -79,6 +79,11 @@ export function useEvents(enabled: boolean) {
         qc.setQueryData(['instances', st.instance_id, 'status'], { status: st })
         qc.invalidateQueries({ queryKey: ['instances', 'list'] })
         qc.invalidateQueries({ queryKey: ['instances', st.instance_id, 'detail'] })
+      })
+      source.addEventListener('instance.crashed', (e) => {
+        const ev = safeParse<InstanceEvent>(e)
+        if (!ev) return
+        qc.invalidateQueries({ queryKey: ['instances', ev.instance_id] })
       })
       source.addEventListener('job.updated', (e) => {
         const job = safeParse<Job>(e)

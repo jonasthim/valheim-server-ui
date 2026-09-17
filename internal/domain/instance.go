@@ -314,6 +314,22 @@ type InstanceStatus struct {
 	// while running). CPUPercent is percent of one core, like top.
 	CPUPercent  *float64 `json:"cpu_percent,omitempty"`
 	MemoryBytes *int64   `json:"memory_bytes,omitempty"`
+	// Crash detection (F-1.2): rolling 24h count and last-crash summary, cached
+	// per poll cycle from the instance_events table.
+	CrashCount24h  int        `json:"crash_count_24h"`
+	LastCrashAt    *time.Time `json:"last_crash_at,omitempty"`
+	LastExitDetail string     `json:"last_exit_detail,omitempty"`
+}
+
+// InstanceEvent is one entry in an instance's lifecycle timeline (F-1.2):
+// start/stop/crash transitions observed by the poll loop, plus ready/update
+// markers recorded elsewhere.
+type InstanceEvent struct {
+	ID         int64     `json:"id"`
+	InstanceID string    `json:"instance_id"`
+	At         time.Time `json:"at"`
+	Kind       string    `json:"kind"` // start|ready|stop|crash|update
+	Detail     string    `json:"detail,omitempty"`
 }
 
 // HostMetrics is the manager host's resource usage for the dashboard.

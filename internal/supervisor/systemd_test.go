@@ -57,6 +57,38 @@ func TestParseSystemctlShow(t *testing.T) {
 				"ExecMainStartTimestamp=\nResult=success\nUnitFileState=disabled\n",
 			want: Status{State: StateRunning, PID: 99, Autostart: false},
 		},
+		{
+			name: "auto-restart after a crash",
+			out: "ActiveState=activating\nSubState=auto-restart\nMainPID=0\n" +
+				"ExecMainStartTimestamp=Tue 2024-01-16 20:31:12 UTC\nResult=success\nUnitFileState=enabled\n" +
+				"NRestarts=3\nExecMainCode=exited\nExecMainStatus=139\n",
+			want: Status{State: StateStarting, PID: 0, Autostart: true, Detail: "auto-restart",
+				Restarts: 3, ExitDetail: "exit status 139",
+				Since: mustParseTS(t, "Tue 2024-01-16 20:31:12 UTC")},
+		},
+		{
+			name: "killed by signal",
+			out: "ActiveState=failed\nSubState=failed\nMainPID=0\n" +
+				"ExecMainStartTimestamp=Tue 2024-01-16 20:31:14 UTC\nResult=signal\nUnitFileState=enabled\n" +
+				"NRestarts=1\nExecMainCode=killed\nExecMainStatus=11\n",
+			want: Status{State: StateFailed, PID: 0, Autostart: true, Detail: "signal",
+				Restarts: 1, ExitDetail: "signal 11",
+				Since: mustParseTS(t, "Tue 2024-01-16 20:31:14 UTC")},
+		},
+		{
+			name: "clean exit reports no exit detail",
+			out: "ActiveState=inactive\nSubState=dead\nMainPID=0\n" +
+				"ExecMainStartTimestamp=\nResult=success\nUnitFileState=disabled\n" +
+				"NRestarts=0\nExecMainCode=exited\nExecMainStatus=0\n",
+			want: Status{State: StateStopped, PID: 0, Autostart: false, Restarts: 0, ExitDetail: ""},
+		},
+		{
+			name: "unparseable NRestarts defaults to zero",
+			out: "ActiveState=active\nSubState=running\nMainPID=99\n" +
+				"ExecMainStartTimestamp=\nResult=success\nUnitFileState=enabled\n" +
+				"NRestarts=garbage\nExecMainCode=exited\nExecMainStatus=0\n",
+			want: Status{State: StateRunning, PID: 99, Autostart: true, Restarts: 0},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,6 +104,12 @@ func TestParseSystemctlShow(t *testing.T) {
 			}
 			if got.Detail != tc.want.Detail {
 				t.Errorf("Detail = %q, want %q", got.Detail, tc.want.Detail)
+			}
+			if got.Restarts != tc.want.Restarts {
+				t.Errorf("Restarts = %d, want %d", got.Restarts, tc.want.Restarts)
+			}
+			if got.ExitDetail != tc.want.ExitDetail {
+				t.Errorf("ExitDetail = %q, want %q", got.ExitDetail, tc.want.ExitDetail)
 			}
 			if !got.Since.Equal(tc.want.Since) {
 				t.Errorf("Since = %v, want %v", got.Since, tc.want.Since)

@@ -35,8 +35,12 @@ type directProc struct {
 	autostart bool
 	state     State
 	detail    string
-	stopping  bool
-	done      chan struct{}
+	// restarts counts how many times this instance has exited unexpectedly
+	// (non-zero exit code), mirroring systemd's NRestarts. It is never reset
+	// by Start, so it is cumulative for the life of the manager process.
+	restarts int
+	stopping bool
+	done     chan struct{}
 }
 
 // NewDirect returns the development Supervisor.
@@ -141,6 +145,7 @@ func (d *direct) reap(id string, p *directProc, cmd *exec.Cmd, ctl *procControl,
 	default:
 		p.state = StateFailed
 		p.detail = fmt.Sprintf("exit status %d", exitCode)
+		p.restarts++
 		if d.o.Log != nil {
 			d.o.Log.Warn("instance exited unexpectedly", "instance", id, "detail", p.detail)
 		}
@@ -205,11 +210,13 @@ func (d *direct) Status(ctx context.Context, id string) (Status, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return Status{
-		State:     p.state,
-		PID:       pidIfRunning(p),
-		Since:     p.since,
-		Autostart: p.autostart,
-		Detail:    p.detail,
+		State:      p.state,
+		PID:        pidIfRunning(p),
+		Since:      p.since,
+		Autostart:  p.autostart,
+		Detail:     p.detail,
+		Restarts:   p.restarts,
+		ExitDetail: p.detail,
 	}, nil
 }
 

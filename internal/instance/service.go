@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/config"
+	"github.com/jonasthim/valheim-server-ui/internal/db"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 	"github.com/jonasthim/valheim-server-ui/internal/supervisor"
 )
@@ -42,15 +43,29 @@ type Service struct {
 	// preStart hooks run after launch.json is rendered and before the
 	// supervisor starts the process (the agent writes its plugin config here).
 	preStart []PreStartHook
+
+	// events records the per-instance lifecycle timeline (F-1.2: crash
+	// detection). Built from the same *sql.DB as the instances table.
+	events *db.InstanceEventRepo
+	// expected marks instance ids with a manager-initiated Start/Stop/Restart
+	// in flight (set by MarkExpectedTransition), so the poll loop's crash
+	// detection can tell "we did this" from "this crashed and something else
+	// (systemd's Restart= policy, an operator running the binary by hand)
+	// brought it back".
+	expected map[string]time.Time
+	// crashCache holds CrashCount24h/LastCrashAt/LastExitDetail per instance,
+	// refreshed once per poll cycle (refreshCrashCache) so composeStatus
+	// (also called per HTTP request) never queries instance_events directly.
+	crashCache map[string]crashSummary
 }
 
 // New constructs the instance service. bus and sup may be nil-safe fakes in
 // tests; in production they are *events.Bus and the configured Supervisor.
-func New(db *sql.DB, bus domain.Publisher, sup supervisor.Supervisor, cfg config.Config, log *slog.Logger) *Service {
+func New(sqldb *sql.DB, bus domain.Publisher, sup supervisor.Supervisor, cfg config.Config, log *slog.Logger) *Service {
 	if log == nil {
 		log = slog.Default()
 	}
-	return &Service{db: db, bus: bus, sup: sup, cfg: cfg, log: log}
+	return &Service{db: sqldb, bus: bus, sup: sup, cfg: cfg, log: log, events: db.NewInstanceEventRepo(sqldb)}
 }
 
 // Paths returns the canonical directory layout for id.
@@ -96,6 +111,33 @@ func (s *Service) enrichersSnapshot() []domain.StatusEnricher {
 	out := make([]domain.StatusEnricher, len(s.enrichers))
 	copy(out, s.enrichers)
 	return out
+}
+
+// expectedWindow is how long after MarkExpectedTransition the poll loop
+// treats a state/restart change it observes for that instance as expected
+// (manager-initiated) rather than a crash.
+const expectedWindow = 3 * time.Minute
+
+// MarkExpectedTransition records that id is about to go through a
+// manager-initiated state change (Start/Stop/Restart, or the update job's
+// stop/start around a game-file update), so the poll loop's crash detection
+// does not mistake the resulting transition for a crash.
+func (s *Service) MarkExpectedTransition(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.expected == nil {
+		s.expected = map[string]time.Time{}
+	}
+	s.expected[id] = time.Now()
+}
+
+// recentlyExpected reports whether id had a MarkExpectedTransition call
+// within the last expectedWindow.
+func (s *Service) recentlyExpected(id string) bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	t, ok := s.expected[id]
+	return ok && time.Since(t) <= expectedWindow
 }
 
 // ---------------------------------------------------------------- CRUD
@@ -280,6 +322,7 @@ func (s *Service) Delete(ctx context.Context, id string, deleteFiles bool) error
 // ---------------------------------------------------------------- lifecycle
 
 func (s *Service) Start(ctx context.Context, id string) (*domain.InstanceStatus, error) {
+	s.MarkExpectedTransition(id)
 	r, err := s.getRow(ctx, id)
 	if err != nil {
 		return nil, err
@@ -310,6 +353,7 @@ func (s *Service) Start(ctx context.Context, id string) (*domain.InstanceStatus,
 }
 
 func (s *Service) Stop(ctx context.Context, id string) (*domain.InstanceStatus, error) {
+	s.MarkExpectedTransition(id)
 	r, err := s.getRow(ctx, id)
 	if err != nil {
 		return nil, err
@@ -321,6 +365,7 @@ func (s *Service) Stop(ctx context.Context, id string) (*domain.InstanceStatus, 
 }
 
 func (s *Service) Restart(ctx context.Context, id string) (*domain.InstanceStatus, error) {
+	s.MarkExpectedTransition(id)
 	r, err := s.getRow(ctx, id)
 	if err != nil {
 		return nil, err
@@ -394,6 +439,8 @@ func (s *Service) composeStatus(ctx context.Context, r row) (*domain.InstanceSta
 		since = &t
 	}
 
+	cs := s.crashSummaryFor(r.ID)
+
 	st := &domain.InstanceStatus{
 		InstanceID:       r.ID,
 		State:            state,
@@ -406,6 +453,9 @@ func (s *Service) composeStatus(ctx context.Context, r row) (*domain.InstanceSta
 		UpdateAvailable:  r.LatestBuildID != "" && r.InstalledBuildID != "" && r.LatestBuildID != r.InstalledBuildID,
 		BepInExInstalled: fileExists(filepath.Join(paths.BepInExDir(), "core", "BepInEx.Preloader.dll")),
 		BepInExEnabled:   r.Config.BepInExEnabled,
+		CrashCount24h:    cs.count24h,
+		LastCrashAt:      cs.lastAt,
+		LastExitDetail:   cs.detail,
 	}
 	for _, e := range s.enrichersSnapshot() {
 		e.Enrich(ctx, st)
@@ -497,14 +547,34 @@ func (s *Service) SetInstalledBuildID(ctx context.Context, id, buildID string) e
 	return s.saveRow(ctx, r)
 }
 
+// pollState is what Poll remembers about an instance between ticks: the
+// composed coarse state (for the existing instance.status-on-change publish)
+// and the supervisor's restart counter/start timestamp (for crash detection).
+type pollState struct {
+	state    domain.InstanceState
+	restarts int
+	since    time.Time
+}
+
+// crashSummary is CrashCount24h/LastCrashAt/LastExitDetail cached once per
+// poll cycle by refreshCrashCache, and read by composeStatus.
+type crashSummary struct {
+	count24h int
+	lastAt   *time.Time
+	detail   string
+}
+
 // Poll periodically refreshes every instance's supervisor status and
 // publishes instance.status whenever the coarse state changes, so clients
 // relying only on SSE (no direct GET) still see systemd-driven transitions
-// (crashes, external restarts) and direct-supervisor process exits.
+// (crashes, external restarts) and direct-supervisor process exits. It also
+// detects crashes (a restart count increase, or a new process start with no
+// matching MarkExpectedTransition), recording an instance_events row and
+// publishing instance.crashed for each.
 func (s *Service) Poll(ctx context.Context) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
-	last := map[string]domain.InstanceState{}
+	last := map[string]pollState{}
 	for {
 		select {
 		case <-ctx.Done():
@@ -515,7 +585,7 @@ func (s *Service) Poll(ctx context.Context) {
 	}
 }
 
-func (s *Service) pollOnce(ctx context.Context, last map[string]domain.InstanceState) {
+func (s *Service) pollOnce(ctx context.Context, last map[string]pollState) {
 	rows, err := s.listRows(ctx)
 	if err != nil {
 		s.log.Warn("poll: list instances", "err", err)
@@ -524,23 +594,143 @@ func (s *Service) pollOnce(ctx context.Context, last map[string]domain.InstanceS
 	seen := make(map[string]bool, len(rows))
 	for _, r := range rows {
 		seen[r.ID] = true
+
+		supSt, err := s.sup.Status(ctx, r.ID)
+		if err != nil {
+			s.log.Warn("poll: read supervisor status", "instance", r.ID, "err", err)
+			continue
+		}
+
+		prev, hadPrev := last[r.ID]
+		crashed := false
+		if hadPrev {
+			restartsIncreased := supSt.Restarts > prev.restarts
+			supState := domain.InstanceState(supSt.State)
+			runningish := supState == domain.StateRunning || supState == domain.StateStarting
+			// Only "moved forward" if there was already a since to move
+			// forward from: the first-ever observed start (prev.since zero)
+			// is a start, not a crash.
+			sinceMovedForward := !prev.since.IsZero() && !supSt.Since.IsZero() &&
+				!supSt.Since.Equal(prev.since) && runningish
+			crashed = restartsIncreased || (sinceMovedForward && !s.recentlyExpected(r.ID))
+		}
+		if crashed {
+			s.recordCrash(ctx, r.ID, supSt.ExitDetail)
+		}
+		// Refresh every tick (not just on a crash) so the 24h window ages out
+		// old crashes even when nothing new happens.
+		s.refreshCrashCache(ctx, r.ID)
+
 		st, err := s.composeStatus(ctx, r)
 		if err != nil {
 			s.log.Warn("poll: compose status", "instance", r.ID, "err", err)
+			last[r.ID] = pollState{state: domain.InstanceState(supSt.State), restarts: supSt.Restarts, since: supSt.Since}
 			continue
 		}
-		if prev, ok := last[r.ID]; !ok || prev != st.State {
-			last[r.ID] = st.State
+
+		stateChanged := !hadPrev || prev.state != st.State
+		if stateChanged && hadPrev {
+			s.recordLifecycleTransition(ctx, r.ID, st.State)
+		}
+		if stateChanged || crashed {
 			if s.bus != nil {
 				s.bus.Publish(domain.Event{Name: domain.EventInstanceStatus, InstanceID: r.ID, Data: st})
 			}
 		}
+
+		last[r.ID] = pollState{state: st.State, restarts: supSt.Restarts, since: supSt.Since}
 	}
 	for id := range last {
 		if !seen[id] {
 			delete(last, id)
 		}
 	}
+}
+
+// recordCrash inserts a crash row and publishes instance.crashed. A DB
+// failure is logged, not fatal to polling (the event just won't show up in
+// the timeline; the forced instance.status publish still happens).
+func (s *Service) recordCrash(ctx context.Context, id, detail string) {
+	ev := domain.InstanceEvent{InstanceID: id, At: time.Now().UTC(), Kind: "crash", Detail: detail}
+	if s.events != nil {
+		if err := s.events.Insert(ctx, ev); err != nil {
+			s.log.Warn("poll: record crash event", "instance", id, "err", err)
+		}
+	}
+	if s.bus != nil {
+		s.bus.Publish(domain.Event{Name: domain.EventInstanceCrashed, InstanceID: id, Data: ev})
+	}
+}
+
+// recordLifecycleTransition inserts a start/stop row when the poll loop
+// observes the instance's composed state settle into running or stopped.
+// Intermediate states (starting/stopping/failed/not_installed) are not
+// recorded; "ready" and "update" events come from elsewhere.
+func (s *Service) recordLifecycleTransition(ctx context.Context, id string, state domain.InstanceState) {
+	if s.events == nil {
+		return
+	}
+	var kind string
+	switch state {
+	case domain.StateRunning:
+		kind = "start"
+	case domain.StateStopped:
+		kind = "stop"
+	default:
+		return
+	}
+	ev := domain.InstanceEvent{InstanceID: id, At: time.Now().UTC(), Kind: kind}
+	if err := s.events.Insert(ctx, ev); err != nil {
+		s.log.Warn("poll: record lifecycle event", "instance", id, "kind", kind, "err", err)
+	}
+}
+
+// refreshCrashCache recomputes id's 24h crash count and last-crash summary
+// from instance_events, once per poll cycle, so composeStatus (also called
+// per HTTP request via Get/List/Status) never queries the database directly.
+func (s *Service) refreshCrashCache(ctx context.Context, id string) {
+	if s.events == nil {
+		return
+	}
+	count, err := s.events.CountSince(ctx, id, "crash", time.Now().Add(-24*time.Hour))
+	if err != nil {
+		s.log.Warn("poll: count crashes", "instance", id, "err", err)
+		return
+	}
+	var lastAt *time.Time
+	var detail string
+	if last, err := s.events.Latest(ctx, id, "crash"); err != nil {
+		s.log.Warn("poll: latest crash", "instance", id, "err", err)
+	} else if last != nil {
+		t := last.At
+		lastAt = &t
+		detail = last.Detail
+	}
+
+	s.mu.Lock()
+	if s.crashCache == nil {
+		s.crashCache = map[string]crashSummary{}
+	}
+	s.crashCache[id] = crashSummary{count24h: count, lastAt: lastAt, detail: detail}
+	s.mu.Unlock()
+}
+
+func (s *Service) crashSummaryFor(id string) crashSummary {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.crashCache[id]
+}
+
+// InstanceEvents returns id's lifecycle timeline, newest first (GET
+// /instances/{id}/events).
+func (s *Service) InstanceEvents(ctx context.Context, id string, limit int, before *time.Time) ([]domain.InstanceEvent, error) {
+	if _, err := s.getRow(ctx, id); err != nil {
+		return nil, err
+	}
+	if s.events == nil {
+		return []domain.InstanceEvent{}, nil
+	}
+	return s.events.List(ctx, id, limit, before)
 }
 
 // SetBuildIDs records the result of a Steam update check (installed vs latest

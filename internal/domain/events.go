@@ -14,6 +14,7 @@ const (
 	EventJobLog             = "job.log"
 	EventUpdateAvailable    = "update.available"
 	EventAppUpdateAvailable = "app.update_available"
+	EventInstanceCrashed    = "instance.crashed"
 	EventHeartbeat          = "heartbeat"
 )
 

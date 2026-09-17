@@ -5,7 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { Instance, InstanceStatus, Job, UpdateInfo } from '../../api/types'
+import type { Instance, InstanceEvent, InstanceStatus, Job, UpdateInfo } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
 
 function invalidateInstance(qc: QueryClient) {
@@ -19,6 +19,15 @@ export function useInstanceStatus(id: string) {
     queryFn: () => api.get<{ status: InstanceStatus }>(`/instances/${id}/status`),
     enabled: !!id,
     refetchInterval: 10_000,
+  })
+}
+
+/** GET /instances/{id}/events?limit=5, the "Recent events" list on Overview. */
+export function useInstanceEvents(id: string) {
+  return useQuery({
+    queryKey: ['instances', id, 'events'],
+    queryFn: () => api.get<{ events: InstanceEvent[] }>(`/instances/${id}/events?limit=5`),
+    enabled: !!id,
   })
 }
 

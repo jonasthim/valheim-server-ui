@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -103,6 +104,7 @@ type testAPI struct {
 	sup     *fakeAPISupervisor
 	svc     *instance.Service
 	auditor *fakeAuditor
+	db      *sql.DB
 }
 
 func newTestAPI(t *testing.T) *testAPI {
@@ -134,7 +136,7 @@ func newTestAPI(t *testing.T) *testAPI {
 		Instances:  svc,
 		Audit:      auditor,
 	}
-	return &testAPI{handler: NewRouter(deps, nil), sup: sup, svc: svc, auditor: auditor}
+	return &testAPI{handler: NewRouter(deps, nil), sup: sup, svc: svc, auditor: auditor, db: sqldb}
 }
 
 func (a *testAPI) do(t *testing.T, method, path, role string, body any) *httptest.ResponseRecorder {
@@ -463,6 +465,72 @@ func TestInstances_LogsEmpty(t *testing.T) {
 	_ = json.Unmarshal(rec.Body.Bytes(), &body)
 	if len(body.Lines) != 0 {
 		t.Errorf("expected no lines for a fresh instance, got %v", body.Lines)
+	}
+}
+
+func TestInstances_GetEvents(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+
+	repo := db.NewInstanceEventRepo(api.db)
+	ctx := context.Background()
+	base := time.Now().Add(-time.Hour)
+	if err := repo.Insert(ctx, domain.InstanceEvent{InstanceID: "main", At: base, Kind: "start"}); err != nil {
+		t.Fatalf("seed start event: %v", err)
+	}
+	if err := repo.Insert(ctx, domain.InstanceEvent{InstanceID: "main", At: base.Add(time.Minute), Kind: "crash", Detail: "exit status 1"}); err != nil {
+		t.Fatalf("seed crash event: %v", err)
+	}
+
+	rec := api.do(t, http.MethodGet, "/api/v1/instances/main/events", "viewer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("events: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Events []domain.InstanceEvent `json:"events"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode events response: %v", err)
+	}
+	if len(body.Events) != 2 || body.Events[0].Kind != "crash" || body.Events[1].Kind != "start" {
+		t.Fatalf("expected [crash start] newest-first, got %+v", body.Events)
+	}
+	if body.Events[0].Detail != "exit status 1" {
+		t.Errorf("expected the crash detail to round-trip, got %+v", body.Events[0])
+	}
+
+	// limit query param.
+	rec = api.do(t, http.MethodGet, "/api/v1/instances/main/events?limit=1", "viewer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("events?limit=1: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	body.Events = nil
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if len(body.Events) != 1 {
+		t.Fatalf("expected limit=1 to return 1 event, got %d", len(body.Events))
+	}
+
+	// Unknown instance -> 404, same as the other instance-scoped endpoints.
+	rec = api.do(t, http.MethodGet, "/api/v1/instances/missing/events", "viewer", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for a missing instance, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestInstances_GetEventsEmpty(t *testing.T) {
+	api := newTestAPI(t)
+	api.do(t, http.MethodPost, "/api/v1/instances", "admin", validCreateReq("main", 2456))
+
+	rec := api.do(t, http.MethodGet, "/api/v1/instances/main/events", "viewer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("events: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Events []domain.InstanceEvent `json:"events"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if len(body.Events) != 0 {
+		t.Errorf("expected no events for a fresh instance, got %v", body.Events)
 	}
 }
 

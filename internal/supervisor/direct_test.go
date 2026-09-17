@@ -120,6 +120,23 @@ func waitForLogLine(t *testing.T, consoleLog, substr string, timeout time.Durati
 	t.Fatalf("timed out waiting for %q in %s", substr, consoleLog)
 }
 
+// waitForLogLineCount is waitForLogLine for a restarted instance, whose
+// console.log accumulates across runs (the direct supervisor appends, it
+// does not truncate): it waits for at least `count` occurrences of substr so
+// a test can tell "the Nth run is past its trap registration" from "the
+// (N-1)th run already logged this once".
+func waitForLogLineCount(t *testing.T, consoleLog, substr string, count int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if b, err := os.ReadFile(consoleLog); err == nil && strings.Count(string(b), substr) >= count {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %dx %q in %s", count, substr, consoleLog)
+}
+
 func waitForState(t *testing.T, sup Supervisor, id string, want State, timeout time.Duration) Status {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
@@ -229,6 +246,78 @@ func TestDirect_SetAutostart(t *testing.T) {
 	st, _ = sup.Status(ctx, id)
 	if st.Autostart {
 		t.Errorf("expected Autostart=false after SetAutostart(false)")
+	}
+}
+
+// TestDirect_CrashTracksRestartsAndExitDetail simulates a crash (something
+// outside the supervisor's control kills the process, as opposed to the
+// graceful Stop() path) and checks the resulting Status reports it.
+func TestDirect_CrashTracksRestartsAndExitDetail(t *testing.T) {
+	sup, id, consoleLog := setupDirectInstance(t)
+	ctx := context.Background()
+	d, ok := sup.(*direct)
+	if !ok {
+		t.Fatalf("expected *direct, got %T", sup)
+	}
+
+	kill := func() {
+		p := d.get(id)
+		if p == nil {
+			t.Fatal("expected a tracked process")
+		}
+		p.mu.Lock()
+		proc := p.cmd.Process
+		p.mu.Unlock()
+		if err := proc.Kill(); err != nil {
+			t.Fatalf("kill: %v", err)
+		}
+	}
+
+	if err := sup.Start(ctx, id); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	waitForState(t, sup, id, StateRunning, 10*time.Second)
+	waitForLogLine(t, consoleLog, "Game server connected", 10*time.Second)
+
+	kill()
+	st := waitForState(t, sup, id, StateFailed, 10*time.Second)
+	if st.Restarts != 1 {
+		t.Errorf("expected Restarts=1 after an unexpected exit, got %d", st.Restarts)
+	}
+	if st.ExitDetail == "" {
+		t.Errorf("expected a non-empty ExitDetail after an unexpected exit, got %q", st.ExitDetail)
+	}
+
+	// A graceful Start/Stop cycle must not add to the crash counter.
+	if err := sup.Start(ctx, id); err != nil {
+		t.Fatalf("Start (2nd): %v", err)
+	}
+	waitForState(t, sup, id, StateRunning, 10*time.Second)
+	// Must wait for this run's trap to be registered before signalling, or
+	// the graceful signal races the exec chain and looks like a crash
+	// instead (see waitForLogLine's doc comment). console.log already has
+	// one "Game server connected" from the 1st run, so wait for the 2nd.
+	waitForLogLineCount(t, consoleLog, "Game server connected", 2, 10*time.Second)
+	if err := sup.Stop(ctx, id); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	st = waitForState(t, sup, id, StateStopped, 10*time.Second)
+	if st.Restarts != 1 {
+		t.Errorf("expected Restarts to stay at 1 after a graceful stop, got %d", st.Restarts)
+	}
+	if st.ExitDetail != "" {
+		t.Errorf("expected ExitDetail cleared after a graceful stop, got %q", st.ExitDetail)
+	}
+
+	// A second unexpected exit accumulates on top of the first.
+	if err := sup.Start(ctx, id); err != nil {
+		t.Fatalf("Start (3rd): %v", err)
+	}
+	waitForState(t, sup, id, StateRunning, 10*time.Second)
+	kill()
+	st = waitForState(t, sup, id, StateFailed, 10*time.Second)
+	if st.Restarts != 2 {
+		t.Errorf("expected Restarts=2 after a second unexpected exit, got %d", st.Restarts)
 	}
 }
 

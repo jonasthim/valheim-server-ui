@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
@@ -25,6 +26,8 @@ type InstanceService interface {
 	Status(ctx context.Context, id string) (*domain.InstanceStatus, error)
 	TailLog(ctx context.Context, id string, lines int) ([]string, error)
 	OpenLog(ctx context.Context, id string) (io.ReadCloser, error)
+	// InstanceEvents returns id's lifecycle timeline, newest first (F-1.2).
+	InstanceEvents(ctx context.Context, id string, limit int, before *time.Time) ([]domain.InstanceEvent, error)
 }
 
 // WP-04 (+ WP-05 for the instance-scoped job kinds)

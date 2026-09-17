@@ -1114,6 +1114,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Lifecycle timeline (start/ready/stop/crash/update), newest first */
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    /** @description Only events strictly before this timestamp */
+                    before?: string;
+                };
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            events: components["schemas"]["InstanceEvent"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/players": {
         parameters: {
             query?: never;
@@ -3055,6 +3098,7 @@ export interface paths {
          *     - `agent.status`: { instance_id, agent: AgentInfo } (hidden players' positions omitted)
          *     - `job.updated`: Job
          *     - `job.log`: { job_id, line }
+         *     - `instance.crashed`: InstanceEvent (with instance_id)
          *     - `update.available`: UpdateInfo
          *     - `app.update_available`: AppUpdateInfo
          *     - `heartbeat`: { ts }
@@ -3435,6 +3479,21 @@ export interface components {
              * @description Game process resident memory
              */
             memory_bytes?: number;
+            /** @description Unexpected exits detected by the poll loop in the last 24h */
+            crash_count_24h?: number;
+            /** Format: date-time */
+            last_crash_at?: string;
+            /** @description e.g. "exit status 139", "signal 11" */
+            last_exit_detail?: string;
+        };
+        InstanceEvent: {
+            id: number;
+            instance_id: string;
+            /** Format: date-time */
+            at: string;
+            /** @enum {string} */
+            kind: "start" | "ready" | "stop" | "crash" | "update";
+            detail?: string;
         };
         Instance: {
             id: string;

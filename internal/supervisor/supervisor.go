@@ -24,6 +24,12 @@ type Status struct {
 	Since     time.Time // zero if unknown
 	Autostart bool
 	Detail    string // e.g. systemd Result= when failed
+	// Restarts is the restart count reported by the supervisor (systemd's
+	// NRestarts, or an in-memory counter of unexpected exits for direct).
+	Restarts int
+	// ExitDetail is the last exit code/signal text (e.g. "exit status 139",
+	// "signal 11"), independent of the current state.
+	ExitDetail string
 }
 
 // Supervisor controls one unit per instance id. Implementations must be safe

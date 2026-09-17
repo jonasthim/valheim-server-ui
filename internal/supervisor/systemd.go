@@ -63,7 +63,7 @@ func (s *systemd) unitctl(ctx context.Context, action, id string) error {
 func (s *systemd) Status(ctx context.Context, id string) (Status, error) {
 	unit := UnitName(id)
 	cmd := exec.CommandContext(ctx, systemctlPath(), "show", unit,
-		"--property=ActiveState,SubState,MainPID,ExecMainStartTimestamp,Result,UnitFileState")
+		"--property=ActiveState,SubState,MainPID,ExecMainStartTimestamp,Result,UnitFileState,NRestarts,ExecMainCode,ExecMainStatus")
 	out, err := cmd.Output()
 	if err != nil {
 		var stderr string
@@ -124,13 +124,44 @@ func parseSystemctlShow(out string) Status {
 	if state == StateFailed {
 		detail = props["Result"]
 	}
+	// SubState=auto-restart means systemd is between a crash and its next
+	// start attempt (ActiveState is "activating" at that point, not
+	// "failed"), so it needs its own Detail source alongside Result above.
+	if props["SubState"] == "auto-restart" {
+		detail = "auto-restart"
+	}
+
+	restarts, _ := strconv.Atoi(props["NRestarts"]) // parse error (missing/garbage) -> 0
+
+	exitDetail := buildExitDetail(props["ExecMainCode"], props["ExecMainStatus"])
 
 	switch props["UnitFileState"] {
 	case "enabled", "enabled-runtime", "static":
-		return Status{State: state, PID: pid, Since: since, Autostart: true, Detail: detail}
+		return Status{State: state, PID: pid, Since: since, Autostart: true, Detail: detail,
+			Restarts: restarts, ExitDetail: exitDetail}
 	default:
-		return Status{State: state, PID: pid, Since: since, Autostart: false, Detail: detail}
+		return Status{State: state, PID: pid, Since: since, Autostart: false, Detail: detail,
+			Restarts: restarts, ExitDetail: exitDetail}
 	}
+}
+
+// buildExitDetail renders systemd's ExecMainCode/ExecMainStatus properties
+// (the last time the unit's main process exited, sticky until the next exit)
+// as "exit status <n>" for a non-zero plain exit, or "signal <n>" for a
+// signal-terminated (killed) or core-dumped exit. Anything else (never
+// exited, or a clean "exited" with status 0) reports "".
+func buildExitDetail(execMainCode, execMainStatus string) string {
+	switch execMainCode {
+	case "exited":
+		if execMainStatus != "" && execMainStatus != "0" {
+			return "exit status " + execMainStatus
+		}
+	case "killed", "dumped":
+		if execMainStatus != "" {
+			return "signal " + execMainStatus
+		}
+	}
+	return ""
 }
 
 // sudoPath and systemctlPath resolve the two host binaries once, from the

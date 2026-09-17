@@ -37,7 +37,7 @@ import { useModsOverview } from '../mods/useMods'
 import { WorldCard } from '../agent'
 import { CheckModUpdatesButton } from '../mods/CheckModUpdatesButton'
 import { useInstance } from './useInstance'
-import { useCheckForUpdate, useInstanceStatus, useSetAutostart } from './instanceActions'
+import { useCheckForUpdate, useInstanceEvents, useInstanceStatus, useSetAutostart } from './instanceActions'
 import { stateColor, stateLabel } from './instanceHelpers'
 import { LifecycleControls } from './LifecycleControls'
 
@@ -54,6 +54,7 @@ export function OverviewTab({ id }: { id: string }) {
   const setAutostart = useSetAutostart(id)
 
   const jobsQuery = useJobs({ instance: id, limit: 5 })
+  const eventsQuery = useInstanceEvents(id)
   const systemInfo = useSystemInfo()
 
   if (inst.isLoading) {
@@ -80,6 +81,7 @@ export function OverviewTab({ id }: { id: string }) {
   const host = window.location.hostname
 
   const jobs = jobsQuery.data ?? []
+  const events = eventsQuery.data?.events ?? []
   const latestBuildId = checkUpdate.data?.latest_buildid ?? systemInfo.data?.latest_buildid
   const latestBuildCheckedAt = checkUpdate.data?.checked_at ?? systemInfo.data?.buildid_checked_at
 
@@ -277,6 +279,12 @@ export function OverviewTab({ id }: { id: string }) {
                 {status.detail}
               </Alert>
             )}
+            {status.crash_count_24h > 0 && (
+              <Alert color="red" icon={<IconAlertTriangle size={16} />} title="Crashes detected">
+                Crashed {status.crash_count_24h}× in the last 24 h — last exit: {status.last_exit_detail || 'unknown'},{' '}
+                {fmtAgo(status.last_crash_at)}
+              </Alert>
+            )}
             <LifecycleControls id={id} name={instance.name} status={status} />
           </Stack>
         </SectionCard>
@@ -348,6 +356,63 @@ export function OverviewTab({ id }: { id: string }) {
           </Table.ScrollContainer>
         )}
       </SectionCard>
+
+      <SectionCard title="Recent events" flush>
+        {eventsQuery.isLoading && (
+          <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
+            <Skeleton height={80} />
+          </div>
+        )}
+        {!eventsQuery.isLoading && events.length === 0 && (
+          <Text c="dimmed" size="sm" p="lg">
+            No events yet.
+          </Text>
+        )}
+        {events.length > 0 && (
+          <Table.ScrollContainer minWidth={480}>
+            <Table verticalSpacing="xs" highlightOnHover>
+              <Table.Tbody>
+                {events.map((ev) => (
+                  <Table.Tr key={ev.id}>
+                    <Table.Td>
+                      <StatusPill color={eventKindColor(ev.kind)}>{ev.kind}</StatusPill>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" c={ev.detail ? undefined : 'dimmed'}>
+                        {ev.detail || '—'}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {fmtAgo(ev.at)}
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        )}
+      </SectionCard>
     </Stack>
   )
+}
+
+// eventKindColor maps an InstanceEvent.kind to the StatusPill color used for
+// its badge in "Recent events".
+function eventKindColor(kind: string): string {
+  switch (kind) {
+    case 'start':
+      return 'moss'
+    case 'ready':
+      return 'blue'
+    case 'stop':
+      return 'gray'
+    case 'crash':
+      return 'red'
+    case 'update':
+      return 'orange'
+    default:
+      return 'gray'
+  }
 }

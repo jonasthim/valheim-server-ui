@@ -169,6 +169,7 @@ func (j *SteamJobs) EnqueueUpdate(ctx context.Context, instanceID, requestedBy s
 		restarted := false
 		if wasRunning {
 			log.Printf("stopping instance for update")
+			j.svc.MarkExpectedTransition(instanceID)
 			if _, err := j.svc.Stop(ctx, instanceID); err != nil {
 				return fmt.Errorf("stop instance: %w", err)
 			}
@@ -220,6 +221,7 @@ func (j *SteamJobs) EnqueueUpdate(ctx context.Context, instanceID, requestedBy s
 
 		if wasRunning {
 			log.Printf("starting instance after update")
+			j.svc.MarkExpectedTransition(instanceID)
 			if _, err := j.svc.Start(ctx, instanceID); err != nil {
 				return fmt.Errorf("start instance: %w", err)
 			}
