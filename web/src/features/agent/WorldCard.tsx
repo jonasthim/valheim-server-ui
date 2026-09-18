@@ -8,7 +8,6 @@ import { IconDeviceFloppy, IconMoon, IconSun, IconSwords } from '@tabler/icons-r
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
 import { SectionCard, StatTile, StatusPill } from '../../ui'
-import { AgentSetupNotice } from './AgentSetupNotice'
 import { BroadcastButton } from './BroadcastButton'
 import { ChatButton } from './ChatButton'
 import { WorldControls } from './WorldControls'
@@ -25,8 +24,9 @@ const MAX_KEYS = 12
 // .emptyParchment treatment in ui.module.css, just scoped inline instead of
 // via a CSS-module class (WorldCard.tsx is the only file this card lets us
 // touch for this variant).
+// No background here: the wrapper is a plain div with square corners, and
+// the rounded card underneath already paints parchment through --vh-surface.
 const PARCHMENT_VARS = {
-  background: 'var(--vh-parchment)',
   color: 'var(--vh-ink)',
   '--mantine-color-body': 'var(--vh-parchment)',
   // index.css paints every Paper with --vh-surface, so shadow that too or the
@@ -44,7 +44,10 @@ export function WorldCard({ id, variant = 'default' }: { id: string; variant?: '
 
   // Nothing to show until the agent is ready or merely offline; otherwise
   // the notice explains what's missing and offers the fix in place.
-  if (stage !== 'ready' && stage !== 'offline') return <AgentSetupNotice id={id} context="overview" />
+  // The setup prompt is the Overview's full-width banner (OverviewTab), not
+  // this card's job: with an agent installed the live world stays visible
+  // even while an update is pending or the agent is briefly offline.
+  if (stage === 'bepinex' || stage === 'install' || stage === 'disabled') return null
   if (!info) return null
 
   const canOperate = hasRole('operator')

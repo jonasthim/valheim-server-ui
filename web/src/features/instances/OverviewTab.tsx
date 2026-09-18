@@ -38,7 +38,9 @@ import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
 import { EmptyState, LoadError, SectionCard, Sparkline, StatTile, StatusDot, StatusPill } from '../../ui'
 import { useModsOverview } from '../mods/useMods'
-import { useAgent, WorldCard } from '../agent'
+import { AgentSetupNotice, useAgent, WorldCard } from '../agent'
+import { useAgentSetup } from '../agent/useAgentSetup'
+import { frameFor, frameTransform, useExploredBounds } from '../map/useExploredBounds'
 import { useInstance } from './useInstance'
 import { useCheckForUpdate, useInstanceEvents, useInstanceStatus, useSetAutostart } from './instanceActions'
 import { useInstanceMetrics, type MetricRange } from './useMetrics'
@@ -61,6 +63,10 @@ export function OverviewTab({ id }: { id: string }) {
   const eventsQuery = useInstanceEvents(id)
   const systemInfo = useSystemInfo()
   const agentQuery = useAgent(id)
+  const agentSetup = useAgentSetup(id)
+  // Explored bounding box from the fog mask, so the hero map frames what
+  // players have actually explored instead of the whole world.
+  const exploredBounds = useExploredBounds(id, agentQuery.data?.explored?.mask_version)
   // Hides the hero map <img> on load failure so the parchment Paper shows
   // through instead of a broken-image glyph (see the Hero section below).
   const [mapImgOk, setMapImgOk] = useState(true)
@@ -125,6 +131,50 @@ export function OverviewTab({ id }: { id: string }) {
         .join(' + ')
     : 'Up to date'
 
+  // With an agent installed the Overview leads with the map and a margin
+  // column (World card + tiles); without one the map has nothing to show, so
+  // the tiles take a single full-width row instead.
+  const worldAvailable = agentSetup.stage === 'ready' || agentSetup.stage === 'offline' || agentSetup.stage === 'update'
+  const tiles = (
+    <>
+      <StatTile
+        compact
+        label="CPU"
+        value={fmtPercent(status.cpu_percent)}
+        hint={status.state === 'running' ? 'of one core' : 'not running'}
+        icon={<IconCpu size={16} />}
+        accent={status.cpu_percent !== undefined && status.cpu_percent >= 90 ? 'var(--vh-blood)' : undefined}
+        spark={tileMetrics.data?.cpu}
+        sparkFormat={fmtPercent}
+      />
+      <StatTile
+        compact
+        label="Memory"
+        value={status.memory_bytes !== undefined ? fmtBytes(status.memory_bytes) : '—'}
+        hint={status.state === 'running' ? 'resident' : 'not running'}
+        icon={<IconDeviceSdCard size={16} />}
+        spark={tileMetrics.data?.mem}
+        sparkFormat={fmtBytes}
+      />
+      <StatTile
+        compact
+        label="Build"
+        value={status.installed_buildid ?? 'unknown'}
+        hint={gameUpdate ? 'update available' : 'up to date'}
+        icon={<IconBox size={16} />}
+        accent={gameUpdate ? 'var(--vh-ember)' : undefined}
+      />
+      <StatTile
+        compact
+        label="Updates"
+        value={updatesValue}
+        hint={anyUpdate ? 'available' : 'all current'}
+        icon={<IconDownload size={16} />}
+        accent={anyUpdate ? 'var(--vh-ember)' : undefined}
+      />
+    </>
+  )
+
   return (
     <Stack>
       <Stack gap={2}>
@@ -140,19 +190,39 @@ export function OverviewTab({ id }: { id: string }) {
         </Text>
       </Stack>
 
-      <Grid gap="md">
+      {/* Agent setup prompt (install / update / enable) as a full-width banner
+          above the hero; it renders nothing once the agent is ready. */}
+      <AgentSetupNotice id={id} context="overview" />
+
+      {worldAvailable ? (
+        <Grid gap="md">
         <Grid.Col span={{ base: 12, md: 7 }}>
           {/* color: parchment is a light surface in both schemes; without
               it, text/links here inherit the page's (dark-scheme) cream ink
               and fail contrast against the tan background (axe
               color-contrast) — mirrors WorldCard's PARCHMENT_VARS. */}
           <Paper p="sm" style={{ background: 'var(--vh-parchment)', color: 'var(--vh-ink)' }}>
-            <div style={{ width: 'min(100%, 60vh)', aspectRatio: '1', margin: '0 auto' }}>
+            <div
+              style={{
+                width: 'min(100%, 60vh)',
+                aspectRatio: '1',
+                margin: '0 auto',
+                overflow: 'hidden',
+                borderRadius: 'var(--mantine-radius-md)',
+              }}
+            >
               {mapImgOk && (
                 <img
                   src={`${API_BASE}/instances/${id}/map.png`}
-                  alt="World map"
-                  style={{ width: '100%', aspectRatio: '1', objectFit: 'cover', display: 'block' }}
+                  alt="World map, framed on the explored area"
+                  style={{
+                    width: '100%',
+                    aspectRatio: '1',
+                    objectFit: 'cover',
+                    display: 'block',
+                    transformOrigin: '0 0',
+                    transform: exploredBounds ? frameTransform(frameFor(exploredBounds)) : undefined,
+                  }}
                   onError={() => setMapImgOk(false)}
                 />
               )}
@@ -168,46 +238,13 @@ export function OverviewTab({ id }: { id: string }) {
               instead of leaving the space under the card empty. */}
           <Stack gap="md" h="100%" justify="space-between">
             <WorldCard id={id} variant="parchment" />
-            <SimpleGrid cols={2}>
-              <StatTile
-                compact
-                label="CPU"
-                value={fmtPercent(status.cpu_percent)}
-                hint={status.state === 'running' ? 'of one core' : 'not running'}
-                icon={<IconCpu size={16} />}
-                accent={status.cpu_percent !== undefined && status.cpu_percent >= 90 ? 'var(--vh-blood)' : undefined}
-                spark={tileMetrics.data?.cpu}
-                sparkFormat={fmtPercent}
-              />
-              <StatTile
-                compact
-                label="Memory"
-                value={status.memory_bytes !== undefined ? fmtBytes(status.memory_bytes) : '—'}
-                hint={status.state === 'running' ? 'resident' : 'not running'}
-                icon={<IconDeviceSdCard size={16} />}
-                spark={tileMetrics.data?.mem}
-                sparkFormat={fmtBytes}
-              />
-              <StatTile
-                compact
-                label="Build"
-                value={status.installed_buildid ?? 'unknown'}
-                hint={gameUpdate ? 'update available' : 'up to date'}
-                icon={<IconBox size={16} />}
-                accent={gameUpdate ? 'var(--vh-ember)' : undefined}
-              />
-              <StatTile
-                compact
-                label="Updates"
-                value={updatesValue}
-                hint={anyUpdate ? 'available' : 'all current'}
-                icon={<IconDownload size={16} />}
-                accent={anyUpdate ? 'var(--vh-ember)' : undefined}
-              />
-            </SimpleGrid>
+            <SimpleGrid cols={2}>{tiles}</SimpleGrid>
           </Stack>
         </Grid.Col>
-      </Grid>
+        </Grid>
+      ) : (
+        <SimpleGrid cols={{ base: 2, md: 4 }}>{tiles}</SimpleGrid>
+      )}
 
       <SectionCard
         title="History"
