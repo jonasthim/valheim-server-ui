@@ -163,47 +163,51 @@ export function OverviewTab({ id }: { id: string }) {
           </Paper>
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 5 }}>
-          <WorldCard id={id} variant="parchment" />
+          {/* The margin column: the World card on top and the four quiet
+              tiles pinned to the bottom, so the column fills the map's height
+              instead of leaving the space under the card empty. */}
+          <Stack gap="md" h="100%" justify="space-between">
+            <WorldCard id={id} variant="parchment" />
+            <SimpleGrid cols={2}>
+              <StatTile
+                compact
+                label="CPU"
+                value={fmtPercent(status.cpu_percent)}
+                hint={status.state === 'running' ? 'of one core' : 'not running'}
+                icon={<IconCpu size={16} />}
+                accent={status.cpu_percent !== undefined && status.cpu_percent >= 90 ? 'var(--vh-blood)' : undefined}
+                spark={tileMetrics.data?.cpu}
+                sparkFormat={fmtPercent}
+              />
+              <StatTile
+                compact
+                label="Memory"
+                value={status.memory_bytes !== undefined ? fmtBytes(status.memory_bytes) : '—'}
+                hint={status.state === 'running' ? 'resident' : 'not running'}
+                icon={<IconDeviceSdCard size={16} />}
+                spark={tileMetrics.data?.mem}
+                sparkFormat={fmtBytes}
+              />
+              <StatTile
+                compact
+                label="Build"
+                value={status.installed_buildid ?? 'unknown'}
+                hint={gameUpdate ? 'update available' : 'up to date'}
+                icon={<IconBox size={16} />}
+                accent={gameUpdate ? 'var(--vh-ember)' : undefined}
+              />
+              <StatTile
+                compact
+                label="Updates"
+                value={updatesValue}
+                hint={anyUpdate ? 'available' : 'all current'}
+                icon={<IconDownload size={16} />}
+                accent={anyUpdate ? 'var(--vh-ember)' : undefined}
+              />
+            </SimpleGrid>
+          </Stack>
         </Grid.Col>
       </Grid>
-
-      <SimpleGrid cols={{ base: 2, md: 4 }}>
-        <StatTile
-          compact
-          label="CPU"
-          value={fmtPercent(status.cpu_percent)}
-          hint={status.state === 'running' ? 'of one core' : 'not running'}
-          icon={<IconCpu size={16} />}
-          accent={status.cpu_percent !== undefined && status.cpu_percent >= 90 ? 'var(--vh-blood)' : undefined}
-          spark={tileMetrics.data?.cpu}
-          sparkFormat={fmtPercent}
-        />
-        <StatTile
-          compact
-          label="Memory"
-          value={status.memory_bytes !== undefined ? fmtBytes(status.memory_bytes) : '—'}
-          hint={status.state === 'running' ? 'resident' : 'not running'}
-          icon={<IconDeviceSdCard size={16} />}
-          spark={tileMetrics.data?.mem}
-          sparkFormat={fmtBytes}
-        />
-        <StatTile
-          compact
-          label="Build"
-          value={status.installed_buildid ?? 'unknown'}
-          hint={gameUpdate ? 'update available' : 'up to date'}
-          icon={<IconBox size={16} />}
-          accent={gameUpdate ? 'var(--vh-ember)' : undefined}
-        />
-        <StatTile
-          compact
-          label="Updates"
-          value={updatesValue}
-          hint={anyUpdate ? 'available' : 'all current'}
-          icon={<IconDownload size={16} />}
-          accent={anyUpdate ? 'var(--vh-ember)' : undefined}
-        />
-      </SimpleGrid>
 
       <SectionCard
         title="History"

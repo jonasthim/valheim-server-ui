@@ -46,6 +46,13 @@ body {
 
 ::selection { background: var(--vh-accent-soft); }
 
+/* The display face (Cormorant Garamond) defaults to old-style figures, so a
+   "0" in a title reads as a lowercase o ("Running · 0 online"). Titles use
+   lining, tabular figures. */
+.mantine-Title-root {
+  font-variant-numeric: lining-nums tabular-nums;
+}
+
 /* Plain links (Text component={Link}) inherit text colour; Mantine Anchor
    keeps its own. WCAG 1.4.3/1.4.1: --vh-frost text fails 4.5:1 against the
    parchment and card surfaces it sits on in both schemes (axe color-contrast
