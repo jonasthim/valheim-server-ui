@@ -76,6 +76,7 @@ export function MapView({
   overlay,
   onImageError,
   onImageLoad,
+  initialFrame,
 }: {
   /** Whole-map image, used when no tile pyramid is available. */
   imageUrl: string | null
@@ -88,11 +89,16 @@ export function MapView({
   overlay?: ReactNode
   onImageError?: () => void
   onImageLoad?: () => void
+  /** Framed on mount (and again if it changes) until the user pans or zooms, instead of the default full-map view. */
+  initialFrame?: { u0: number; v0: number; side: number }
 }) {
   const ref = useRef<HTMLDivElement>(null)
   const [t, setT] = useState<Transform>({ k: 1, tx: 0, ty: 0 })
   const [size, setSize] = useState(0)
   const drag = useRef<{ x: number; y: number; tx: number; ty: number } | null>(null)
+  // Set by the wheel/pointer/keyboard handlers so the initialFrame effect
+  // below only ever drives the view before the user has touched it.
+  const userMoved = useRef(false)
 
   // The deepest useful zoom: with tiles, the level where one tile pixel is
   // one screen pixel; with a single image, a fixed cap.
@@ -127,6 +133,7 @@ export function MapView({
 
   function onWheel(e: WheelEvent<HTMLDivElement>) {
     e.preventDefault()
+    userMoved.current = true
     const rect = e.currentTarget.getBoundingClientRect()
     zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX - rect.left, e.clientY - rect.top)
   }
@@ -143,6 +150,7 @@ export function MapView({
   // Keyboard equivalent of the pointer drag (arrows), wheel zoom (+/-) and
   // the reset button (0) — same state and helpers, no new pan/zoom maths.
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    userMoved.current = true
     switch (e.key) {
       case 'ArrowLeft':
         e.preventDefault()
@@ -181,6 +189,7 @@ export function MapView({
 
   function onPointerDown(e: PointerEvent<HTMLDivElement>) {
     if (e.button !== 0) return
+    userMoved.current = true
     e.currentTarget.setPointerCapture(e.pointerId)
     drag.current = { x: e.clientX, y: e.clientY, tx: t.tx, ty: t.ty }
   }
@@ -206,6 +215,15 @@ export function MapView({
     ro.observe(el)
     return () => ro.disconnect()
   }, [clamp])
+
+  // Frames initialFrame once the container size is known, and again if it
+  // changes — but only until the user has panned or zoomed.
+  useEffect(() => {
+    if (!initialFrame || size <= 0 || userMoved.current) return
+    const { u0, v0, side } = initialFrame
+    const k = 1 / side
+    setT(() => clamp({ k, tx: -u0 * size * k, ty: -v0 * size * k }))
+  }, [size, initialFrame, clamp])
 
   const center = () => {
     const el = ref.current

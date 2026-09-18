@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   ActionIcon,
   Alert,
@@ -32,7 +32,6 @@ import {
   IconRefresh,
 } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
-import { API_BASE } from '../../api/client'
 import { fmtAgo, fmtBytes, fmtPercent, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
@@ -40,7 +39,8 @@ import { EmptyState, LoadError, SectionCard, Sparkline, StatTile, StatusDot, Sta
 import { useModsOverview } from '../mods/useMods'
 import { AgentSetupNotice, useAgent, WorldCard } from '../agent'
 import { useAgentSetup } from '../agent/useAgentSetup'
-import { frameFor, frameTransform, useExploredBounds } from '../map/useExploredBounds'
+import { DEFAULT_LAYERS, MapView, useLiveMap } from '../map'
+import { frameFor, useExploredBounds } from '../map/useExploredBounds'
 import { useInstance } from './useInstance'
 import { useCheckForUpdate, useInstanceEvents, useInstanceStatus, useSetAutostart } from './instanceActions'
 import { useInstanceMetrics, type MetricRange } from './useMetrics'
@@ -67,9 +67,11 @@ export function OverviewTab({ id }: { id: string }) {
   // Explored bounding box from the fog mask, so the hero map frames what
   // players have actually explored instead of the whole world.
   const exploredBounds = useExploredBounds(id, agentQuery.data?.explored?.mask_version)
-  // Hides the hero map <img> on load failure so the parchment Paper shows
-  // through instead of a broken-image glyph (see the Hero section below).
-  const [mapImgOk, setMapImgOk] = useState(true)
+  // The hero is the same live map as the Map tab, opened on the explored area.
+  const live = useLiveMap(id, { fog: true, layers: DEFAULT_LAYERS })
+  // Memoised so MapView's initial-frame effect only re-runs when the explored
+  // area actually changes, not on every Overview render.
+  const initialFrame = useMemo(() => (exploredBounds ? frameFor(exploredBounds) : undefined), [exploredBounds])
 
   // F-1.3: 24h sparklines on the compact CPU/Memory tiles, plus a ranged
   // history section below (dedupes with the tiles' query when range is 24h).
@@ -211,21 +213,14 @@ export function OverviewTab({ id }: { id: string }) {
                 borderRadius: 'var(--mantine-radius-md)',
               }}
             >
-              {mapImgOk && (
-                <img
-                  src={`${API_BASE}/instances/${id}/map.png`}
-                  alt="World map, framed on the explored area"
-                  style={{
-                    width: '100%',
-                    aspectRatio: '1',
-                    objectFit: 'cover',
-                    display: 'block',
-                    transformOrigin: '0 0',
-                    transform: exploredBounds ? frameTransform(frameFor(exploredBounds)) : undefined,
-                  }}
-                  onError={() => setMapImgOk(false)}
-                />
-              )}
+              <MapView
+                imageUrl={live.imageUrl}
+                tiles={live.tiles}
+                markers={live.markers}
+                overlays={live.overlays}
+                pings={live.pings}
+                initialFrame={initialFrame}
+              />
             </div>
             <Anchor component={Link} to={`/instances/${id}/map`} size="sm" mt="xs" ta="center" style={{ display: 'block' }}>
               Open the map
