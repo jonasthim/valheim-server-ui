@@ -4,6 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useInstance } from './useInstance'
 import { INSTANCE_TAB_ICONS, INSTANCE_TAB_LABELS, INSTANCE_TABS } from './tabs'
 import { useInstanceTabBadges } from './useTabBadges'
+import { PendingRestartBanner } from './PendingRestartBanner'
 // Tab panels are code-split; keepMounted={false} means each loads on first
 // visit, behind the Suspense boundary around the panels below.
 const OverviewTab = lazy(() => import('./OverviewTab').then((m) => ({ default: m.OverviewTab })))
@@ -52,6 +53,7 @@ export function InstancePage() {
         }
         description={config ? `World ${config.world} on port ${config.port}` : undefined}
       />
+      {inst.data && <PendingRestartBanner id={id} name={inst.data.name} status={inst.data.status} />}
       <Tabs value={tab} onChange={(t) => navigate(`/instances/${id}/${t ?? 'overview'}`)} keepMounted={false}>
         <Box visibleFrom="sm" style={{ overflowX: 'auto' }}>
           <Tabs.List style={{ flexWrap: 'nowrap' }}>

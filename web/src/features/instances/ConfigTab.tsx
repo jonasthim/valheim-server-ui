@@ -1,7 +1,6 @@
 import { useState } from 'react'
-import { Alert, Button, Group, Skeleton, Stack, Text } from '@mantine/core'
+import { Button, Group, Skeleton, Stack, Text } from '@mantine/core'
 import { useNavigate } from 'react-router-dom'
-import { IconAlertTriangle } from '@tabler/icons-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
@@ -10,7 +9,6 @@ import { notifyError, notifySuccess } from '../../lib/notify'
 import { SectionCard } from '../../ui'
 import classes from './ConfigTab.module.css'
 import { useInstance } from './useInstance'
-import { RestartControl } from './RestartControl'
 import { InstanceConfigForm, type InstanceConfigFormSubmit } from './InstanceConfigForm'
 import { mapConfigFieldErrors } from './instanceHelpers'
 import { DeleteInstanceModal } from './DeleteInstanceModal'
@@ -75,15 +73,6 @@ export function ConfigTab({ id }: { id: string }) {
 
   return (
     <Stack>
-      {instance.status.pending_restart && (
-        <Alert color="yellow" icon={<IconAlertTriangle size={16} />} title="Restart required to apply">
-          <Group justify="space-between" wrap="nowrap">
-            <Text size="sm">Configuration changes are saved but will only take effect after a restart.</Text>
-            <RestartControl id={id} instanceName={instance.name} playersOnline={instance.status.players_online} color="yellow" />
-          </Group>
-        </Alert>
-      )}
-
       <InstanceConfigForm
         mode="edit"
         initial={{ id: instance.id, name: instance.name, config: instance.config, autostart: instance.status.autostart }}
