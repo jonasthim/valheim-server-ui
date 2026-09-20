@@ -137,6 +137,31 @@ jobs:
         if: failure()
         with: { name: playwright-report, path: web/e2e/test-results }
 
+  # Installs the manager for real with deploy/install.sh on a GitHub-hosted
+  # systemd VM: systemd units, sudoers, unitctl, a create/start/stop cycle
+  # against the fake game server through the real systemd supervisor, and
+  # uninstall. See deploy/smoke-test.sh and docs/RUNBOOK.md "Install smoke
+  # test". Builds the binary itself (same steps as the e2e job above) rather
+  # than depending on it, so this job's own needs stay just [backend, frontend].
+  install:
+    needs: [backend, frontend]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version-file: go.mod, cache: true }
+      - uses: actions/download-artifact@v4
+        with: { name: web-dist, path: web/dist }
+      - run: CGO_ENABLED=0 go build -o bin/valheim-ui ./cmd/valheim-ui
+      - run: sudo -E env SMOKE_TEST_I_KNOW_THIS_INSTALLS=1 BIN=bin/valheim-ui FAKE_SERVER=testdata/fake-server.sh bash deploy/smoke-test.sh
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: "install-smoke-diagnostics-${{ matrix.os }}", path: /tmp/valheim-ui-smoke-diagnostics.log }
+
   # Decides whether this run publishes a release and under which tag:
   #   - a pushed v* tag releases that tag;
   #   - workflow_dispatch releases the given version from the chosen ref;
@@ -183,7 +208,7 @@ jobs:
 
   release:
     if: needs.version.outputs.publish == 'true'
-    needs: [version, backend, windows, plugin, frontend, contract, e2e]
+    needs: [version, backend, windows, plugin, frontend, contract, e2e, install]
     runs-on: ubuntu-latest
     permissions: { contents: write }
     env:

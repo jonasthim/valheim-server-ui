@@ -533,3 +533,34 @@ and `lava.png` theirs as where mist or lava shows. A missing or unreadable
 file leaves that role built in and is logged once. Changes are picked up
 within a poll; the map, the fog and the tiles redraw. The project ships no
 game assets; whatever goes into this folder is the admin's own.
+
+## 15. Install smoke test
+
+`deploy/smoke-test.sh` is the only part of CI that installs the manager for
+real: it runs `deploy/install.sh` on a GitHub-hosted Ubuntu VM (the `install`
+job in `.github/workflows/ci.yml`, matrixed over `ubuntu-24.04` and
+`ubuntu-22.04`), then drives the actual systemd path end to end — the
+`valheim-ui.service`/`valheim@.service` units, the sudoers drop-in, `unitctl`
+over `sudo`, SteamCMD under the manager unit's real sandbox (including a
+negative control that proves the check would catch the syscall-filter bug in
+§9's troubleshooting table), and a create/start/stop cycle for a real instance
+through `systemctl`, with the fake game server standing in for Valheim — and
+finally `install.sh --uninstall`. Every other job either unit-tests packages
+directly or boots the manager with the `direct` supervisor (`make e2e`, `make
+dev-backend`); this is the only one that exercises `unitctl`, the sudoers
+rule and the two shipped unit files as root. The `release` job depends on it.
+
+Run it yourself on a throwaway VM or fresh container with systemd as PID 1
+(never on a workstation — it installs system-wide and cannot be pointed at a
+sandboxed subset):
+
+```bash
+make build-go   # or: CGO_ENABLED=0 go build -o bin/valheim-ui ./cmd/valheim-ui
+sudo env SMOKE_TEST_I_KNOW_THIS_INSTALLS=1 BIN=bin/valheim-ui \
+  FAKE_SERVER=testdata/fake-server.sh bash deploy/smoke-test.sh
+```
+
+It refuses to run at all unless `SMOKE_TEST_I_KNOW_THIS_INSTALLS=1` is set. On
+any failure it prints `journalctl -u valheim-ui.service -u 'valheim@*'` and the
+manager's config before exiting non-zero; CI additionally uploads that dump as
+the `install-smoke-diagnostics-<os>` artifact.
