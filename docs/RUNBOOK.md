@@ -21,6 +21,10 @@ Add flags after the script name if you downloaded it first, e.g.
 `sudo ./install.sh --listen 0.0.0.0:8080` (only for a trusted LAN) or
 `sudo ./install.sh --version v1.2.3` to pin a release.
 
+The in-app self-upgrade replaces the binary only. Changes to the systemd
+units, `unitctl` or the sudoers drop-in reach an existing install only when
+you re-run `install.sh` (idempotent; `--check` shows what it would change).
+
 What the installer does (idempotent, safe to re-run for upgrades):
 
 1. `apt-get install` of the SteamCMD/Valheim runtime libraries.
@@ -207,6 +211,7 @@ proven.
 |---------|-------|
 | Dashboard says SteamCMD is not installed | `/var/lib/valheim/steamcmd/steamcmd.sh` missing: re-run `install.sh` or download SteamCMD there as the `valheim` user. |
 | Install job fails with `Disk write failure` | Almost never a full disk. SteamCMD could not write to `$HOME` or the install dir. The units run with `ProtectHome=true` and set `HOME=/var/lib/valheim`; check `systemctl show valheim-ui -p Environment`, `getent passwd valheim` (home must be `/var/lib/valheim`; re-run `install.sh`, which repoints a pre-existing user), and ownership of `/var/lib/valheim`. |
+| Install/update job fails at once with `bad system call`, `SIGSYS` or signal 31 | SteamCMD is a 32-bit binary and the manager unit's system-call filter only allowed the native ABI (fresh installs from v1.3.0 to v1.16.6 shipped `SystemCallArchitectures=native`; installs that predate v1.3.0 and only ever self-upgraded were never affected). Re-run `install.sh`: the current unit says `native x86`. |
 | Install job fails with `0x6`/`0x202`/`0x602` | SteamCMD transient errors; the job retries once. Re-run the install; check disk space (`df -h /var/lib/valheim`). |
 | Start fails with "unitctl" or sudo errors | `visudo -cf /etc/sudoers.d/valheim-ui`; confirm `/usr/local/lib/valheim-ui/unitctl` is root-owned 0755; `sudo -u valheim sudo -n /usr/local/lib/valheim-ui/unitctl start <id>`. |
 | Console shows `Failed to open plugin: .../libparty.so` or an `ArgumentNullException` during startup | Stock Valheim dedicated-server noise, seen on every install; the server continues to "Game server connected". Not a permissions or sandbox problem. |

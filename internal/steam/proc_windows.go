@@ -28,6 +28,9 @@ func killProcessGroup(cmd *exec.Cmd) error {
 	return cmd.Process.Kill()
 }
 
+// killedBySigsys: no seccomp on Windows; a child is never killed by SIGSYS.
+func killedBySigsys(_ error) bool { return false }
+
 // isExecutable: Windows carries no execute bit; steamcmd is an .exe.
 func isExecutable(path string, _ os.FileInfo) bool {
 	return strings.EqualFold(".exe", path[max(0, len(path)-4):])

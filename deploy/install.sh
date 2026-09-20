@@ -316,7 +316,11 @@ LockPersonality=true
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 CapabilityBoundingSet=
 AmbientCapabilities=
-SystemCallArchitectures=native
+# "native x86", not "native": the manager runs SteamCMD as a child, and
+# SteamCMD is a 32-bit x86 binary. Under a native-only filter its first
+# i386 syscall is answered with SIGSYS and every install/update job dies
+# with "bad system call" before SteamCMD prints anything.
+SystemCallArchitectures=native x86
 UMask=0027
 LimitNOFILE=65536
 
