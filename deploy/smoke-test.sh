@@ -228,16 +228,40 @@ fi
 grep -q 'apply-upgrade' <<<"$sudo_out" || die "unitctl capabilities printed nothing recognisable: $sudo_out"
 log "sudo -n unitctl exits 0 inside the manager unit's sandbox"
 
-log "negative control: adding SystemCallArchitectures=native (a seccomp option) must make sudo fail"
+log "negative control: NoNewPrivileges=true must make sudo fail (proves this check can see a broken sudo)"
 set +e
-sudo_nnp_out="$(run_sandboxed smoke-sudo-nnp -p SystemCallArchitectures=native -- "${UNITCTL_CMD[@]}" 2>&1)"
+sudo_nnp_out="$(run_sandboxed smoke-sudo-nnp -p NoNewPrivileges=true -- "${UNITCTL_CMD[@]}" 2>&1)"
 sudo_nnp_rc=$?
 set -e
 echo "$sudo_nnp_out"
 if [[ $sudo_nnp_rc -eq 0 ]]; then
-  die "negative control did not fail: sudo ran under SystemCallArchitectures=native; this check would not catch a seccomp option sneaking back into the manager unit"
+  die "negative control did not fail: sudo ran under NoNewPrivileges=true; this check could not catch a manager unit that blocks sudo"
 fi
-log "confirmed: sudo fails (exit $sudo_nnp_rc) once the unit carries a seccomp-backed option, as expected"
+log "confirmed: sudo fails (exit $sudo_nnp_rc) under NoNewPrivileges=true, as expected"
+
+# Two probes of what the v1.3.0-v1.16.6 hardening block does to sudo on this
+# host's systemd. Before v255 a seccomp-backed option on a User= unit implied
+# NoNewPrivileges (the bug); v255+ installs the filter before dropping
+# privileges instead, so the same option no longer breaks sudo there
+# (exec-invoke.c, keep_seccomp_privileges). An empty CapabilityBoundingSet=
+# leaves the root that sudo becomes without any capability, on every version.
+# The pre-v255 behaviour is asserted where it applies; both results are
+# logged as evidence either way.
+systemd_version="$(systemctl --version | awk 'NR == 1 { print $2 }')"
+log "systemd $systemd_version: probing what the old unit's hardening does to sudo"
+set +e
+probe_arch_out="$(run_sandboxed smoke-sudo-probe-arch -p SystemCallArchitectures=native -- "${UNITCTL_CMD[@]}" 2>&1)"
+probe_arch_rc=$?
+probe_caps_out="$(run_sandboxed smoke-sudo-probe-caps -p CapabilityBoundingSet= -- "${UNITCTL_CMD[@]}" 2>&1)"
+probe_caps_rc=$?
+set -e
+echo "--- SystemCallArchitectures=native -> sudo exit $probe_arch_rc"
+sed 's/^/    /' <<<"$probe_arch_out"
+echo "--- CapabilityBoundingSet= (empty) -> sudo exit $probe_caps_rc"
+sed 's/^/    /' <<<"$probe_caps_out"
+if [[ "${systemd_version%%.*}" -lt 255 && $probe_arch_rc -eq 0 ]]; then
+  die "systemd $systemd_version ran sudo under SystemCallArchitectures=native; versions before 255 are expected to imply NoNewPrivileges here (docs/DECISIONS.md, ADR-019)"
+fi
 
 STEAMCMD=/var/lib/valheim/steamcmd/steamcmd.sh
 

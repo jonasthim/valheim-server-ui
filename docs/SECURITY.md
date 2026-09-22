@@ -48,8 +48,9 @@ itself.
 - `valheim-ui.service` (the manager) keeps only the mount-namespace options
   (`ProtectSystem=strict`, `ReadWritePaths=/var/lib/valheim`, `ProtectHome`, `PrivateTmp`,
   `ProtectControlGroups`, `UMask=0027`). It cannot carry any seccomp-backed option or an
-  emptied capability bounding set: for a `User=` unit systemd then sets `no_new_privs`,
-  and the setuid `sudo` the manager needs for `unitctl` refuses to run (ADR-019, amended).
+  emptied capability bounding set: for a `User=` unit systemd before v255 then sets
+  `no_new_privs`, and the setuid `sudo` the manager needs for `unitctl` refuses to run
+  (ADR-019, amended).
   CI proves the shipped unit still lets `sudo` and the 32-bit SteamCMD run
   (`deploy/smoke-test.sh`).
 - The manager binary is root-owned in a root-owned directory. Self-upgrade stages a

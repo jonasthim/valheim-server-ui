@@ -118,14 +118,18 @@ surface of the game is not something this project can vouch for.
 
 *Amended 2026-09-22 (v1.16.7).* This ADR originally gave the manager unit "the same set
 minus `NoNewPrivileges` and `RestrictSUIDSGID`, which the setuid `sudo` needs". That
-never worked: systemd turns `NoNewPrivileges` on implicitly for any `User=` unit that
-uses a seccomp-backed option (`PrivateDevices`, `ProtectKernelTunables/Modules/Logs`,
-`ProtectClock`, `ProtectHostname`, `RestrictNamespaces`, `RestrictRealtime`,
-`LockPersonality`, `RestrictAddressFamilies`, `SystemCallArchitectures`, …), so `sudo`
-refused to run and no fresh install between v1.3.0 and v1.16.6 could start, stop or
-upgrade anything through `unitctl`; an empty `CapabilityBoundingSet=` would on top have
-left the root that `sudo` becomes without `CAP_SETGID`, and `SystemCallArchitectures=native`
-killed the 32-bit SteamCMD with SIGSYS. Installs that predate v1.3.0 and only ever
+never worked: systemd before v255 (Debian 12 ships 252, Ubuntu 22.04 ships 249) turns
+`NoNewPrivileges` on implicitly for any `User=` unit that uses a seccomp-backed option
+(`PrivateDevices`, `ProtectKernelTunables/Modules/Logs`, `ProtectClock`, `ProtectHostname`,
+`RestrictNamespaces`, `RestrictRealtime`, `LockPersonality`, `RestrictAddressFamilies`,
+`SystemCallArchitectures`, …), so `sudo` refused to run and no fresh install between
+v1.3.0 and v1.16.6 could start, stop or upgrade anything through `unitctl`. v255+ installs
+the filter before dropping privileges instead (`keep_seccomp_privileges` in
+`exec-invoke.c`), which is why Ubuntu 24.04 runs `sudo` under such an option — but the
+shipped unit has to work on every supported host, and the same block's empty
+`CapabilityBoundingSet=` leaves the root that `sudo` becomes without any capability on
+every version, while `SystemCallArchitectures=native` killed the 32-bit SteamCMD with
+SIGSYS everywhere. Installs that predate v1.3.0 and only ever
 self-upgraded kept their old unit and were never affected. The manager unit now carries
 only the mount-based options above; the seccomp set stays on `valheim@.service`, which
 never needs sudo. `deploy/smoke-test.sh` runs `sudo -n unitctl` and SteamCMD inside an

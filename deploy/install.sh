@@ -297,23 +297,26 @@ RestartSec=3
 WorkingDirectory=/var/lib/valheim
 # Hardening -- mount-namespace options only. The manager escalates through the
 # setuid sudo (for unitctl), so this unit must never end up with the
-# no_new_privs flag, and systemd sets that flag implicitly on any unit that
-# runs without CAP_SYS_ADMIN (User=) as soon as it uses a seccomp-backed
-# option: PrivateDevices, ProtectKernelTunables/Modules/Logs, ProtectClock,
+# no_new_privs flag. systemd before v255 (Debian 12 ships 252, Ubuntu 22.04
+# ships 249) sets that flag implicitly on any unit that runs without
+# CAP_SYS_ADMIN (User=) as soon as it uses a seccomp-backed option:
+# PrivateDevices, ProtectKernelTunables/Modules/Logs, ProtectClock,
 # ProtectHostname, RestrictNamespaces, RestrictRealtime, LockPersonality,
 # RestrictAddressFamilies, RestrictSUIDSGID, SystemCallArchitectures,
-# SystemCallFilter, MemoryDenyWriteExecute (systemd.exec(5), NoNewPrivileges=).
-# With the flag set sudo refuses to run ("The "no new privileges" flag is
-# set") and every start, stop and upgrade fails. An empty CapabilityBoundingSet=
-# is just as fatal: the root that sudo becomes would keep no capabilities, not
-# even CAP_SETGID for its own setgroups(). SystemCallArchitectures= would on
-# top of that kill the 32-bit SteamCMD child with SIGSYS. Installs from v1.3.0
-# to v1.16.6 shipped all of these and could not start an instance.
+# SystemCallFilter, MemoryDenyWriteExecute. (v255+ installs the filter before
+# dropping privileges instead, but this unit has to work on every supported
+# host.) With the flag set sudo refuses to run ("The "no new privileges" flag
+# is set") and every start, stop and upgrade fails. An empty
+# CapabilityBoundingSet= is fatal on every version: the root that sudo becomes
+# keeps no capabilities, not even CAP_SETGID for its own setgroups().
+# SystemCallArchitectures= would on top of that kill the 32-bit SteamCMD
+# child with SIGSYS. Installs from v1.3.0 to v1.16.6 shipped all of these.
 # The full seccomp set lives in valheim@.service, where the game never needs
 # sudo. deploy/smoke-test.sh runs sudo -n unitctl and SteamCMD inside an exact
-# mirror of this block in CI, with negative controls, so a seccomp option
-# cannot sneak back in unnoticed. /var/lib/valheim/bin is root-owned, so the
-# manager cannot rewrite its own binary; upgrades go through unitctl.
+# mirror of this block in CI (Ubuntu 22.04 and 24.04), with negative
+# controls, so a breaking option cannot sneak back in unnoticed.
+# /var/lib/valheim/bin is root-owned, so the manager cannot rewrite its own
+# binary; upgrades go through unitctl.
 ProtectSystem=strict
 ReadWritePaths=/var/lib/valheim
 PrivateTmp=true
