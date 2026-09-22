@@ -308,7 +308,8 @@ WorkingDirectory=/var/lib/valheim
 # host.) With the flag set sudo refuses to run ("The "no new privileges" flag
 # is set") and every start, stop and upgrade fails. An empty
 # CapabilityBoundingSet= is fatal on every version: the root that sudo becomes
-# keeps no capabilities, not even CAP_SETGID for its own setgroups().
+# keeps no capabilities, not even CAP_SETGID to switch to root's group
+# ("sudo: unable to change to root gid: Operation not permitted").
 # SystemCallArchitectures= would on top of that kill the 32-bit SteamCMD
 # child with SIGSYS. Installs from v1.3.0 to v1.16.6 shipped all of these.
 # The full seccomp set lives in valheim@.service, where the game never needs

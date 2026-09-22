@@ -105,7 +105,7 @@ wait_for() {
 }
 
 manager_active() { systemctl is-active --quiet valheim-ui.service; }
-manager_http_ready() { curl -fsS -o /dev/null "$BASE_URL/healthz"; }
+manager_http_ready() { curl -fs -o /dev/null "$BASE_URL/healthz" 2>/dev/null; }
 instance_inactive() { ! systemctl is-active --quiet "valheim@${INSTANCE}.service"; }
 
 # api METHOD PATH [JSON_BODY] -- calls $API$PATH with the CSRF header and the

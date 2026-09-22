@@ -128,8 +128,9 @@ the filter before dropping privileges instead (`keep_seccomp_privileges` in
 `exec-invoke.c`), which is why Ubuntu 24.04 runs `sudo` under such an option — but the
 shipped unit has to work on every supported host, and the same block's empty
 `CapabilityBoundingSet=` leaves the root that `sudo` becomes without any capability on
-every version, while `SystemCallArchitectures=native` killed the 32-bit SteamCMD with
-SIGSYS everywhere. Installs that predate v1.3.0 and only ever
+every version (`sudo: unable to change to root gid: Operation not permitted`, reproduced
+by CI on systemd 249 and 255), while `SystemCallArchitectures=native` killed the 32-bit
+SteamCMD with SIGSYS everywhere. Installs that predate v1.3.0 and only ever
 self-upgraded kept their old unit and were never affected. The manager unit now carries
 only the mount-based options above; the seccomp set stays on `valheim@.service`, which
 never needs sudo. `deploy/smoke-test.sh` runs `sudo -n unitctl` and SteamCMD inside an
