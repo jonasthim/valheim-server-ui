@@ -583,8 +583,10 @@ and, for every step above, whether it is already up to date or would change
 (composes with `--uninstall` too).
 
 Manager unit essentials: `User=valheim`, `ProtectSystem=strict`,
-`ReadWritePaths=/var/lib/valheim`, `NoNewPrivileges=no` (sudo needs it),
-`Restart=always`, `RestartSec=3` — a clean `exit(0)` after a self-upgrade swap
+`ReadWritePaths=/var/lib/valheim`, no `NoNewPrivileges` and no seccomp-backed
+sandboxing option at all (systemd implies `NoNewPrivileges` for a `User=` unit
+that uses one, and either stops the setuid `sudo` that `unitctl` relies on;
+ADR-019), `Restart=always`, `RestartSec=3` — a clean `exit(0)` after a self-upgrade swap
 is what triggers the restart onto the new binary, so this must not be
 `on-failure`. Instance template essentials: `User=valheim`,
 `WorkingDirectory=/var/lib/valheim/instances/%i/server`,

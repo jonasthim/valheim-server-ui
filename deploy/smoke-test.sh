@@ -38,7 +38,7 @@ command -v systemctl >/dev/null 2>&1 || { echo "smoke-test.sh: systemd (systemct
 [[ -f "$BIN" && -x "$BIN" ]] || { echo "smoke-test.sh: BIN=$BIN is not an executable file" >&2; exit 1; }
 [[ -f "$FAKE_SERVER" ]] || { echo "smoke-test.sh: FAKE_SERVER=$FAKE_SERVER not found" >&2; exit 1; }
 
-for tool in curl jq visudo systemd-run runuser realpath stat; do
+for tool in curl jq visudo systemd-run runuser realpath stat awk; do
   command -v "$tool" >/dev/null 2>&1 || { echo "smoke-test.sh: required tool not found: $tool" >&2; exit 1; }
 done
 
@@ -154,74 +154,112 @@ healthz="$(curl -fsS "$BASE_URL/healthz")" || die "curl $BASE_URL/healthz failed
 printf '%s' "$healthz" | grep -q '"ok":true' || die "unexpected /healthz body: $healthz"
 
 # ---------------------------------------------------------------------------
-# steamcmd under the manager unit's real hardening, plus a negative control.
+# sudo and steamcmd inside the manager unit's real sandbox, with negative
+# controls.
 #
-# The manager (valheim-ui.service) spawns SteamCMD -- a 32-bit x86 binary --
-# as a child process to install/update instances. The API flow below never
-# exercises that path: like web/e2e, it uses install:false and a hand-written
-# stub binary, specifically so this script does not need real Steam network
-# access. That means the flow below, on its own, would never have caught
-# SteamCMD being killed by the manager unit's syscall filter (see
-# docs/RUNBOOK.md, "SteamCMD is a 32-bit binary and the manager unit's
-# system-call filter only allowed the native ABI"). Reproduce the unit's exact
-# sandbox with systemd-run instead, against the SteamCMD the installer just
-# downloaded, so a regression here is still caught.
+# Two things the API flow below cannot pin down on its own:
 #
-# Every -p below is copied by hand from deploy/valheim-ui.service's [Service]
-# hardening block (current as of this writing); keep the two in sync if that
-# block changes. NoNewPrivileges and RestrictSUIDSGID are deliberately absent
-# from both: the manager unit leaves them off (it calls sudo for unitctl), so
-# a faithful mirror leaves them off here too. Every property in that block is
-# expressible as a systemd-run -p flag; none had to be dropped.
+#  1. The manager (valheim-ui.service) escalates to root through the setuid
+#     sudo (for unitctl) -- and systemd silently sets the no_new_privs flag on
+#     any User= unit that uses a seccomp-backed sandboxing option (see the
+#     comment block in deploy/valheim-ui.service). With that flag set, sudo
+#     refuses to run and every start, stop and upgrade fails. The API flow
+#     does go through sudo, but several layers deep; this runs the exact
+#     command the manager runs, alone, so the failure is unmistakable.
+#  2. SteamCMD is a 32-bit x86 binary the manager spawns as a child. The API
+#     flow never runs it (install:false and a stub binary, like web/e2e, so no
+#     Steam network access is needed), so a syscall filter killing it would
+#     go unnoticed.
+#
+# Both run under systemd-run with every sandboxing directive copied from the
+# unit file install.sh just wrote to /etc/systemd/system -- read at runtime,
+# so this mirror cannot drift from the unit. Each check has a negative
+# control that adds SystemCallArchitectures=native (what the manager unit
+# shipped from v1.3.0 to v1.16.6) and must fail, proving the check would
+# catch that regression.
 # ---------------------------------------------------------------------------
-STEAMCMD_HARDENING=(
-  -p ProtectSystem=strict
-  -p ReadWritePaths=/var/lib/valheim
-  -p PrivateTmp=true
-  -p ProtectHome=true
-  -p PrivateDevices=true
-  -p ProtectKernelTunables=true
-  -p ProtectKernelModules=true
-  -p ProtectKernelLogs=true
-  -p ProtectControlGroups=true
-  -p ProtectClock=true
-  -p ProtectHostname=true
-  -p RestrictNamespaces=true
-  -p RestrictRealtime=true
-  -p LockPersonality=true
-  -p "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK"
-  -p CapabilityBoundingSet=
-  -p AmbientCapabilities=
-  -p UMask=0027
-)
+MANAGER_UNIT=/etc/systemd/system/valheim-ui.service
+[[ -f "$MANAGER_UNIT" ]] || die "$MANAGER_UNIT was not installed"
 
-# run_steamcmd_sandboxed UNIT_NAME SYSCALL_ARCHITECTURES
-run_steamcmd_sandboxed() {
-  systemd-run --wait --pipe --collect --unit="$1" \
+# Every [Service] directive except the ones that say *what* runs and how it is
+# supervised; what remains is the sandbox. Read line by line into an array so
+# a value with spaces stays one argument.
+mapfile -t MANAGER_SANDBOX < <(
+  awk '
+    /^\[/ { in_service = ($0 == "[Service]"); next }
+    !in_service { next }
+    /^[[:space:]]*(#|;|$)/ { next }
+    /^(Type|User|Group|Environment|EnvironmentFile|ExecStart|ExecStartPre|ExecStartPost|ExecStop|ExecStopPost|ExecReload|Restart|RestartSec|WorkingDirectory|StandardInput|StandardOutput|StandardError|KillSignal|KillMode|TimeoutStopSec|TimeoutStartSec|Nice)=/ { next }
+    { print "-p"; print }
+  ' "$MANAGER_UNIT"
+)
+[[ ${#MANAGER_SANDBOX[@]} -gt 0 ]] || die "no sandboxing directives found in $MANAGER_UNIT"
+log "manager sandbox mirrored from $MANAGER_UNIT:$(printf ' %s' "${MANAGER_SANDBOX[@]}")"
+
+# run_sandboxed UNIT_NAME [-p EXTRA_PROPERTY]... -- COMMAND [ARG]...
+# Runs COMMAND as the valheim user under the mirrored sandbox (plus any extra
+# properties), with stdout/stderr piped back and the unit's exit status
+# propagated.
+run_sandboxed() {
+  local unit="$1" extra=()
+  shift
+  while [[ $# -gt 0 && "$1" != "--" ]]; do
+    extra+=("$1")
+    shift
+  done
+  [[ $# -gt 0 ]] && shift
+  systemd-run --wait --pipe --collect --unit="$unit" \
     --uid=valheim --gid=valheim --setenv=HOME=/var/lib/valheim \
-    "${STEAMCMD_HARDENING[@]}" -p "SystemCallArchitectures=$2" \
-    /var/lib/valheim/steamcmd/steamcmd.sh +quit
+    "${MANAGER_SANDBOX[@]}" "${extra[@]}" -- "$@"
 }
 
-log "steamcmd runs under the manager unit's real hardening (SystemCallArchitectures=native x86)"
+SUDO_BIN="$(command -v sudo)"
+UNITCTL_CMD=("$SUDO_BIN" -n "$LIB_DIR/unitctl" capabilities)
+
+log "sudo -n unitctl works inside the manager unit's sandbox (what every start/stop/upgrade does)"
 set +e
-steamcmd_out="$(run_steamcmd_sandboxed smoke-steamcmd-ok 'native x86' 2>&1)"
+sudo_out="$(run_sandboxed smoke-sudo-ok -- "${UNITCTL_CMD[@]}" 2>&1)"
+sudo_rc=$?
+set -e
+echo "$sudo_out"
+if [[ $sudo_rc -ne 0 ]]; then
+  die "sudo exited $sudo_rc inside the manager unit's sandbox: the unit's hardening stops the setuid sudo (no_new_privs, or an emptied capability set; see deploy/valheim-ui.service), so nothing the manager does through unitctl can work"
+fi
+grep -q 'apply-upgrade' <<<"$sudo_out" || die "unitctl capabilities printed nothing recognisable: $sudo_out"
+log "sudo -n unitctl exits 0 inside the manager unit's sandbox"
+
+log "negative control: adding SystemCallArchitectures=native (a seccomp option) must make sudo fail"
+set +e
+sudo_nnp_out="$(run_sandboxed smoke-sudo-nnp -p SystemCallArchitectures=native -- "${UNITCTL_CMD[@]}" 2>&1)"
+sudo_nnp_rc=$?
+set -e
+echo "$sudo_nnp_out"
+if [[ $sudo_nnp_rc -eq 0 ]]; then
+  die "negative control did not fail: sudo ran under SystemCallArchitectures=native; this check would not catch a seccomp option sneaking back into the manager unit"
+fi
+log "confirmed: sudo fails (exit $sudo_nnp_rc) once the unit carries a seccomp-backed option, as expected"
+
+STEAMCMD=/var/lib/valheim/steamcmd/steamcmd.sh
+
+log "steamcmd (32-bit) runs inside the manager unit's sandbox"
+set +e
+steamcmd_out="$(run_sandboxed smoke-steamcmd-ok -- "$STEAMCMD" +quit 2>&1)"
 steamcmd_rc=$?
 set -e
 if [[ $steamcmd_rc -ne 0 ]]; then
   echo "$steamcmd_out"
-  die "steamcmd exited $steamcmd_rc under the manager unit's real hardening; this is the exact bug this check exists to catch"
+  die "steamcmd exited $steamcmd_rc inside the manager unit's sandbox; every install/update job would fail the same way"
 fi
-log "steamcmd exits 0 under the manager unit's real hardening"
+log "steamcmd exits 0 inside the manager unit's sandbox"
 
-log "negative control: SystemCallArchitectures=native (no x86) must kill steamcmd with SIGSYS"
+log "negative control: SystemCallArchitectures=native must kill the 32-bit steamcmd with SIGSYS"
 set +e
-sigsys_out="$(run_steamcmd_sandboxed smoke-steamcmd-sigsys native 2>&1)"
+sigsys_out="$(run_sandboxed smoke-steamcmd-sigsys -p SystemCallArchitectures=native -- "$STEAMCMD" +quit 2>&1)"
 sigsys_rc=$?
 set -e
 echo "$sigsys_out"
 if [[ $sigsys_rc -eq 0 ]]; then
-  die "negative control did not fail: steamcmd exited 0 under SystemCallArchitectures=native (no x86); this check would not catch a regression back to the old, broken filter"
+  die "negative control did not fail: steamcmd exited 0 under SystemCallArchitectures=native; this check would not catch a regression back to the old, broken filter"
 fi
 if [[ $sigsys_rc -eq 159 || $sigsys_rc -eq 31 ]] || grep -qiE 'bad system call|sigsys' <<<"$sigsys_out"; then
   log "confirmed: steamcmd was killed by SIGSYS under the old filter (exit $sigsys_rc), as expected"
@@ -310,13 +348,12 @@ log "instance reached state=running after ${waited}s"
 log "assert: systemctl is-active valheim@${INSTANCE}.service"
 systemctl is-active --quiet "valheim@${INSTANCE}.service" || die "valheim@${INSTANCE}.service is not active"
 
-log "assert: logs/console.log grows"
+log "assert: logs/console.log keeps growing (the fake server logs at least every 10s)"
 console_log="$DATA_DIR/instances/$INSTANCE/logs/console.log"
 [[ -f "$console_log" ]] || die "$console_log does not exist"
 size1=$(stat -c %s "$console_log")
-sleep 5
-size2=$(stat -c %s "$console_log")
-[[ "$size2" -gt "$size1" ]] || die "$console_log did not grow ($size1 -> $size2 bytes over 5s)"
+console_grew() { [[ "$(stat -c %s "$console_log")" -gt "$size1" ]]; }
+wait_for 30 "$console_log to grow beyond $size1 bytes" console_grew
 
 log "stop $INSTANCE via the API"
 api POST "/instances/$INSTANCE/stop"

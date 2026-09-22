@@ -255,10 +255,11 @@ func runCommandEnv(ctx context.Context, steamcmdPath string, args []string, out 
 	cmd.WaitDelay = 5 * time.Second
 	err := cmd.Run()
 	if killedBySigsys(err) {
-		// steamcmd is a 32-bit binary; a manager unit with
-		// SystemCallArchitectures=native kills it before it prints anything.
-		return fmt.Errorf("steamcmd was killed by a system-call filter (SIGSYS): the manager's systemd unit must allow 32-bit "+
-			"syscalls (SystemCallArchitectures=native x86) — re-run install.sh to update the unit: %w", err)
+		// steamcmd is a 32-bit binary; a manager unit that filters system-call
+		// architectures (SystemCallArchitectures=native, shipped by installs
+		// from v1.3.0 to v1.16.6) kills it before it prints anything.
+		return fmt.Errorf("steamcmd was killed by a system-call filter (SIGSYS): SteamCMD is a 32-bit binary, so the manager's "+
+			"systemd unit must not set SystemCallArchitectures — re-run install.sh to install the current unit: %w", err)
 	}
 	return err
 }

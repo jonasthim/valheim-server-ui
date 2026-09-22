@@ -110,10 +110,27 @@ installer is re-run.
 `valheim@.service` runs with `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`,
 `PrivateTmp`, an empty capability set, address-family and namespace restrictions and
 `UMask=0027`: a mod gets the instance tree, HOME and network sockets, nothing else, and
-cannot call sudo. `valheim-ui.service` gets the same set minus `NoNewPrivileges` and
-`RestrictSUIDSGID`, which the setuid `sudo` used for `unitctl` needs. `SystemCallFilter`
-and `MemoryDenyWriteExecute` are deliberately left out: the Unity/Mono runtime JITs and
-the syscall surface of the game is not something this project can vouch for.
+cannot call sudo. `valheim-ui.service` keeps only the mount-namespace part of that set
+(`ProtectSystem=strict`, `ReadWritePaths`, `ProtectHome`, `PrivateTmp`,
+`ProtectControlGroups`, `UMask`). `SystemCallFilter` and `MemoryDenyWriteExecute` are
+deliberately left out of the game unit: the Unity/Mono runtime JITs and the syscall
+surface of the game is not something this project can vouch for.
+
+*Amended 2026-09-22 (v1.16.7).* This ADR originally gave the manager unit "the same set
+minus `NoNewPrivileges` and `RestrictSUIDSGID`, which the setuid `sudo` needs". That
+never worked: systemd turns `NoNewPrivileges` on implicitly for any `User=` unit that
+uses a seccomp-backed option (`PrivateDevices`, `ProtectKernelTunables/Modules/Logs`,
+`ProtectClock`, `ProtectHostname`, `RestrictNamespaces`, `RestrictRealtime`,
+`LockPersonality`, `RestrictAddressFamilies`, `SystemCallArchitectures`, …), so `sudo`
+refused to run and no fresh install between v1.3.0 and v1.16.6 could start, stop or
+upgrade anything through `unitctl`; an empty `CapabilityBoundingSet=` would on top have
+left the root that `sudo` becomes without `CAP_SETGID`, and `SystemCallArchitectures=native`
+killed the 32-bit SteamCMD with SIGSYS. Installs that predate v1.3.0 and only ever
+self-upgraded kept their old unit and were never affected. The manager unit now carries
+only the mount-based options above; the seccomp set stays on `valheim@.service`, which
+never needs sudo. `deploy/smoke-test.sh` runs `sudo -n unitctl` and SteamCMD inside an
+exact mirror of the installed manager unit's sandbox in CI, each with a negative control,
+so this cannot regress silently.
 
 ## ADR-020 Security review findings are tracked in docs/SECURITY.md
 Every finding from the September 2026 review, its severity, status and the accepted

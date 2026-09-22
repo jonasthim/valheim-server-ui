@@ -295,32 +295,30 @@ ExecStart=/usr/local/bin/valheim-ui serve
 Restart=always
 RestartSec=3
 WorkingDirectory=/var/lib/valheim
-# Hardening. NoNewPrivileges and RestrictSUIDSGID must stay off: the manager
-# calls sudo (setuid) for unitctl. Everything else that does not interfere
-# with sudo is on. /var/lib/valheim/bin is root-owned, so the manager cannot
-# rewrite its own binary; upgrades go through `unitctl apply-upgrade`.
+# Hardening -- mount-namespace options only. The manager escalates through the
+# setuid sudo (for unitctl), so this unit must never end up with the
+# no_new_privs flag, and systemd sets that flag implicitly on any unit that
+# runs without CAP_SYS_ADMIN (User=) as soon as it uses a seccomp-backed
+# option: PrivateDevices, ProtectKernelTunables/Modules/Logs, ProtectClock,
+# ProtectHostname, RestrictNamespaces, RestrictRealtime, LockPersonality,
+# RestrictAddressFamilies, RestrictSUIDSGID, SystemCallArchitectures,
+# SystemCallFilter, MemoryDenyWriteExecute (systemd.exec(5), NoNewPrivileges=).
+# With the flag set sudo refuses to run ("The "no new privileges" flag is
+# set") and every start, stop and upgrade fails. An empty CapabilityBoundingSet=
+# is just as fatal: the root that sudo becomes would keep no capabilities, not
+# even CAP_SETGID for its own setgroups(). SystemCallArchitectures= would on
+# top of that kill the 32-bit SteamCMD child with SIGSYS. Installs from v1.3.0
+# to v1.16.6 shipped all of these and could not start an instance.
+# The full seccomp set lives in valheim@.service, where the game never needs
+# sudo. deploy/smoke-test.sh runs sudo -n unitctl and SteamCMD inside an exact
+# mirror of this block in CI, with negative controls, so a seccomp option
+# cannot sneak back in unnoticed. /var/lib/valheim/bin is root-owned, so the
+# manager cannot rewrite its own binary; upgrades go through unitctl.
 ProtectSystem=strict
 ReadWritePaths=/var/lib/valheim
 PrivateTmp=true
 ProtectHome=true
-PrivateDevices=true
-ProtectKernelTunables=true
-ProtectKernelModules=true
-ProtectKernelLogs=true
 ProtectControlGroups=true
-ProtectClock=true
-ProtectHostname=true
-RestrictNamespaces=true
-RestrictRealtime=true
-LockPersonality=true
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
-CapabilityBoundingSet=
-AmbientCapabilities=
-# "native x86", not "native": the manager runs SteamCMD as a child, and
-# SteamCMD is a 32-bit x86 binary. Under a native-only filter its first
-# i386 syscall is answered with SIGSYS and every install/update job dies
-# with "bad system call" before SteamCMD prints anything.
-SystemCallArchitectures=native x86
 UMask=0027
 LimitNOFILE=65536
 
@@ -735,6 +733,9 @@ if [[ ! -x "$DATA_DIR/steamcmd/steamcmd.sh" ]]; then
   # archive's ownership and modes ignored: root must never extract a
   # third-party tarball into a directory the service user controls.
   steam_tmp="$(mktemp -d)"
+  # mktemp -d makes the directory 0700 root; the service user must be able to
+  # enter it to read the tarball below (the file itself is made 0644 too).
+  chmod 0755 "$steam_tmp"
   curl -fsSL --proto '=https' --tlsv1.2 -o "$steam_tmp/steamcmd_linux.tar.gz" "$STEAMCMD_URL"
   log "SteamCMD tarball sha256: $(sha256sum "$steam_tmp/steamcmd_linux.tar.gz" | cut -d' ' -f1) (Valve publishes no pinned digest; recorded for your audit trail)"
   chmod 0644 "$steam_tmp/steamcmd_linux.tar.gz"

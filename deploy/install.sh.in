@@ -441,6 +441,9 @@ if [[ ! -x "$DATA_DIR/steamcmd/steamcmd.sh" ]]; then
   # archive's ownership and modes ignored: root must never extract a
   # third-party tarball into a directory the service user controls.
   steam_tmp="$(mktemp -d)"
+  # mktemp -d makes the directory 0700 root; the service user must be able to
+  # enter it to read the tarball below (the file itself is made 0644 too).
+  chmod 0755 "$steam_tmp"
   curl -fsSL --proto '=https' --tlsv1.2 -o "$steam_tmp/steamcmd_linux.tar.gz" "$STEAMCMD_URL"
   log "SteamCMD tarball sha256: $(sha256sum "$steam_tmp/steamcmd_linux.tar.gz" | cut -d' ' -f1) (Valve publishes no pinned digest; recorded for your audit trail)"
   chmod 0644 "$steam_tmp/steamcmd_linux.tar.gz"

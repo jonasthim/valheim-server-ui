@@ -211,7 +211,8 @@ proven.
 |---------|-------|
 | Dashboard says SteamCMD is not installed | `/var/lib/valheim/steamcmd/steamcmd.sh` missing: re-run `install.sh` or download SteamCMD there as the `valheim` user. |
 | Install job fails with `Disk write failure` | Almost never a full disk. SteamCMD could not write to `$HOME` or the install dir. The units run with `ProtectHome=true` and set `HOME=/var/lib/valheim`; check `systemctl show valheim-ui -p Environment`, `getent passwd valheim` (home must be `/var/lib/valheim`; re-run `install.sh`, which repoints a pre-existing user), and ownership of `/var/lib/valheim`. |
-| Install/update job fails at once with `bad system call`, `SIGSYS` or signal 31 | SteamCMD is a 32-bit binary and the manager unit's system-call filter only allowed the native ABI (fresh installs from v1.3.0 to v1.16.6 shipped `SystemCallArchitectures=native`; installs that predate v1.3.0 and only ever self-upgraded were never affected). Re-run `install.sh`: the current unit says `native x86`. |
+| Install/update job fails at once with `bad system call`, `SIGSYS` or signal 31 | SteamCMD is a 32-bit binary and the manager unit filtered system-call architectures (fresh installs from v1.3.0 to v1.16.6 shipped `SystemCallArchitectures=native`; installs that predate v1.3.0 and only ever self-upgraded were never affected). Re-run `install.sh`: the current unit has no such filter. |
+| Start/stop/upgrade fails with `sudo: The "no new privileges" flag is set` (older sudo: `effective uid is not 0`) | The manager unit carries a seccomp-backed hardening option (`PrivateDevices`, `ProtectKernel*`, `SystemCallArchitectures`, … — fresh installs from v1.3.0 to v1.16.6 shipped them all), which makes systemd set `no_new_privs` on the unit, and the setuid `sudo` then refuses to run. Re-run `install.sh`: it rewrites the unit with mount-namespace options only and restarts the manager. Check with `systemctl show valheim-ui -p NoNewPrivileges` (must be `no`). |
 | Install job fails with `0x6`/`0x202`/`0x602` | SteamCMD transient errors; the job retries once. Re-run the install; check disk space (`df -h /var/lib/valheim`). |
 | Start fails with "unitctl" or sudo errors | `visudo -cf /etc/sudoers.d/valheim-ui`; confirm `/usr/local/lib/valheim-ui/unitctl` is root-owned 0755; `sudo -u valheim sudo -n /usr/local/lib/valheim-ui/unitctl start <id>`. |
 | Console shows `Failed to open plugin: .../libparty.so` or an `ArgumentNullException` during startup | Stock Valheim dedicated-server noise, seen on every install; the server continues to "Game server connected". Not a permissions or sandbox problem. |
@@ -540,9 +541,10 @@ game assets; whatever goes into this folder is the admin's own.
 real: it runs `deploy/install.sh` on a GitHub-hosted Ubuntu VM (the `install`
 job in `.github/workflows/ci.yml`, matrixed over `ubuntu-24.04` and
 `ubuntu-22.04`), then drives the actual systemd path end to end — the
-`valheim-ui.service`/`valheim@.service` units, the sudoers drop-in, `unitctl`
-over `sudo`, SteamCMD under the manager unit's real sandbox (including a
-negative control that proves the check would catch the syscall-filter bug in
+`valheim-ui.service`/`valheim@.service` units, the sudoers drop-in, `sudo -n
+unitctl` and the 32-bit SteamCMD run inside an exact mirror of the installed
+manager unit's sandbox (each with a negative control that adds
+`SystemCallArchitectures=native` and must fail — the two v1.3.0–v1.16.6 bugs in
 §9's troubleshooting table), and a create/start/stop cycle for a real instance
 through `systemctl`, with the fake game server standing in for Valheim — and
 finally `install.sh --uninstall`. Every other job either unit-tests packages
