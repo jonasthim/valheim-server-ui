@@ -21,6 +21,9 @@ import {
 } from '@mantine/core'
 import uiClasses from '../ui/ui.module.css'
 
+const FONT_SANS = '"Geist", system-ui, -apple-system, "Segoe UI", sans-serif'
+const FONT_MONO = '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace'
+
 // Ember: Valheim's logo gold / torchlight. Primary action colour.
 const ember: MantineColorsTuple = [
   '#fff7e6',
@@ -147,10 +150,10 @@ export const theme = createTheme({
     orange: ember,
     violet: spirit,
   },
-  fontFamily: '"Source Sans 3", system-ui, sans-serif',
-  fontFamilyMonospace: '"JetBrains Mono", ui-monospace, monospace',
+  fontFamily: FONT_SANS,
+  fontFamilyMonospace: FONT_MONO,
   headings: {
-    fontFamily: '"Valheim Display", "Source Sans 3", serif',
+    fontFamily: FONT_SANS,
     fontWeight: '700',
     sizes: {
       h1: { fontSize: '30px', lineHeight: '1.15' },
