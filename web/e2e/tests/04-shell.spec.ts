@@ -41,4 +41,17 @@ test.describe.serial('shell top bar', () => {
     await page.getByRole('menuitem', { name: 'Dark' }).click()
     await expect(page.locator('html')).toHaveAttribute('data-mantine-color-scheme', 'dark')
   })
+
+  test('sidebar collapses to an icon rail and remembers it', async ({ page }) => {
+    await page.getByRole('button', { name: 'Collapse sidebar' }).click()
+    await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible()
+    expect(await page.evaluate(() => localStorage.getItem('vh-sidebar-collapsed'))).toBe('true')
+
+    await page.reload()
+    await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'Jobs' })).toBeVisible()
+
+    await page.getByRole('button', { name: 'Expand sidebar' }).click()
+    await expect(page.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible()
+  })
 })

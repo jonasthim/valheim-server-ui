@@ -1,6 +1,6 @@
-import { AppShell, Center, Loader } from '@mantine/core'
+import { AppShell, Center, Loader, useMantineTheme } from '@mantine/core'
 import { Suspense } from 'react'
-import { useDisclosure } from '@mantine/hooks'
+import { useDisclosure, useHotkeys, useLocalStorage, useMediaQuery } from '@mantine/hooks'
 import { Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useEvents } from '../events/useEvents'
@@ -13,9 +13,19 @@ import classes from './Shell.module.css'
 
 export function Shell() {
   const [opened, { toggle, close }] = useDisclosure()
+  const [collapsed, setCollapsed] = useLocalStorage<boolean>({
+    key: 'vh-sidebar-collapsed',
+    defaultValue: false,
+    getInitialValueInEffect: false,
+  })
   const { user } = useAuth()
   const loc = useLocation()
+  const theme = useMantineTheme()
+  const isDesktop = useMediaQuery(`(min-width: ${theme.breakpoints.sm})`, true, { getInitialValueInEffect: false })
+  const rail = collapsed && isDesktop
   useEvents(!!user)
+  // Temporary: relocated to the command palette hotkey set by B-4.
+  useHotkeys([['mod+B', () => setCollapsed((c) => !c)]])
 
   return (
     <JobDrawerHost>
@@ -27,15 +37,16 @@ export function Shell() {
       <UpgradeFlowHost>
         <AppShell
           header={{ height: 48 }}
-          navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
+          navbar={{ width: rail ? 56 : 232, breakpoint: 'sm', collapsed: { mobile: !opened, desktop: false } }}
           padding={{ base: 'md', md: 'xl' }}
+          transitionDuration={160}
         >
           <AppShell.Header className={classes.header}>
             <TopBar navOpened={opened} onToggleNav={toggle} />
           </AppShell.Header>
 
           <AppShell.Navbar className={classes.navbar}>
-            <Sidebar onNavigate={close} />
+            <Sidebar onNavigate={close} rail={rail} collapsed={collapsed} onToggleCollapsed={() => setCollapsed((c) => !c)} />
           </AppShell.Navbar>
 
           <AppShell.Main className={classes.main} id="main-content" tabIndex={-1}>
