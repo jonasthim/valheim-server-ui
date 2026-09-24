@@ -71,7 +71,8 @@ function emptyRow(): ChannelRow {
 }
 
 function toRows(channels: NotifyChannel[]): ChannelRow[] {
-  return channels.map((c) => ({ ...c, key: newKey() }))
+  // The API encodes an empty list as null (Go nil slice).
+  return (channels ?? []).map((c) => ({ ...c, key: newKey() }))
 }
 
 function toChannels(rows: ChannelRow[]): NotifyChannel[] {

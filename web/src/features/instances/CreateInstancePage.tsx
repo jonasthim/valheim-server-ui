@@ -4,11 +4,11 @@ import { useDocumentTitle } from '@mantine/hooks'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../../api/client'
 import type { CreateInstanceRequest, Instance, Job } from '../../api/types'
+import { useUnsavedChanges } from '../../lib/useUnsavedChanges'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { pageTitle } from '../../lib/title'
-import { PageHeader } from '../../ui'
+import { PageHeader, StickySaveBar } from '../../ui'
 import { useJobDrawer } from '../jobs'
-import { FormFooter } from './FormFooter'
 import { InstanceConfigForm } from './InstanceConfigForm'
 import { useInstanceConfigForm, type InstanceConfigFormSubmit } from './useInstanceConfigForm'
 import { mapConfigFieldErrors } from './instanceHelpers'
@@ -42,6 +42,7 @@ export function CreateInstancePage() {
   // Named formApi (not `api`, per the card's pseudo-code) to avoid shadowing
   // the `api` HTTP client imported above, which handleSubmit below calls.
   const formApi = useInstanceConfigForm({ mode: 'create', initial: { name: '', config: EMPTY_CONFIG, autostart: false } })
+  const unsaved = useUnsavedChanges(formApi.form)
 
   async function handleSubmit(values: InstanceConfigFormSubmit, helpers: { setErrors: (e: Record<string, string>) => void }) {
     setSubmitting(true)
@@ -54,6 +55,7 @@ export function CreateInstancePage() {
         install: values.install,
       }
       const res = await api.post<{ instance: Instance; job?: Job }>('/instances', payload)
+      unsaved.markClean()
       notifySuccess(`Instance "${res.instance.name}" created`)
       if (res.job) openJob(res.job.id)
       navigate(`/instances/${res.instance.id}/overview`)
@@ -85,7 +87,14 @@ export function CreateInstancePage() {
         description="Configure and install a new Valheim dedicated server."
       />
       <InstanceConfigForm api={formApi} formId="instance-config-form" onSubmit={handleSubmit} />
-      <FormFooter formId="instance-config-form" submitLabel="Create instance" submitting={submitting} />
+      <StickySaveBar
+        formId="instance-config-form"
+        show
+        dirty={unsaved.dirty}
+        saveLabel="Create instance"
+        saving={submitting}
+        onDiscard={unsaved.discard}
+      />
     </Stack>
   )
 }

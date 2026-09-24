@@ -28,6 +28,7 @@ import {
 import { IconAlertTriangle, IconDeviceFloppy, IconFileText, IconRestore } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtBytes } from '../../lib/format'
+import { useLeaveGuard } from '../../lib/useUnsavedChanges'
 import type { ConfigEntry } from '../../api/types'
 import { EmptyState, SectionCard } from '../../ui'
 import { entryKey, isBooleanEntry, isClientSideSetting, isKeybindEntry, isNumericEntry } from './helpers'
@@ -124,6 +125,7 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
   const formDirty = Object.keys(pending).length > 0
   const rawDirty = rawDraft !== undefined && rawDraft !== fileQuery.data?.raw
   const dirty = mode === 'form' ? formDirty : rawDirty
+  useLeaveGuard(dirty && !readOnly)
 
   function setEntryValue(entry: ConfigEntry, value: string) {
     setPending((prev) => ({ ...prev, [entryKey(entry.section, entry.key)]: value }))

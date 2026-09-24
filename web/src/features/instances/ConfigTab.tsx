@@ -1,15 +1,15 @@
 import { useState } from 'react'
-import { Button, Group, Skeleton, Stack, Text } from '@mantine/core'
+import { Box, Button, Group, Skeleton, Stack, Text } from '@mantine/core'
 import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import type { Instance, UpdateInstanceRequest } from '../../api/types'
+import { useUnsavedChanges } from '../../lib/useUnsavedChanges'
 import { notifyError, notifySuccess } from '../../lib/notify'
-import { SectionCard } from '../../ui'
+import { SectionCard, StickySaveBar } from '../../ui'
 import classes from './ConfigTab.module.css'
 import { useInstance } from './useInstance'
-import { FormFooter } from './FormFooter'
 import { InstanceConfigForm } from './InstanceConfigForm'
 import { useInstanceConfigForm, type InstanceConfigFormSubmit } from './useInstanceConfigForm'
 import { mapConfigFieldErrors } from './instanceHelpers'
@@ -47,13 +47,15 @@ export function ConfigTab({ id }: { id: string }) {
       <ConfigTabBody key={id} id={id} instance={instance} />
 
       {canDelete && (
-        <SectionCard title="Danger zone" description="Permanently delete this instance. Optionally remove its files too." className={classes.dangerCard}>
-          <Group justify="flex-end">
-            <Button color="red" variant="outline" onClick={() => setDeleteOpen(true)}>
-              Delete instance
-            </Button>
-          </Group>
-        </SectionCard>
+        <Box maw={720}>
+          <SectionCard title="Danger zone" description="Permanently delete this instance. Optionally remove its files too." className={classes.dangerCard}>
+            <Group justify="flex-end">
+              <Button color="red" variant="outline" onClick={() => setDeleteOpen(true)}>
+                Delete instance
+              </Button>
+            </Group>
+          </SectionCard>
+        </Box>
       )}
 
       <DeleteInstanceModal
@@ -79,6 +81,7 @@ function ConfigTabBody({ id, instance }: { id: string; instance: Instance }) {
     initial: { id: instance.id, name: instance.name, config: instance.config, autostart: instance.status.autostart },
     passwordMasked,
   })
+  const unsaved = useUnsavedChanges(formApi.form, { enabled: canEdit })
 
   async function handleSubmit(values: InstanceConfigFormSubmit, helpers: { setErrors: (e: Record<string, string>) => void }) {
     setSubmitting(true)
@@ -92,6 +95,7 @@ function ConfigTabBody({ id, instance }: { id: string; instance: Instance }) {
       const res = await api.patch<{ instance: Instance }>(`/instances/${id}`, payload)
       qc.setQueryData(['instances', id, 'detail'], res.instance)
       await qc.invalidateQueries({ queryKey: ['instances', 'list'] })
+      unsaved.markClean()
       notifySuccess('Changes saved')
     } catch (e) {
       if (e instanceof ApiError) {
@@ -115,7 +119,14 @@ function ConfigTabBody({ id, instance }: { id: string; instance: Instance }) {
     <>
       <InstanceConfigForm api={formApi} formId="instance-config-form" readOnly={!canEdit} onSubmit={handleSubmit} />
       {canEdit ? (
-        <FormFooter formId="instance-config-form" submitLabel="Save changes" submitting={submitting} />
+        <StickySaveBar
+          formId="instance-config-form"
+          show={unsaved.dirty}
+          dirty={unsaved.dirty}
+          saveLabel="Save changes"
+          saving={submitting}
+          onDiscard={unsaved.discard}
+        />
       ) : (
         <Text c="dimmed" size="sm">
           You have read-only access to this configuration.

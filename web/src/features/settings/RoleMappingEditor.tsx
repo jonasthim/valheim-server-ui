@@ -12,7 +12,7 @@ interface Row {
 }
 
 function toRows(value: Record<string, Role>): Row[] {
-  return Object.entries(value).map(([group, role]) => ({ id: newKey(), group, role }))
+  return Object.entries(value ?? {}).map(([group, role]) => ({ id: newKey(), group, role }))
 }
 
 function toRecord(rows: Row[]): Record<string, Role> {

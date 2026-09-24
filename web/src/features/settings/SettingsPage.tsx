@@ -29,9 +29,9 @@ import { docsUrl } from '../../lib/docs'
 import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { pageTitle } from '../../lib/title'
-import { PageHeader, SectionCard, LoadError } from '../../ui'
+import { useUnsavedChanges } from '../../lib/useUnsavedChanges'
+import { PageHeader, SectionCard, LoadError, StickySaveBar } from '../../ui'
 import { ReleaseNotesModal, useCheckAppUpdate, useSystemInfo, useUpgradeAppAction } from '../system'
-import { FormFooter } from '../instances/FormFooter'
 import { BackupTargetsCard } from './BackupTargetsCard'
 import { NotificationsCard } from './NotificationsCard'
 import { DEFAULT_ROLE_OPTIONS } from './options'
@@ -76,6 +76,8 @@ export function SettingsPage() {
   const { hasRole } = useAuth()
   const settingsQ = useQuery({ queryKey: ['settings'], queryFn: () => api.get<Settings>('/settings') })
   const form = useForm<Settings>({ initialValues: EMPTY_SETTINGS })
+  const unsaved = useUnsavedChanges(form)
+  const [discards, setDiscards] = useState(0)
   const [testResult, setTestResult] = useState<OidcTestResult | null>(null)
 
   const systemQ = useSystemInfo()
@@ -90,12 +92,19 @@ export function SettingsPage() {
   const canAdmin = hasRole('admin')
 
   useEffect(() => {
-    if (settingsQ.data) {
+    if (!settingsQ.data) return
+    if (!form.initialized) {
+      // First load: seed values + the dirty snapshot together.
+      form.initialize(settingsQ.data)
+      return
+    }
+    // A later re-fetch (e.g. a background refetch) should never clobber an
+    // in-progress edit — only re-sync while the form is still clean.
+    if (!form.isDirty()) {
       form.setValues(settingsQ.data)
       form.resetDirty(settingsQ.data)
     }
-    // Re-sync whenever the server copy changes (initial load, or after a save);
-    // deliberately not depending on `form` to avoid re-running every render.
+    // Deliberately not depending on `form` to avoid re-running every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsQ.data])
 
@@ -103,6 +112,8 @@ export function SettingsPage() {
     mutationFn: (values: Settings) => api.put<Settings>('/settings', values),
     onSuccess: (data) => {
       qc.setQueryData(['settings'], data)
+      form.setValues(data)
+      form.resetDirty(data)
       notifySuccess('Settings saved')
     },
     onError: (err) => {
@@ -212,7 +223,7 @@ export function SettingsPage() {
                     <RoleMappingEditor
                       value={oidc.role_mapping ?? {}}
                       onChange={(v) => form.setFieldValue('auth.oidc.role_mapping', v)}
-                      resetToken={settingsQ.dataUpdatedAt}
+                      resetToken={settingsQ.dataUpdatedAt + discards}
                     />
                   </Stack>
 
@@ -309,14 +320,14 @@ export function SettingsPage() {
           <NotificationsCard
             value={form.values.notifications}
             onChange={(v) => form.setFieldValue('notifications', v)}
-            resetToken={settingsQ.dataUpdatedAt}
+            resetToken={settingsQ.dataUpdatedAt + discards}
             errors={form.errors}
           />
 
           <BackupTargetsCard
             value={form.values.backups.targets}
             onChange={(v) => form.setFieldValue('backups.targets', v)}
-            resetToken={settingsQ.dataUpdatedAt}
+            resetToken={settingsQ.dataUpdatedAt + discards}
           />
 
           <SectionCard title="Application">
@@ -403,7 +414,17 @@ export function SettingsPage() {
         </Stack>
       </form>
 
-      <FormFooter formId="settings-form" submitLabel="Save settings" submitting={saveMutation.isPending} />
+      <StickySaveBar
+        formId="settings-form"
+        show={unsaved.dirty}
+        dirty={unsaved.dirty}
+        saveLabel="Save settings"
+        saving={saveMutation.isPending}
+        onDiscard={() => {
+          unsaved.discard()
+          setDiscards((n) => n + 1)
+        }}
+      />
 
       {systemQ.data?.app_update && (
         <ReleaseNotesModal opened={notesOpen} onClose={() => setNotesOpen(false)} appUpdate={systemQ.data.app_update} />
