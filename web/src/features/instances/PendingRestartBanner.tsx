@@ -9,7 +9,7 @@ import { RestartControl } from './RestartControl'
 export function PendingRestartBanner({ id, name, status }: { id: string; name: string; status: InstanceStatus }) {
   if (!status.pending_restart) return null
   return (
-    <Alert color="yellow" icon={<IconAlertTriangle size={16} />} title="Restart required to apply">
+    <Alert color="straw" icon={<IconAlertTriangle size={16} />} title="Restart required to apply">
       <Group justify="space-between" wrap="wrap" gap="sm">
         <Text size="sm">Configuration changes are saved but will only take effect after a restart.</Text>
         <RestartControl id={id} instanceName={name} playersOnline={status.players_online} color="yellow" />

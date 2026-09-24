@@ -4,17 +4,14 @@ import {
   Alert,
   Anchor,
   Button,
+  Code,
   CopyButton,
   Grid,
   Group,
-  Paper,
-  Pill,
   SegmentedControl,
   Skeleton,
-  SimpleGrid,
   Stack,
   Switch,
-  Table,
   Text,
   Title,
   Tooltip,
@@ -28,6 +25,7 @@ import {
   IconCheck,
   IconCopy,
   IconDownload,
+  IconHistory,
   IconPlugConnected,
   IconRefresh,
 } from '@tabler/icons-react'
@@ -35,7 +33,7 @@ import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtBytes, fmtPercent, fmtTime } from '../../lib/format'
 import { useJobDrawer, useJobs, jobStatusColor, jobTypeLabel } from '../jobs'
 import { useSystemInfo } from '../system'
-import { EmptyState, LoadError, SectionCard, Sparkline, StatTile, StatusDot, StatusPill } from '../../ui'
+import { DataTable, EmptyState, LoadError, SectionCard, Sparkline, StatStrip, type StatStripItem, StatusDot, StatusPill } from '../../ui'
 import { useModsOverview } from '../mods/useMods'
 import { AgentSetupNotice, useAgent, WorldCard } from '../agent'
 import { useAgentSetup } from '../agent/useAgentSetup'
@@ -45,6 +43,14 @@ import { useInstance } from './useInstance'
 import { useCheckForUpdate, useInstanceEvents, useInstanceStatus, useSetAutostart } from './instanceActions'
 import { useInstanceMetrics, type MetricRange } from './useMetrics'
 import { stateColor, stateLabel } from './instanceHelpers'
+import { StatusRow } from './StatusRow'
+import classes from './OverviewTab.module.css'
+
+// One row in the "Recent activity" table, merging jobs and instance events
+// into a single feed sorted by time (newest first, capped to 8).
+type ActivityRow =
+  | { kind: 'job'; id: string; label: string; status: string; color: string; at: string }
+  | { kind: 'event'; id: number; label: string; status: string; color: string; at: string }
 
 // Owned by WP-11. Props: the instance id.
 export function OverviewTab({ id }: { id: string }) {
@@ -58,7 +64,7 @@ export function OverviewTab({ id }: { id: string }) {
   const checkUpdate = useCheckForUpdate(id)
   const setAutostart = useSetAutostart(id)
 
-  const jobsQuery = useJobs({ instance: id, limit: 5 })
+  const jobsQuery = useJobs({ instance: id, limit: 8 })
   const eventsQuery = useInstanceEvents(id)
   const systemInfo = useSystemInfo()
   const agentQuery = useAgent(id)
@@ -72,23 +78,18 @@ export function OverviewTab({ id }: { id: string }) {
   // area actually changes, not on every Overview render.
   const initialFrame = useMemo(() => (exploredBounds ? frameFor(exploredBounds) : undefined), [exploredBounds])
 
-  // F-1.3: 24h sparklines on the compact CPU/Memory tiles, plus a ranged
-  // history section below (dedupes with the tiles' query when range is 24h).
+  // F-1.3: 24h sparklines on the compact CPU/Memory strip cells, plus a
+  // ranged history section below (dedupes with the strip's query at 24h).
   const tileMetrics = useInstanceMetrics(id, '24h')
   const [historyRange, setHistoryRange] = useState<MetricRange>('24h')
   const historyMetrics = useInstanceMetrics(id, historyRange)
 
   if (inst.isLoading) {
     return (
-      <Stack>
-        <SimpleGrid cols={{ base: 2, md: 3, xl: 6 }}>
-          <Skeleton height={92} />
-          <Skeleton height={92} />
-          <Skeleton height={92} />
-          <Skeleton height={92} />
-        </SimpleGrid>
-        <Skeleton height={220} />
-        <Skeleton height={220} />
+      <Stack gap="md">
+        <Skeleton height={56} />
+        <Skeleton height={320} />
+        <Skeleton height={160} />
       </Stack>
     )
   }
@@ -133,55 +134,80 @@ export function OverviewTab({ id }: { id: string }) {
     : 'Up to date'
 
   // With an agent installed the Overview leads with the map and a margin
-  // column (World card + tiles); without one the map has nothing to show, so
-  // the tiles take a single full-width row instead.
+  // column (World card + strip); without one the strip takes a single
+  // full-width row instead.
   const worldAvailable = agentSetup.stage === 'ready' || agentSetup.stage === 'offline' || agentSetup.stage === 'update'
-  const tiles = (
-    <>
-      <StatTile
-        compact
-        label="CPU"
-        value={fmtPercent(status.cpu_percent)}
-        hint={status.state === 'running' ? 'of one core' : 'not running'}
-        icon={<IconCpu size={16} />}
-        accent={status.cpu_percent !== undefined && status.cpu_percent >= 90 ? 'var(--vh-blood)' : undefined}
-        spark={tileMetrics.data?.cpu}
-        sparkFormat={fmtPercent}
-      />
-      <StatTile
-        compact
-        label="Memory"
-        value={status.memory_bytes !== undefined ? fmtBytes(status.memory_bytes) : '—'}
-        hint={status.state === 'running' ? 'resident' : 'not running'}
-        icon={<IconDeviceSdCard size={16} />}
-        spark={tileMetrics.data?.mem}
-        sparkFormat={fmtBytes}
-      />
-      <StatTile
-        compact
-        label="Build"
-        value={status.installed_buildid ?? 'unknown'}
-        hint={gameUpdate ? 'update available' : 'up to date'}
-        icon={<IconBox size={16} />}
-        accent={gameUpdate ? 'var(--vh-ember)' : undefined}
-      />
-      <StatTile
-        compact
-        label="Updates"
-        value={updatesValue}
-        hint={anyUpdate ? 'available' : 'all current'}
-        icon={<IconDownload size={16} />}
-        accent={anyUpdate ? 'var(--vh-ember)' : undefined}
-      />
-    </>
+  const miniItems: StatStripItem[] = [
+    {
+      label: 'CPU',
+      value: fmtPercent(status.cpu_percent),
+      hint: status.state === 'running' ? 'of one core' : 'not running',
+      icon: <IconCpu size={14} />,
+      tone: status.cpu_percent !== undefined && status.cpu_percent >= 90 ? 'danger' : 'default',
+      spark: tileMetrics.data?.cpu,
+      sparkFormat: fmtPercent,
+    },
+    {
+      label: 'Memory',
+      value: status.memory_bytes !== undefined ? fmtBytes(status.memory_bytes) : '—',
+      hint: status.state === 'running' ? 'resident' : 'not running',
+      icon: <IconDeviceSdCard size={14} />,
+      spark: tileMetrics.data?.mem,
+      sparkFormat: fmtBytes,
+    },
+    {
+      label: 'Build',
+      value: status.installed_buildid ?? 'unknown',
+      hint: gameUpdate ? 'update available' : 'up to date',
+      icon: <IconBox size={14} />,
+      tone: gameUpdate ? 'accent' : 'default',
+    },
+    {
+      label: 'Updates',
+      value: updatesValue,
+      hint: anyUpdate ? 'available' : 'all current',
+      icon: <IconDownload size={14} />,
+      tone: anyUpdate ? 'accent' : 'default',
+    },
+  ]
+
+  const hasHistory = [historyMetrics.data?.cpu, historyMetrics.data?.mem, historyMetrics.data?.players].some(
+    (s) => (s?.length ?? 0) >= 2,
   )
 
+  // Recent activity: jobs and instance events merged into one feed, newest
+  // first, capped to the last 8.
+  const activity: ActivityRow[] = [
+    ...jobs.map(
+      (j): ActivityRow => ({
+        kind: 'job',
+        id: j.id,
+        label: j.title || jobTypeLabel(j.type),
+        status: j.status,
+        color: jobStatusColor(j.status),
+        at: j.created_at,
+      }),
+    ),
+    ...events.map(
+      (e): ActivityRow => ({
+        kind: 'event',
+        id: e.id,
+        label: e.detail || e.kind,
+        status: e.kind,
+        color: eventKindColor(e.kind),
+        at: e.at,
+      }),
+    ),
+  ]
+    .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime())
+    .slice(0, 8)
+
   return (
-    <Stack>
-      <Stack gap={2}>
-        <Group gap="sm" align="center">
+    <Stack gap="md">
+      <Group gap="sm" align="baseline" wrap="wrap">
+        <Group gap="sm" align="center" wrap="nowrap">
           <StatusDot color={stateColor(status.state)} pulse={status.state === 'running' || status.state === 'starting'} />
-          <Title order={2}>
+          <Title order={2} fz={18} fw={600} lh={1.3}>
             {stateLabel(status.state)}
             {status.state === 'running' ? ` · ${status.players_online} online` : ''}
           </Title>
@@ -189,60 +215,153 @@ export function OverviewTab({ id }: { id: string }) {
         <Text size="sm" c="dimmed">
           {worldSummary}
         </Text>
-      </Stack>
+      </Group>
 
       {/* Agent setup prompt (install / update / enable) as a full-width banner
           above the hero; it renders nothing once the agent is ready. */}
       <AgentSetupNotice id={id} context="overview" />
 
+      {status.state === 'failed' && status.detail && (
+        <Alert color="blood" icon={<IconAlertTriangle size={16} />} title="Failed">
+          {status.detail}
+        </Alert>
+      )}
+      {status.crash_count_24h > 0 && (
+        <Alert color="blood" icon={<IconAlertTriangle size={16} />} title="Crashes detected">
+          Crashed {status.crash_count_24h}× in the last 24 h — last exit: {status.last_exit_detail || 'unknown'},{' '}
+          {fmtAgo(status.last_crash_at)}
+        </Alert>
+      )}
+
       {worldAvailable ? (
         <Grid gap="md">
-        <Grid.Col span={{ base: 12, md: 7 }}>
-          {/* color: parchment is a light surface in both schemes; without
-              it, text/links here inherit the page's (dark-scheme) cream ink
-              and fail contrast against the tan background (axe
-              color-contrast) — mirrors WorldCard's PARCHMENT_VARS. */}
-          <Paper p="sm" style={{ background: 'var(--vh-parchment)', color: 'var(--vh-ink)' }}>
-            <div
-              style={{
-                width: 'min(100%, 60vh)',
-                aspectRatio: '1',
-                margin: '0 auto',
-                overflow: 'hidden',
-                borderRadius: 'var(--mantine-radius-md)',
-              }}
-            >
-              <MapView
-                imageUrl={live.imageUrl}
-                tiles={live.tiles}
-                markers={live.markers}
-                overlays={live.overlays}
-                pings={live.pings}
-                initialFrame={initialFrame}
-              />
+          <Grid.Col span={{ base: 12, md: 8 }}>
+            <div className={classes.mapHero}>
+              <div className={classes.mapSquare}>
+                <MapView
+                  imageUrl={live.imageUrl}
+                  tiles={live.tiles}
+                  markers={live.markers}
+                  overlays={live.overlays}
+                  pings={live.pings}
+                  initialFrame={initialFrame}
+                />
+              </div>
+              <Anchor component={Link} to={`/instances/${id}/map`} size="sm" className={classes.mapLink}>
+                Open the map
+              </Anchor>
             </div>
-            <Anchor component={Link} to={`/instances/${id}/map`} size="sm" mt="xs" ta="center" style={{ display: 'block' }}>
-              Open the map
-            </Anchor>
-          </Paper>
-        </Grid.Col>
-        <Grid.Col span={{ base: 12, md: 5 }}>
-          {/* The margin column: the World card on top and the four quiet
-              tiles pinned to the bottom, so the column fills the map's height
-              instead of leaving the space under the card empty. */}
-          <Stack gap="md" h="100%" justify="space-between">
-            <WorldCard id={id} variant="parchment" />
-            <SimpleGrid cols={2}>{tiles}</SimpleGrid>
-          </Stack>
-        </Grid.Col>
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            {/* The margin column: the World card on top, the compact strip
+                pinned to the bottom, so the column fills the map's height. */}
+            <Stack gap="md" h="100%" justify="space-between">
+              <WorldCard id={id} playersLink />
+              <StatStrip cols={2} minCellWidth={110} items={miniItems} />
+            </Stack>
+          </Grid.Col>
         </Grid>
       ) : (
-        <SimpleGrid cols={{ base: 2, md: 4 }}>{tiles}</SimpleGrid>
+        <StatStrip minCellWidth={150} items={miniItems} />
       )}
+
+      <SectionCard title="Status" flush>
+        <StatusRow label="Process">
+          <StatusPill color={status.ready ? 'moss' : 'gray'}>{status.ready ? 'Ready' : 'Not ready'}</StatusPill>
+          {status.pid !== undefined && (
+            <Text size="sm" c="dimmed">
+              PID {status.pid}
+            </Text>
+          )}
+          {status.since && (
+            <Text size="sm" c="dimmed">
+              Since {fmtAgo(status.since)} ({fmtTime(status.since)})
+            </Text>
+          )}
+        </StatusRow>
+        <StatusRow label="Autostart" hint="Start automatically when the manager starts">
+          <Switch
+            aria-label="Autostart"
+            checked={status.autostart}
+            disabled={!canOperate || setAutostart.isPending}
+            onChange={(e) => setAutostart.mutate(e.currentTarget.checked)}
+          />
+        </StatusRow>
+        <StatusRow
+          label="Game server"
+          hint={
+            <>
+              Installed build {status.installed_buildid ?? 'unknown'}, latest {latestBuildId ?? 'unknown'}
+              {latestBuildCheckedAt ? ` (checked ${fmtAgo(latestBuildCheckedAt)})` : ''}
+              {gameUpdate && <br />}
+              {gameUpdate &&
+                (instance.config.backup_before_update
+                  ? 'A backup will be taken automatically before updating.'
+                  : 'Enable "Backup before update" in Config to snapshot the world first.')}
+            </>
+          }
+        >
+          <StatusPill color={gameUpdate ? 'orange' : 'moss'}>{gameUpdate ? 'update available' : 'up to date'}</StatusPill>
+          {canOperate && (
+            <Button
+              size="xs"
+              variant="default"
+              leftSection={<IconRefresh size={14} />}
+              loading={checkUpdate.isPending}
+              onClick={() => checkUpdate.mutate()}
+            >
+              Check for updates
+            </Button>
+          )}
+        </StatusRow>
+        <StatusRow
+          label="Mods"
+          hint={
+            bepinex?.installed
+              ? `BepInEx ${bepinex.version ?? ''}${bepinexUpdate ? ` → ${bepinex.latest_version}` : ''}, ${modUpdateCount} mod${modUpdateCount === 1 ? '' : 's'} with an update`
+              : 'Install BepInEx from the Mods tab to run mods.'
+          }
+        >
+          {bepinex?.installed ? (
+            <StatusPill color={modsPending > 0 ? 'orange' : 'moss'}>
+              {modsPending > 0 ? `${modsPending} update${modsPending === 1 ? '' : 's'}` : 'up to date'}
+            </StatusPill>
+          ) : (
+            <StatusPill color="gray">BepInEx not installed</StatusPill>
+          )}
+          <Button size="xs" variant="default" onClick={() => navigate(`/instances/${id}/mods`)}>
+            Open Mods
+          </Button>
+        </StatusRow>
+        <StatusRow label="Connect" hint={`The query port (server browser / A2S) is port+1 (${instance.config.port + 1}).`}>
+          <Code fz="sm">
+            {host}:{instance.config.port}
+          </Code>
+          <CopyButton value={`${host}:${instance.config.port}`}>
+            {({ copied, copy }) => (
+              <Tooltip label={copied ? 'Copied' : 'Copy'}>
+                <ActionIcon variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label="Copy address">
+                  {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
+                </ActionIcon>
+              </Tooltip>
+            )}
+          </CopyButton>
+          {instance.config.crossplay && (
+            <Group gap="xs">
+              <IconPlugConnected size={16} style={{ opacity: 0.7 }} />
+              <Text size="sm" c="dimmed">
+                Join code
+              </Text>
+              <Text size="sm" ff="monospace" fw={600}>
+                {status.join_code ?? '—'}
+              </Text>
+            </Group>
+          )}
+        </StatusRow>
+      </SectionCard>
 
       <SectionCard
         title="History"
-        description="Resource and player trends."
         actions={
           <SegmentedControl
             size="xs"
@@ -257,240 +376,71 @@ export function OverviewTab({ id }: { id: string }) {
           />
         }
       >
-        <Stack gap="md">
-          <HistoryRow label="CPU" values={historyMetrics.data?.cpu} format={fmtPercent} />
-          <HistoryRow label="Memory" values={historyMetrics.data?.mem} format={fmtBytes} />
-          <HistoryRow label="Players" values={historyMetrics.data?.players} format={(v) => `${Math.round(v)} online`} />
-        </Stack>
-      </SectionCard>
-
-      <SectionCard title="Updates" description="Game server files and installed mods.">
-        <Stack gap="md">
-          <Group justify="space-between" wrap="wrap" gap="sm" align="flex-start">
-            <div style={{ minWidth: 0 }}>
-              <Group gap="xs">
-                <Text size="sm" fw={600}>
-                  Game server
-                </Text>
-                <StatusPill color={gameUpdate ? 'orange' : 'moss'}>
-                  {gameUpdate ? 'update available' : 'up to date'}
-                </StatusPill>
-              </Group>
-              <Text size="xs" c="dimmed">
-                Installed build {status.installed_buildid ?? 'unknown'}, latest {latestBuildId ?? 'unknown'}
-                {latestBuildCheckedAt ? ` (checked ${fmtAgo(latestBuildCheckedAt)})` : ''}
-              </Text>
-              {gameUpdate && (
-                <Text size="xs" c="dimmed">
-                  {instance.config.backup_before_update
-                    ? 'A backup will be taken automatically before updating.'
-                    : 'Enable "Backup before update" in Config to snapshot the world first.'}
-                </Text>
-              )}
-            </div>
-            {canOperate && (
-              <Group gap="xs">
-                <Button
-                  size="xs"
-                  variant="default"
-                  leftSection={<IconRefresh size={14} />}
-                  loading={checkUpdate.isPending}
-                  onClick={() => checkUpdate.mutate()}
-                >
-                  Check for updates
-                </Button>
-              </Group>
-            )}
-          </Group>
-
-          <div style={{ borderTop: '1px solid var(--vh-border)' }} />
-
-          <Group justify="space-between" wrap="wrap" gap="sm" align="flex-start">
-            <div style={{ minWidth: 0 }}>
-              <Group gap="xs">
-                <Text size="sm" fw={600}>
-                  Mods
-                </Text>
-                {bepinex?.installed ? (
-                  <StatusPill color={modsPending > 0 ? 'orange' : 'moss'}>
-                    {modsPending > 0 ? `${modsPending} update${modsPending === 1 ? '' : 's'}` : 'up to date'}
-                  </StatusPill>
-                ) : (
-                  <StatusPill color="gray">BepInEx not installed</StatusPill>
-                )}
-              </Group>
-              <Text size="xs" c="dimmed">
-                {bepinex?.installed
-                  ? `BepInEx ${bepinex.version ?? ''}${bepinexUpdate ? ` → ${bepinex.latest_version}` : ''}, ${modUpdateCount} mod${modUpdateCount === 1 ? '' : 's'} with an update`
-                  : 'Install BepInEx from the Mods tab to run mods.'}
-              </Text>
-            </div>
-            <Group gap="xs">
-              <Button size="xs" variant="light" onClick={() => navigate(`/instances/${id}/mods`)}>
-                Open Mods
-              </Button>
-            </Group>
-          </Group>
-        </Stack>
-      </SectionCard>
-
-      <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
-        <SectionCard title="Controls" description="Manage the running process.">
-          <Stack gap="sm">
-            <Group gap="xs">
-              <StatusDot color={status.ready ? 'moss' : 'gray'} />
-              <Text size="sm" c="dimmed">
-                Ready
-              </Text>
-              <Text size="sm" fw={600}>
-                {status.ready ? 'Yes' : 'No'}
-              </Text>
-            </Group>
-            {status.pid !== undefined && (
-              <Text size="sm" c="dimmed">
-                PID {status.pid}
-              </Text>
-            )}
-            {status.since && (
-              <Text size="sm" c="dimmed">
-                Since {fmtAgo(status.since)} ({fmtTime(status.since)})
-              </Text>
-            )}
-            <Switch
-              label="Autostart"
-              description="Start automatically when the manager starts"
-              checked={status.autostart}
-              disabled={!canOperate || setAutostart.isPending}
-              onChange={(e) => setAutostart.mutate(e.currentTarget.checked)}
-            />
-            {status.pending_restart && (
-              <Alert color="yellow" icon={<IconAlertTriangle size={16} />}>
-                Pending restart to apply the latest configuration.
-              </Alert>
-            )}
-            {status.state === 'failed' && status.detail && (
-              <Alert color="red" icon={<IconAlertTriangle size={16} />} title="Failed">
-                {status.detail}
-              </Alert>
-            )}
-            {status.crash_count_24h > 0 && (
-              <Alert color="red" icon={<IconAlertTriangle size={16} />} title="Crashes detected">
-                Crashed {status.crash_count_24h}× in the last 24 h — last exit: {status.last_exit_detail || 'unknown'},{' '}
-                {fmtAgo(status.last_crash_at)}
-              </Alert>
-            )}
+        {historyMetrics.isLoading ? (
+          <Skeleton height={56} />
+        ) : hasHistory ? (
+          <Stack gap="md">
+            <HistoryRow label="CPU" values={historyMetrics.data?.cpu} format={fmtPercent} />
+            <HistoryRow label="Memory" values={historyMetrics.data?.mem} format={fmtBytes} />
+            <HistoryRow label="Players" values={historyMetrics.data?.players} format={(v) => `${Math.round(v)} online`} />
           </Stack>
-        </SectionCard>
-
-        <SectionCard title="Connect" description="Share these details with players.">
-          <Stack gap="sm">
-            <Group gap="xs">
-              <Pill size="lg" ff="monospace">
-                {host}:{instance.config.port}
-              </Pill>
-              <CopyButton value={`${host}:${instance.config.port}`}>
-                {({ copied, copy }) => (
-                  <Tooltip label={copied ? 'Copied' : 'Copy'}>
-                    <ActionIcon variant="subtle" color={copied ? 'teal' : 'gray'} onClick={copy} aria-label="Copy address">
-                      {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
-                    </ActionIcon>
-                  </Tooltip>
-                )}
-              </CopyButton>
-            </Group>
-            <Text size="xs" c="dimmed">
-              The query port (server browser / A2S) is port+1 ({instance.config.port + 1}).
-            </Text>
-            {instance.config.crossplay && (
-              <Group gap="xs" align="center">
-                <IconPlugConnected size={16} style={{ opacity: 0.7 }} />
-                <Text size="sm" c="dimmed">
-                  Join code
-                </Text>
-                <Text size="sm" ff="monospace" fw={600}>
-                  {status.join_code ?? '—'}
-                </Text>
-              </Group>
-            )}
-          </Stack>
-        </SectionCard>
-      </SimpleGrid>
-
-      <SectionCard title="Recent jobs" flush>
-        {jobsQuery.isLoading && (
-          <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
-            <Skeleton height={80} />
-          </div>
-        )}
-        {jobsQuery.isError && (
-          <LoadError error={jobsQuery.error} title="Could not load recent jobs" onRetry={() => jobsQuery.refetch()} />
-        )}
-        {!jobsQuery.isLoading && !jobsQuery.isError && jobs.length === 0 && (
-          <EmptyState compact title="No jobs yet" description="Backups, updates and restarts will show up here." />
-        )}
-        {/* tabIndex: a horizontally-scrolling region needs to be reachable by
-            keyboard when it overflows (axe scrollable-region-focusable). */}
-        {jobs.length > 0 && (
-          <Table.ScrollContainer minWidth={480} scrollAreaProps={{ viewportProps: { tabIndex: 0 } }}>
-            <Table verticalSpacing="xs" highlightOnHover>
-              <Table.Tbody>
-                {jobs.map((job) => (
-                  <Table.Tr key={job.id} style={{ cursor: 'pointer' }} onClick={() => openJob(job.id)}>
-                    <Table.Td>
-                      <StatusPill color={jobStatusColor(job.status)}>{job.status}</StatusPill>
-                    </Table.Td>
-                    <Table.Td>{job.title || jobTypeLabel(job.type)}</Table.Td>
-                    <Table.Td>
-                      <Text size="xs" c="dimmed">
-                        {fmtAgo(job.created_at)}
-                      </Text>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
-        )}
-      </SectionCard>
-
-      <SectionCard title="Recent events" flush>
-        {eventsQuery.isLoading && (
-          <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
-            <Skeleton height={80} />
-          </div>
-        )}
-        {!eventsQuery.isLoading && events.length === 0 && (
-          <Text c="dimmed" size="sm" p="lg">
-            No events yet.
+        ) : (
+          <Text size="sm" c="dimmed">
+            No history yet
           </Text>
         )}
-        {/* tabIndex: a horizontally-scrolling region needs to be reachable by
-            keyboard when it overflows (axe scrollable-region-focusable). */}
-        {events.length > 0 && (
-          <Table.ScrollContainer minWidth={480} scrollAreaProps={{ viewportProps: { tabIndex: 0 } }}>
-            <Table verticalSpacing="xs" highlightOnHover>
-              <Table.Tbody>
-                {events.map((ev) => (
-                  <Table.Tr key={ev.id}>
-                    <Table.Td>
-                      <StatusPill color={eventKindColor(ev.kind)}>{ev.kind}</StatusPill>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c={ev.detail ? undefined : 'dimmed'}>
-                        {ev.detail || '—'}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="xs" c="dimmed">
-                        {fmtAgo(ev.at)}
-                      </Text>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
-        )}
+      </SectionCard>
+
+      <SectionCard title="Recent activity" flush>
+        <DataTable<ActivityRow>
+          minWidth={480}
+          columns={[
+            {
+              key: 'what',
+              header: 'Activity',
+              render: (r) => (
+                <Text size="sm" truncate>
+                  {r.label}
+                </Text>
+              ),
+            },
+            {
+              key: 'status',
+              header: 'Status',
+              width: 140,
+              render: (r) => <StatusPill color={r.color}>{r.status}</StatusPill>,
+            },
+            {
+              key: 'when',
+              header: 'When',
+              width: 120,
+              nowrap: true,
+              render: (r) => (
+                <Text size="xs" c="dimmed">
+                  {fmtAgo(r.at)}
+                </Text>
+              ),
+            },
+          ]}
+          rows={activity}
+          rowKey={(r) => `${r.kind}-${r.id}`}
+          loading={jobsQuery.isLoading || eventsQuery.isLoading}
+          error={
+            jobsQuery.isError && (
+              <LoadError error={jobsQuery.error} title="Could not load recent jobs" onRetry={() => jobsQuery.refetch()} />
+            )
+          }
+          empty={
+            <EmptyState
+              compact
+              icon={<IconHistory size={22} />}
+              title="No activity yet"
+              description="Jobs and server events will show up here."
+            />
+          }
+          clickable={(r) => r.kind === 'job'}
+          onRowClick={(r) => r.kind === 'job' && openJob(r.id)}
+        />
       </SectionCard>
     </Stack>
   )
@@ -532,7 +482,7 @@ function HistoryRow({
 }
 
 // eventKindColor maps an InstanceEvent.kind to the StatusPill color used for
-// its badge in "Recent events".
+// its badge in "Recent activity".
 function eventKindColor(kind: string): string {
   switch (kind) {
     case 'start':

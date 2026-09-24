@@ -22,11 +22,11 @@ export function useInstanceStatus(id: string) {
   })
 }
 
-/** GET /instances/{id}/events?limit=5, the "Recent events" list on Overview. */
+/** GET /instances/{id}/events?limit=8, merged into the "Recent activity" table on Overview. */
 export function useInstanceEvents(id: string) {
   return useQuery({
     queryKey: ['instances', id, 'events'],
-    queryFn: () => api.get<{ events: InstanceEvent[] }>(`/instances/${id}/events?limit=5`),
+    queryFn: () => api.get<{ events: InstanceEvent[] }>(`/instances/${id}/events?limit=8`),
     enabled: !!id,
   })
 }

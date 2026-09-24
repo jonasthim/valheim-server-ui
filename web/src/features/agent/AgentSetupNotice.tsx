@@ -3,7 +3,7 @@
 // the map, the players tab) instead of a text link telling them to go find
 // the Mods tab themselves. Hidden once the agent is ready, merely offline,
 // or an install job is already under way.
-import { Alert, Button, Stack, Text } from '@mantine/core'
+import { Alert, Button, Group, Text } from '@mantine/core'
 import { IconPlugConnected } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { openConfirmInstallBepinex } from '../mods/openConfirmInstallBepinex'
@@ -85,14 +85,16 @@ export function AgentSetupNotice({
       title={title}
       p={compact ? 'xs' : undefined}
     >
-      <Stack gap="xs" align="flex-start">
+      <Group justify="space-between" align="center" wrap="wrap">
         <Text size="sm">{body}</Text>
         {hasRole('operator') && (
-          <Button size="xs" variant="light" loading={actionLoading} onClick={onAction}>
-            {actionLabel}
-          </Button>
+          <Group gap="xs">
+            <Button size="xs" variant="light" loading={actionLoading} onClick={onAction}>
+              {actionLabel}
+            </Button>
+          </Group>
         )}
-      </Stack>
+      </Group>
     </Alert>
   )
 }

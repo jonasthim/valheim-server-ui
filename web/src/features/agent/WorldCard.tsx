@@ -1,13 +1,12 @@
 // Live world card on the Overview: day, clock, weather, players and global
 // keys straight from the running server through the agent, with the save
 // and broadcast actions.
-import type { CSSProperties } from 'react'
-import { Anchor, Badge, Button, Group, SimpleGrid, Stack, Text, Tooltip } from '@mantine/core'
+import { Anchor, Badge, Button, Group, Stack, Text, Tooltip } from '@mantine/core'
 import { Link } from 'react-router-dom'
 import { IconDeviceFloppy, IconMoon, IconSun, IconSwords } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo } from '../../lib/format'
-import { SectionCard, StatTile, StatusPill } from '../../ui'
+import { SectionCard, StatStrip, StatusPill } from '../../ui'
 import { BroadcastButton } from './BroadcastButton'
 import { ChatButton } from './ChatButton'
 import { WorldControls } from './WorldControls'
@@ -16,28 +15,7 @@ import { useAgentSetup } from './useAgentSetup'
 
 const MAX_KEYS = 12
 
-// Recolors every Mantine Paper/Text in the subtree to ink-on-parchment: Paper
-// reads its background from --mantine-color-body, and Text (default or
-// c="dimmed") either inherits `color` or reads --mantine-color-dimmed, so
-// shadowing these on a wrapper covers SectionCard, its Text/Title children
-// and the StatTile grid without editing those files. Mirrors the
-// .emptyParchment treatment in ui.module.css, just scoped inline instead of
-// via a CSS-module class (WorldCard.tsx is the only file this card lets us
-// touch for this variant).
-// No background here: the wrapper is a plain div with square corners, and
-// the rounded card underneath already paints parchment through --vh-surface.
-const PARCHMENT_VARS = {
-  color: 'var(--vh-ink)',
-  '--mantine-color-body': 'var(--vh-parchment)',
-  // index.css paints every Paper with --vh-surface, so shadow that too or the
-  // card (and the StatTile papers inside it) stay timber-coloured.
-  '--vh-surface': 'var(--vh-parchment)',
-  '--vh-surface-2': 'var(--vh-parchment-2)',
-  '--mantine-color-dimmed': 'var(--vh-ink)',
-  '--vh-text-soft': 'var(--vh-ink)',
-} as CSSProperties
-
-export function WorldCard({ id, variant = 'default' }: { id: string; variant?: 'default' | 'parchment' }) {
+export function WorldCard({ id, playersLink = false }: { id: string; playersLink?: boolean }) {
   const { hasRole } = useAuth()
   const command = useAgentCommand(id)
   const { stage, info } = useAgentSetup(id)
@@ -56,6 +34,7 @@ export function WorldCard({ id, variant = 'default' }: { id: string; variant?: '
   // array reads so a world with no global keys (or no players) still renders.
   const globalKeys = st?.global_keys ?? []
   const players = st?.players ?? []
+  const hiddenCount = players.length - players.filter((p) => p.position).length
   const modifiers = Object.entries(st?.modifiers ?? {})
   const event = st?.world?.event
 
@@ -86,7 +65,7 @@ export function WorldCard({ id, variant = 'default' }: { id: string; variant?: '
               <WorldControls id={id} status={st} disabled={!info.connected} />
             </>
           )}
-          {variant === 'parchment' ? (
+          {playersLink ? (
             <Anchor component={Link} to={`/instances/${id}/players`} size="sm">
               Players &amp; chat
             </Anchor>
@@ -107,29 +86,29 @@ export function WorldCard({ id, variant = 'default' }: { id: string; variant?: '
       )}
       {st && (
         <Stack gap="md">
-          <SimpleGrid cols={{ base: 2, md: 4 }}>
-            <StatTile label="Day" value={st.world.day} hint={st.world.name} />
-            <StatTile
-              label="Time"
-              value={fmtWorldTime(st.world.day_fraction)}
-              hint={st.world.is_night ? 'night' : 'day'}
-              icon={st.world.is_night ? <IconMoon size={16} /> : <IconSun size={16} />}
-            />
-            <StatTile label="Weather" value={st.world.weather || '—'} hint="current environment" />
-            <StatTile
-              label="Players"
-              value={players.length}
-              hint={
-                players.filter((p) => p.position).length < players.length
-                  ? `${players.length - players.filter((p) => p.position).length} hidden on map`
-                  : 'positions known'
-              }
-              accent={players.length > 0 ? 'var(--vh-moss)' : undefined}
-            />
-          </SimpleGrid>
+          <StatStrip
+            cols={2}
+            minCellWidth={110}
+            items={[
+              { label: 'Day', value: st.world.day, hint: st.world.name },
+              {
+                label: 'Time',
+                value: fmtWorldTime(st.world.day_fraction),
+                hint: st.world.is_night ? 'night' : 'day',
+                icon: st.world.is_night ? <IconMoon size={14} /> : <IconSun size={14} />,
+              },
+              { label: 'Weather', value: st.world.weather || '—', hint: 'current environment' },
+              {
+                label: 'Players',
+                value: players.length,
+                hint: hiddenCount > 0 ? `${hiddenCount} hidden on map` : 'positions known',
+                tone: players.length > 0 ? 'success' : 'default',
+              },
+            ]}
+          />
           {event && (
             <Group gap="xs" align="center">
-              <IconSwords size={16} color="var(--vh-rust, #b4551d)" />
+              <IconSwords size={16} color="var(--vh-text-soft)" />
               <Text size="sm" fw={600}>
                 Event: {event.name}
               </Text>
@@ -184,6 +163,5 @@ export function WorldCard({ id, variant = 'default' }: { id: string; variant?: '
     </SectionCard>
   )
 
-  if (variant !== 'parchment') return card
-  return <div style={PARCHMENT_VARS}>{card}</div>
+  return card
 }

@@ -17,6 +17,7 @@ test.describe.serial('instance lifecycle with the fake game server', () => {
     await expect(page.getByRole('button', { name: /^start$/i })).toHaveCount(1)
     await expect(page.getByText(/^running$/i).first()).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('123456').first()).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText('Recent activity')).toBeVisible()
 
     await page.goto('/instances/main/console')
     await expect(page.getByText(/Game server connected/).first()).toBeVisible({ timeout: 15_000 })
