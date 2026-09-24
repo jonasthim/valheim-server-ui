@@ -1,6 +1,5 @@
 .header {
-  background: color-mix(in srgb, var(--vh-sidebar) 86%, transparent);
-  backdrop-filter: saturate(140%) blur(10px);
+  background: var(--vh-surface);
   border-bottom: 1px solid var(--vh-border);
 }
 .navbar {
@@ -12,21 +11,17 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  text-decoration: none;
+  gap: 8px;
+  height: 48px;
+  padding: 0 12px;
   color: inherit;
-  border-radius: var(--mantine-radius-md);
+  text-decoration: none;
+  border-bottom: 1px solid var(--vh-border);
 }
-.brandName {
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-}
-.brandSub {
-  font-size: 0.7rem;
-  color: var(--vh-text-soft);
-  line-height: 1.1;
+.wordmark {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 .groupLabel {
   composes: vh-eyebrow from global;
@@ -66,13 +61,16 @@
   border-top: 1px solid var(--vh-border);
   padding: 10px 8px;
 }
-.userButton {
-  width: 100%;
-  border-radius: var(--mantine-radius-md);
-  padding: 8px;
-  transition: background-color 100ms ease;
+.avatarButton {
+  border-radius: 999px;
 }
-.userButton:hover { background: var(--vh-surface-2); }
+.avatarButton:focus-visible {
+  outline: 2px solid var(--vh-ember);
+  outline-offset: 2px;
+}
+.menuHeader {
+  padding: 8px 12px 4px;
+}
 .main {
   min-height: 100dvh;
 }

@@ -23,6 +23,10 @@ export const INSTANCE_TABS = [
 ] as const
 export type InstanceTab = (typeof INSTANCE_TABS)[number]
 
+export function isInstanceTab(t: string): t is InstanceTab {
+  return (INSTANCE_TABS as readonly string[]).includes(t)
+}
+
 export const INSTANCE_TAB_LABELS: Record<InstanceTab, string> = {
   overview: 'Overview',
   console: 'Console',

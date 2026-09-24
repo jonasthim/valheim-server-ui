@@ -11,7 +11,9 @@ test.describe.serial('first run and authentication', () => {
     await page.getByLabel(/confirm/i).fill(ADMIN.password)
     await page.getByRole('button', { name: /create account/i }).click()
     await expect(page).toHaveURL(/\/$/)
-    await expect(page.getByText(ADMIN.display)).toBeVisible()
+    await page.getByRole('button', { name: 'Account menu' }).click()
+    await expect(page.getByRole('menu').getByText(ADMIN.display)).toBeVisible()
+    await page.keyboard.press('Escape')
   })
 
   test('setup is no longer reachable', async ({ page, request }) => {
@@ -33,8 +35,8 @@ test.describe.serial('first run and authentication', () => {
     await page.getByRole('textbox', { name: 'Password' }).fill(ADMIN.password)
     await page.getByRole('button', { name: /log in|sign in/i }).click()
     await expect(page).toHaveURL(/\/$/)
-    await page.getByText(ADMIN.display).first().click()
-    await page.getByText(/log out/i).click()
+    await page.getByRole('button', { name: 'Account menu' }).click()
+    await page.getByRole('menuitem', { name: /log out/i }).click()
     await expect(page).toHaveURL(/\/login/)
     await page.goto('/')
     await expect(page).toHaveURL(/\/login/)
