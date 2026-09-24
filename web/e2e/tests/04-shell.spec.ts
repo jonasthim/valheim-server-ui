@@ -22,6 +22,17 @@ test.describe.serial('shell top bar', () => {
     await expect(nav.locator('[aria-current="page"]:visible')).toHaveText('Config')
   })
 
+  test('document titles follow the page', async ({ page }) => {
+    await page.goto('/')
+    await expect(page).toHaveTitle('Dashboard · Valheim Server UI')
+
+    await page.goto('/jobs')
+    await expect(page).toHaveTitle('Jobs · Valheim Server UI')
+
+    await page.goto('/instances/main/config')
+    await expect(page).toHaveTitle('Main · Config · Valheim Server UI')
+  })
+
   test('theme menu switches scheme', async ({ page }) => {
     await page.getByRole('button', { name: 'Account menu' }).click()
     await page.getByRole('menuitem', { name: 'Light' }).click()

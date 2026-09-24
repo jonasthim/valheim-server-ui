@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ActionIcon, Avatar, Badge, Button, Group, Stack, Text, Tooltip } from '@mantine/core'
+import { useDocumentTitle } from '@mantine/hooks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { modals } from '@mantine/modals'
 import { IconKey, IconPencil, IconTrash, IconUserPlus, IconUsers } from '@tabler/icons-react'
@@ -8,6 +9,7 @@ import { useAuth } from '../../auth/useAuth'
 import type { User } from '../../api/types'
 import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
+import { pageTitle } from '../../lib/title'
 import { Dash, DataTable, EmptyState, LoadError, PageHeader, SectionCard, StatusPill } from '../../ui'
 import type { DataTableColumn } from '../../ui'
 import { CreateUserModal } from './CreateUserModal'
@@ -16,6 +18,7 @@ import { SetPasswordModal } from './SetPasswordModal'
 import { ROLE_COLORS } from './roles'
 
 export function UsersPage() {
+  useDocumentTitle(pageTitle('Users'))
   const qc = useQueryClient()
   const { hasRole } = useAuth()
   const canAdmin = hasRole('admin')

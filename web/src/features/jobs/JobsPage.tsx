@@ -2,11 +2,13 @@
 // fallback, and opens JobDrawer on row click or the `?job=<id>` deep link.
 import { useEffect, useRef, useState } from 'react'
 import { ActionIcon, Anchor, Group, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core'
+import { useDocumentTitle } from '@mantine/hooks'
 import { modals } from '@mantine/modals'
 import { Link, useSearchParams } from 'react-router-dom'
 import { IconEye, IconListCheck, IconSearch, IconX } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtTime } from '../../lib/format'
+import { pageTitle } from '../../lib/title'
 import type { Job, JobStatus } from '../../api/types'
 import { Dash, DataTable, EmptyState, LoadError, PageHeader, SectionCard, StatusPill, Toolbar, TOOLBAR_INPUT_WIDTH } from '../../ui'
 import type { DataTableColumn } from '../../ui'
@@ -25,6 +27,7 @@ const STATUS_OPTIONS: { value: JobStatus | ''; label: string }[] = [
 ]
 
 export function JobsPage() {
+  useDocumentTitle(pageTitle('Jobs'))
   return (
     <JobDrawerHost>
       <JobsPageContent />

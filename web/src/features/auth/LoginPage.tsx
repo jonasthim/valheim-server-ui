@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { Alert, Button, Center, Divider, Loader, PasswordInput, Stack, Text, TextInput } from '@mantine/core'
+import { useDocumentTitle } from '@mantine/hooks'
 import { useForm } from '@mantine/form'
 import { IconAlertCircle, IconFingerprint } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import type { User } from '../../api/types'
+import { pageTitle } from '../../lib/title'
 import { AuthLayout } from './AuthLayout'
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -29,6 +31,7 @@ interface LoginValues {
 // GET /auth/status drives which login methods are shown; after a successful
 // login (local or OIDC) the SPA holds a session cookie and /auth/me resolves.
 export function LoginPage() {
+  useDocumentTitle(pageTitle('Log in'))
   const { status, user, loading, refresh } = useAuth()
   const navigate = useNavigate()
   const [params] = useSearchParams()

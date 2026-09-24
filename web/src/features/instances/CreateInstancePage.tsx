@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { Stack } from '@mantine/core'
+import { useDocumentTitle } from '@mantine/hooks'
 import { useNavigate } from 'react-router-dom'
 import { api, ApiError } from '../../api/client'
 import type { CreateInstanceRequest, Instance, Job } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
+import { pageTitle } from '../../lib/title'
 import { PageHeader } from '../../ui'
 import { useJobDrawer } from '../jobs'
 import { FormFooter } from './FormFooter'
@@ -33,6 +35,7 @@ const EMPTY_CONFIG: CreateInstanceRequest['config'] = {
 }
 
 export function CreateInstancePage() {
+  useDocumentTitle(pageTitle('New instance'))
   const navigate = useNavigate()
   const { openJob } = useJobDrawer()
   const [submitting, setSubmitting] = useState(false)

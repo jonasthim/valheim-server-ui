@@ -13,7 +13,7 @@ import {
   TextInput,
 } from '@mantine/core'
 import { useForm } from '@mantine/form'
-import { useDisclosure } from '@mantine/hooks'
+import { useDisclosure, useDocumentTitle } from '@mantine/hooks'
 import { useMutation } from '@tanstack/react-query'
 import { modals } from '@mantine/modals'
 import { IconCheck, IconCopy, IconKey, IconPlus } from '@tabler/icons-react'
@@ -21,6 +21,7 @@ import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { fmtTime } from '../../lib/format'
+import { pageTitle } from '../../lib/title'
 import { Dash, DataTable, EmptyState, PageHeader, SectionCard, LoadError } from '../../ui'
 import type { DataTableColumn } from '../../ui'
 import type { APIToken, SessionInfo } from '../../api/types'
@@ -339,6 +340,7 @@ function TokensCard() {
 }
 
 export function AccountPage() {
+  useDocumentTitle(pageTitle('Account'))
   const { user, loading } = useAuth()
 
   if (loading || !user) {

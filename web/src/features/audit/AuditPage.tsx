@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
 import { Anchor, Button, Code, Group, Popover, Stack, Text, TextInput } from '@mantine/core'
-import { useDebouncedValue } from '@mantine/hooks'
+import { useDebouncedValue, useDocumentTitle } from '@mantine/hooks'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { IconHistory, IconSearch } from '@tabler/icons-react'
 import { api } from '../../api/client'
 import type { AuditEntry } from '../../api/types'
 import { fmtTime } from '../../lib/format'
+import { pageTitle } from '../../lib/title'
 import { Dash, DataTable, EmptyState, LoadError, PageHeader, SectionCard, Toolbar, TOOLBAR_INPUT_WIDTH } from '../../ui'
 import type { DataTableColumn } from '../../ui'
 
@@ -120,6 +121,7 @@ function ChangesCell({ entry }: { entry: AuditEntry }) {
 const PAGE_SIZE = 100
 
 export function AuditPage() {
+  useDocumentTitle(pageTitle('Audit log'))
   const [instance, setInstance] = useState('')
   const [username, setUsername] = useState('')
   const [debouncedInstance] = useDebouncedValue(instance, 300)

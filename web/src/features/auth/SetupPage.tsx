@@ -1,11 +1,13 @@
 import { useState } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Alert, Button, Center, Loader, PasswordInput, Stack, TextInput } from '@mantine/core'
+import { useDocumentTitle } from '@mantine/hooks'
 import { useForm } from '@mantine/form'
 import { IconAlertCircle } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import type { User } from '../../api/types'
+import { pageTitle } from '../../lib/title'
 import { AuthLayout } from './AuthLayout'
 
 interface SetupValues {
@@ -19,6 +21,7 @@ interface SetupValues {
 // POST /auth/setup only succeeds while no users exist; the API 404s afterwards,
 // so a direct hit on this page once setup is done bounces to /login.
 export function SetupPage() {
+  useDocumentTitle(pageTitle('Set up'))
   const { status, loading, refresh } = useAuth()
   const navigate = useNavigate()
   const [submitting, setSubmitting] = useState(false)

@@ -1,8 +1,10 @@
 import { ActionIcon, Button, SimpleGrid, Skeleton, Stack, Tooltip } from '@mantine/core'
+import { useDocumentTitle } from '@mantine/hooks'
 import { Link } from 'react-router-dom'
 import { IconCpu, IconDatabase, IconDeviceSdCard, IconPlus, IconRefresh, IconRocket, IconServer2, IconUsers } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtBytes, fmtPercent } from '../../lib/format'
+import { pageTitle } from '../../lib/title'
 import { EmptyState, LoadError, PageHeader, StatStrip } from '../../ui'
 import { useCheckAppUpdate, useSystemInfo } from '../system'
 import { useInstances } from '../instances'
@@ -11,6 +13,7 @@ import { SystemStrip } from './SystemStrip'
 import { InstanceCard } from './InstanceCard'
 
 export function DashboardPage() {
+  useDocumentTitle(pageTitle('Dashboard'))
   const { hasRole } = useAuth()
   const instancesQuery = useInstances()
   const system = useSystemInfo()

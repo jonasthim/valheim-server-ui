@@ -20,6 +20,7 @@ import {
   TextInput,
   Tooltip,
 } from '@mantine/core'
+import { useDocumentTitle } from '@mantine/hooks'
 import { IconAlertTriangle, IconCheck, IconCopy, IconPlugConnected, IconRocket } from '@tabler/icons-react'
 import { api, ApiError } from '../../api/client'
 import { useAuth } from '../../auth/useAuth'
@@ -27,6 +28,7 @@ import type { Settings } from '../../api/types'
 import { docsUrl } from '../../lib/docs'
 import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
+import { pageTitle } from '../../lib/title'
 import { PageHeader, SectionCard, LoadError } from '../../ui'
 import { ReleaseNotesModal, useCheckAppUpdate, useSystemInfo, useUpgradeAppAction } from '../system'
 import { FormFooter } from '../instances/FormFooter'
@@ -69,6 +71,7 @@ interface OidcTestResult {
 }
 
 export function SettingsPage() {
+  useDocumentTitle(pageTitle('Settings'))
   const qc = useQueryClient()
   const { hasRole } = useAuth()
   const settingsQ = useQuery({ queryKey: ['settings'], queryFn: () => api.get<Settings>('/settings') })

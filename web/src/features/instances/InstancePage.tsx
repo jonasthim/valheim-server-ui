@@ -1,14 +1,16 @@
 import { lazy, Suspense } from 'react'
 import { Badge, Box, Center, Indicator, Loader, NativeSelect, Stack, Tabs } from '@mantine/core'
+import { useDocumentTitle } from '@mantine/hooks'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../auth/useAuth'
 import { useInstance } from './useInstance'
 import { useInstanceStatus } from './instanceActions'
-import { INSTANCE_TAB_ICONS, INSTANCE_TAB_LABELS, INSTANCE_TABS } from './tabs'
+import { INSTANCE_TAB_ICONS, INSTANCE_TAB_LABELS, INSTANCE_TABS, isInstanceTab } from './tabs'
 import { useInstanceTabBadges } from './useTabBadges'
 import { LifecycleControls } from './LifecycleControls'
 import { PendingRestartBanner } from './PendingRestartBanner'
 import classes from './InstancePage.module.css'
+import { pageTitle } from '../../lib/title'
 // Tab panels are code-split; keepMounted={false} means each loads on first
 // visit, behind the Suspense boundary around the panels below.
 const OverviewTab = lazy(() => import('./OverviewTab').then((m) => ({ default: m.OverviewTab })))
@@ -32,6 +34,7 @@ export function InstancePage() {
   const { hasRole } = useAuth()
   const inst = useInstance(id)
   const badges = useInstanceTabBadges(id)
+  useDocumentTitle(pageTitle(inst.data?.name ?? id, isInstanceTab(tab) ? INSTANCE_TAB_LABELS[tab] : undefined))
   // The 10s poll and SSE both write ['instances', id, 'status']; fall back to
   // the instance detail's embedded status until the poll resolves once.
   const live = useInstanceStatus(id)
