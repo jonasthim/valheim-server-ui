@@ -23,7 +23,7 @@ export function SystemStrip({ instances }: { instances: Instance[] }) {
     <Stack gap="sm">
       {!info.steamcmd_installed && (
         <Alert
-          color="red"
+          color="blood"
           variant="light"
           radius="lg"
           icon={<IconAlertTriangle size={16} />}
@@ -40,15 +40,17 @@ export function SystemStrip({ instances }: { instances: Instance[] }) {
       <AppUpdateBanner appUpdate={info.app_update} />
 
       {firstUpdateInstance && (
-        <Alert color="blue" variant="light" radius="lg" icon={<IconDownload size={16} />}>
-          <Group justify="space-between" wrap="wrap" gap="sm">
+        <Alert color="frost" variant="light" radius="lg" icon={<IconDownload size={16} />}>
+          <Group justify="space-between" align="center" wrap="wrap">
             <Text size="sm">
               {instancesWithUpdate.length} server{instancesWithUpdate.length === 1 ? ' has' : 's have'} a game update
               available
             </Text>
-            <Anchor component={Link} to={`/instances/${firstUpdateInstance.id}/overview`} size="sm">
-              View
-            </Anchor>
+            <Group gap="xs">
+              <Anchor component={Link} to={`/instances/${firstUpdateInstance.id}/overview`} size="sm">
+                View
+              </Anchor>
+            </Group>
           </Group>
         </Alert>
       )}

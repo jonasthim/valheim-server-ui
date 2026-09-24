@@ -26,7 +26,7 @@ export function AppUpdateBanner({ appUpdate }: { appUpdate: AppUpdateInfo | unde
         icon={<IconSparkles size={16} />}
         title={`Valheim Server UI ${appUpdate.latest_version ?? '?'} available`}
       >
-        <Group justify="space-between" wrap="wrap" gap="sm">
+        <Group justify="space-between" align="center" wrap="wrap">
           <Text size="sm" c="dimmed">
             Currently running v{appUpdate.current_version}
             {appUpdate.checked_at ? `, checked ${fmtAgo(appUpdate.checked_at)}` : ''}

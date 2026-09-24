@@ -27,6 +27,7 @@ test.describe.serial('instance lifecycle with the fake game server', () => {
 
     await page.goto('/')
     await expect(page.getByText(/1 \/ /).first()).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText('Main', { exact: true }).first()).toBeVisible()
     await page.getByRole('button', { name: /^stop$/i }).first().click()
     await page.getByRole('dialog').getByRole('button', { name: 'Stop', exact: true }).click()
     await expect(page.getByText(/^stopped$/i).first()).toBeVisible({ timeout: 15_000 })
