@@ -8,13 +8,13 @@ const TONE: Record<string, string> = {
   blood: 'var(--vh-blood)',
   blue: 'var(--vh-frost)',
   frost: 'var(--vh-frost)',
-  yellow: 'var(--mantine-color-straw-5)',
-  straw: 'var(--mantine-color-straw-5)',
+  yellow: 'var(--vh-straw)',
+  straw: 'var(--vh-straw)',
   orange: 'var(--vh-ember)',
   ember: 'var(--vh-ember)',
   violet: 'var(--vh-spirit)',
   spirit: 'var(--vh-spirit)',
-  gray: 'var(--mantine-color-dimmed)',
+  gray: 'var(--vh-text-soft)',
 }
 
 function toneColor(color: string) {

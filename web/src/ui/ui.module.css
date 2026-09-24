@@ -45,70 +45,13 @@
 }
 .sectionBody { padding: 16px; }
 .sectionBodyFlush { padding: 0; }
-.statusDot {
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--dot-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-color) 22%, transparent);
-  flex: none;
-}
-.statusDot[data-pulse] {
-  animation: vhPulse 1.6s ease-in-out infinite;
-}
-@keyframes vhPulse {
-  0%, 100% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--dot-color) 22%, transparent); }
-  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--dot-color) 10%, transparent); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .statusDot[data-pulse] {
-    animation: none;
-  }
-}
-.statusPill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 3px 10px 3px 8px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--dot-color) 30%, transparent);
-  background: color-mix(in srgb, var(--dot-color) 10%, transparent);
-  font-size: 0.78rem;
-  font-weight: 600;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-.emptyState {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: var(--mantine-spacing-sm);
-  padding: calc(var(--mantine-spacing-xl) * 1.5) var(--mantine-spacing-lg);
-  border: 1px dashed var(--vh-border-strong);
-  border-radius: var(--mantine-radius-lg);
-}
-.emptyIcon {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  display: grid;
-  place-items: center;
-  background: var(--vh-accent-soft);
-  color: var(--vh-ember);
-}
-.emptyParchment {
-  background: var(--vh-parchment);
-  color: var(--vh-ink);
-  /* Text's c="dimmed" resolves to an inline `color: var(--mantine-color-dimmed)`
-     style, which beats any external `color` rule on that element — so the
-     dimmed tone is overridden here, at the variable it reads from. */
-  --mantine-color-dimmed: rgba(26, 18, 10, 0.7);
-  border: 1px dashed rgba(26, 18, 10, 0.25);
-  box-shadow: var(--vh-elevation);
-}
-.emptyParchment :global(.mantine-Text-root) { color: var(--vh-ink); }
-.emptyParchment .emptyIcon { background: var(--vh-ink); color: var(--vh-ember); }
+.statusDot { width: 8px; height: 8px; border-radius: 999px; background: var(--dot-color); flex: none; }
+.statusDot[data-pulse] { animation: vhPulse 1.6s ease-in-out infinite; }
+@keyframes vhPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .statusDot[data-pulse] { animation: none; } }
+.statusPill { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 6px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--dot-color) 35%, var(--vh-border)); background: color-mix(in srgb, var(--dot-color) 10%, var(--vh-surface)); color: var(--mantine-color-text); font-size: 12px; font-weight: 500; line-height: 1.5; white-space: nowrap; }
+.emptyState { display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--mantine-spacing-xs); padding: 32px 20px; border: 1px dashed var(--vh-border-strong); border-radius: var(--mantine-radius-md); }
+.emptyIcon { width: 40px; height: 40px; border-radius: var(--mantine-radius-md); display: grid; place-items: center; margin-bottom: 4px; background: var(--vh-surface-2); border: 1px solid var(--vh-border); color: var(--vh-text-soft); }
 .emptyCompact { padding: 16px; }
 /* StatStrip: one row of KPI cells; the 1px grid gap over a border-coloured
    background draws the hairlines between cells in both directions. */

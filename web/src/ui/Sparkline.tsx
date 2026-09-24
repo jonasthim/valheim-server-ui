@@ -19,7 +19,7 @@ export function Sparkline({
   values,
   width = 120,
   height = 28,
-  color = 'var(--mantine-primary-color-filled)',
+  color = 'var(--vh-text-soft)',
   format,
   label,
 }: {
@@ -61,7 +61,7 @@ export function Sparkline({
       style={{ width, height, display: 'block' }}
       aria-hidden={label ? undefined : true}
     >
-      <path d={area} fill={color} opacity={0.15} stroke="none" />
+      <path d={area} fill={color} opacity={0.12} stroke="none" />
       <polyline points={polyline} fill="none" stroke={color} strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
     </svg>
   )

@@ -135,7 +135,6 @@ export function DashboardPage() {
             icon={<IconServer2 size={22} />}
             title="No instances yet"
             description="Create your first Valheim server to get started."
-            variant="parchment"
             action={
               hasRole('admin') && (
                 <Button component={Link} to="/instances/new" leftSection={<IconPlus size={16} />} mt="xs">

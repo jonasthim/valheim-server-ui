@@ -21,7 +21,7 @@ export function LoadError({
   const heading = title ?? (notFound ? 'Not found' : 'Could not load')
   const message = error instanceof Error ? error.message : 'Something went wrong loading this data.'
   return (
-    <Alert color={notFound ? 'gray' : 'red'} icon={<IconAlertTriangle size={18} />} title={heading} my="md">
+    <Alert color={notFound ? 'gray' : 'red'} icon={<IconAlertTriangle size={16} />} title={heading} my="md">
       {message}
       {onRetry && (
         <Group mt="sm">

@@ -68,7 +68,6 @@ export function SchedulesTable({
           icon={<IconCalendarTime size={22} />}
           title="No schedules configured."
           description="Add a restart, backup or update schedule."
-          variant="parchment"
         />
       </div>
     )

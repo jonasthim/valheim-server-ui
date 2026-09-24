@@ -31,7 +31,7 @@ export class ErrorBoundary extends Component<Props, State> {
     const { error } = this.state
     if (!error) return this.props.children
     return (
-      <Alert color="red" icon={<IconAlertTriangle size={18} />} title="Something went wrong on this screen" my="md">
+      <Alert color="red" icon={<IconAlertTriangle size={16} />} title="Something went wrong on this screen" my="md">
         <Stack gap="sm" align="flex-start">
           <Text size="sm">
             This view hit an error and stopped rendering. The rest of the app is fine — go back or reload. If it
