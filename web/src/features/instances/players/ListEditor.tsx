@@ -5,7 +5,7 @@ import { IconPlus, IconTrash } from '@tabler/icons-react'
 import type { ListKind } from '../../../api/types'
 import { Dash, LoadError } from '../../../ui'
 import { usePlayerList, useSavePlayerList } from './usePlayers'
-import { PLATFORM_ID_PATTERN } from './constants'
+import { LIST_KIND_LABELS, PLATFORM_ID_PATTERN } from './constants'
 import dt from '../../../ui/DataTable.module.css'
 
 /** Kind-specific confirm-dialog copy for removing one entry from a list. */
@@ -89,7 +89,11 @@ export function ListEditor({ id, kind, canEdit }: { id: string; kind: ListKind; 
 
       {!query.isLoading && !query.isError && (
         <Table.ScrollContainer minWidth={480}>
-          <Table verticalSpacing="xs" classNames={{ th: dt.th, td: dt.td, tr: dt.tr, table: dt.table }}>
+          <Table
+            aria-label={`${LIST_KIND_LABELS[kind]} list`}
+            verticalSpacing="xs"
+            classNames={{ th: dt.th, td: dt.td, tr: dt.tr, table: dt.table }}
+          >
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Platform id</Table.Th>

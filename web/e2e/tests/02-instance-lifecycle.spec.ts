@@ -61,6 +61,8 @@ test.describe.serial('instance lifecycle with the fake game server', () => {
     await page.goto('/instances/main/players')
     await page.getByRole('radiogroup', { name: 'Player list' }).getByText('Banned', { exact: true }).click()
     await expect(page).toHaveURL(/list=banned/)
+    // The editor remounts per list kind; wait for the Banned editor before typing into it.
+    await expect(page.getByRole('table', { name: 'Banned list' })).toBeVisible()
     await page.getByPlaceholder(/platform id/i).first().fill('76561198000000099')
     await page.getByPlaceholder(/comment/i).first().fill('griefer')
     await page.getByRole('button', { name: /^add$/i }).first().click()
