@@ -1,13 +1,17 @@
 import { Avatar, Menu, Text, UnstyledButton, useMantineColorScheme } from '@mantine/core'
-import { IconCheck, IconDeviceDesktop, IconLogout, IconMoonStars, IconSun, IconUserCircle } from '@tabler/icons-react'
+import { IconCheck, IconDeviceDesktop, IconKeyboard, IconLogout, IconMoonStars, IconSun, IconUserCircle } from '@tabler/icons-react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import classes from './Shell.module.css'
 
+interface UserMenuProps {
+  onOpenShortcuts?: () => void
+}
+
 // Top-bar avatar menu (TopBar.tsx): account link, theme switcher (dark /
 // light / system), log out. Replaces the old sidebar-footer user menu and
 // the separate sun/moon toggle.
-export function UserMenu() {
+export function UserMenu({ onOpenShortcuts }: UserMenuProps) {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const { colorScheme, setColorScheme } = useMantineColorScheme()
@@ -36,6 +40,11 @@ export function UserMenu() {
         <Menu.Item leftSection={<IconUserCircle size={16} />} onClick={() => navigate('/account')}>
           Account
         </Menu.Item>
+        {onOpenShortcuts && (
+          <Menu.Item leftSection={<IconKeyboard size={16} />} onClick={onOpenShortcuts}>
+            Keyboard shortcuts
+          </Menu.Item>
+        )}
         <Menu.Divider />
         <Menu.Label>Theme</Menu.Label>
         <Menu.Item

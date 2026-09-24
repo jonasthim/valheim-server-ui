@@ -12,13 +12,14 @@ interface TopBarProps {
   navOpened: boolean
   onToggleNav: () => void
   onOpenPalette?: () => void
+  onOpenShortcuts?: () => void
 }
 
 // 48px product top bar: burger (mobile) + route breadcrumbs on the left,
 // command palette / activity / live status / account menu on the right. The
 // palette button only renders once a handler is wired up (Shell passes none
 // yet, so it stays absent until the palette itself lands).
-export function TopBar({ navOpened, onToggleNav, onOpenPalette }: TopBarProps) {
+export function TopBar({ navOpened, onToggleNav, onOpenPalette, onOpenShortcuts }: TopBarProps) {
   const os = useOs()
   const modLabel = os === 'macos' || os === 'ios' ? '⌘' : 'Ctrl '
 
@@ -56,7 +57,7 @@ export function TopBar({ navOpened, onToggleNav, onOpenPalette }: TopBarProps) {
         )}
         <ActivityIndicator />
         <LiveStatusBadge />
-        <UserMenu />
+        <UserMenu onOpenShortcuts={onOpenShortcuts} />
       </Group>
     </Group>
   )

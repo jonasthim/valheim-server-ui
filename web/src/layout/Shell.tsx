@@ -1,6 +1,6 @@
 import { AppShell, Center, Loader, useMantineTheme } from '@mantine/core'
 import { Suspense } from 'react'
-import { useDisclosure, useHotkeys, useLocalStorage, useMediaQuery } from '@mantine/hooks'
+import { useDisclosure, useLocalStorage, useMediaQuery } from '@mantine/hooks'
 import { Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useEvents } from '../events/useEvents'
@@ -10,7 +10,9 @@ import { openPalette } from '../features/palette/paletteStore'
 import { UpgradeFlowHost } from '../features/system'
 import { ErrorBoundary } from '../ui'
 import { Sidebar } from './Sidebar'
+import { ShortcutsModal } from './ShortcutsModal'
 import { TopBar } from './TopBar'
+import { useGlobalShortcuts } from './useGlobalShortcuts'
 import classes from './Shell.module.css'
 
 export function Shell() {
@@ -20,15 +22,14 @@ export function Shell() {
     defaultValue: false,
     getInitialValueInEffect: false,
   })
+  const [helpOpened, help] = useDisclosure(false)
   const { user } = useAuth()
   const loc = useLocation()
   const theme = useMantineTheme()
   const isDesktop = useMediaQuery(`(min-width: ${theme.breakpoints.sm})`, true, { getInitialValueInEffect: false })
   const rail = collapsed && isDesktop
   useEvents(!!user)
-  // Temporary: B-4 moves both into the keyboard-shortcuts layer.
-  useHotkeys([['mod+B', () => setCollapsed((c) => !c)]])
-  useHotkeys([['mod+K', openPalette]], [])
+  useGlobalShortcuts({ openPalette, openHelp: help.open, toggleSidebar: () => setCollapsed((c) => !c) })
 
   return (
     <JobDrawerHost>
@@ -45,7 +46,7 @@ export function Shell() {
           transitionDuration={160}
         >
           <AppShell.Header className={classes.header}>
-            <TopBar navOpened={opened} onToggleNav={toggle} onOpenPalette={openPalette} />
+            <TopBar navOpened={opened} onToggleNav={toggle} onOpenPalette={openPalette} onOpenShortcuts={help.open} />
           </AppShell.Header>
 
           <AppShell.Navbar className={classes.navbar}>
@@ -63,7 +64,8 @@ export function Shell() {
           </AppShell.Main>
         </AppShell>
       </UpgradeFlowHost>
-      <CommandPalette />
+      <CommandPalette onOpenShortcutsHelp={help.open} />
+      <ShortcutsModal opened={helpOpened} onClose={help.close} />
     </JobDrawerHost>
   )
 }

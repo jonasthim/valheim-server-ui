@@ -220,6 +220,7 @@ export function ConsoleTab({ id }: { id: string }) {
           <div className={classes.promptRow} style={{ flexWrap: 'wrap', rowGap: 6 }}>
             <IconChevronRight size={16} className={classes.promptGlyph} aria-hidden />
             <TextInput
+              id="console-filter"
               className={classes.promptInput}
               variant="unstyled"
               placeholder="Filter lines"

@@ -40,3 +40,50 @@ test.describe.serial('command palette', () => {
     await page.keyboard.press('Escape')
   })
 })
+
+// Same shared "main" instance/single-worker suite as above.
+test.describe.serial('keyboard shortcuts', () => {
+  test.beforeEach(async ({ page }) => {
+    await login(page)
+  })
+
+  test('g j goes to Jobs and ? opens help', async ({ page }) => {
+    await page.goto('/')
+    await page.keyboard.press('g')
+    await page.keyboard.press('j')
+    await expect(page).toHaveURL(/\/jobs$/)
+
+    await page.keyboard.press('?')
+    const dialog = page.getByRole('dialog', { name: 'Keyboard shortcuts' })
+    await expect(dialog).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+  })
+
+  test('[ and ] move between instance tabs', async ({ page }) => {
+    await page.goto('/instances/main/overview')
+    await expect(page.getByRole('tab', { name: 'Overview' })).toBeVisible()
+
+    await page.keyboard.press(']')
+    await expect(page).toHaveURL(/\/instances\/main\/console$/)
+
+    await page.keyboard.press('[')
+    await expect(page).toHaveURL(/\/instances\/main\/overview$/)
+  })
+
+  test('shortcuts are ignored while typing', async ({ page }) => {
+    await page.goto('/jobs')
+    const instanceFilter = page.getByRole('textbox', { name: 'Instance' })
+    await instanceFilter.click()
+    await page.keyboard.type('gj')
+    await expect(page).toHaveURL(/\/jobs$/)
+    await expect(instanceFilter).toHaveValue('gj')
+  })
+
+  test('mod+B toggles the sidebar', async ({ page }) => {
+    await page.keyboard.press('Control+b')
+    await expect(page.getByRole('button', { name: 'Expand sidebar' })).toBeVisible()
+    await page.keyboard.press('Control+b')
+    await expect(page.getByRole('button', { name: 'Collapse sidebar' })).toBeVisible()
+  })
+})
