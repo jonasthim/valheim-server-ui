@@ -1,5 +1,5 @@
 // Barrel for the mods feature (WP-13) consumed by instances/ModsTab.tsx.
-export { BepInExCard } from './BepInExCard'
+export { ModLoaderCard } from './ModLoaderCard'
 export { InstalledModsTable } from './InstalledModsTable'
 export { UploadModCard } from './UploadModCard'
 export { ThunderstoreBrowser } from './ThunderstoreBrowser'

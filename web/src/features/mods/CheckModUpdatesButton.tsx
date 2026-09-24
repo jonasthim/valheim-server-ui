@@ -10,7 +10,7 @@ import { notifyError, notifySuccess } from '../../lib/notify'
 import type { Job, ModsOverview } from '../../api/types'
 import { useJob } from '../jobs'
 
-export function CheckModUpdatesButton({ id }: { id: string }) {
+export function CheckModUpdatesButton({ id, size }: { id: string; size?: string }) {
   const qc = useQueryClient()
   const [jobId, setJobId] = useState<string | undefined>()
   const job = useJob(jobId)
@@ -56,7 +56,8 @@ export function CheckModUpdatesButton({ id }: { id: string }) {
   return (
     <Button
       variant="default"
-      leftSection={<IconRefresh size={16} />}
+      size={size}
+      leftSection={<IconRefresh size={size === 'xs' ? 14 : 16} />}
       loading={running}
       onClick={() => start.mutate()}
     >

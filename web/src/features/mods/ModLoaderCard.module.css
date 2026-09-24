@@ -1,0 +1,26 @@
+/* ModLoaderCard: two fixed-height status rows (BepInEx, agent) sharing a
+   4-column grid — label/description, status pill(s), enable switch (or a
+   spacer), action button — plus an optional notes strip below them. */
+.row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto auto;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  padding: 10px 16px;
+  min-height: 48px;
+}
+.row + .row {
+  border-top: 1px solid var(--vh-border);
+}
+.notes {
+  padding: 8px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+@media (max-width: 48em) {
+  .row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}

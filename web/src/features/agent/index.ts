@@ -1,4 +1,3 @@
-export { AgentCard } from './AgentCard'
 export { WorldCard } from './WorldCard'
 export { AgentSetupNotice } from './AgentSetupNotice'
 export { BroadcastButton } from './BroadcastButton'

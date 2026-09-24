@@ -1,13 +1,14 @@
 // Manual mod upload: a .zip (Thunderstore layout with manifest.json) or a
-// single .dll, dropped or picked, uploaded as multipart/form-data.
+// single .dll, dropped or picked, uploaded as multipart/form-data. A single
+// 48px dropzone row under the installed mods table.
 import { Group, Text, ThemeIcon } from '@mantine/core'
 import { Dropzone } from '@mantine/dropzone'
 import { IconFileZip, IconUpload, IconX } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { useJobDrawer } from '../jobs'
 import { notifyError } from '../../lib/notify'
-import { SectionCard } from '../../ui'
 import { useUploadMod } from './useMods'
+import classes from './UploadModCard.module.css'
 
 const ACCEPTED_EXT = ['.zip', '.dll']
 
@@ -30,39 +31,38 @@ export function UploadModCard({ id }: { id: string }) {
   }
 
   return (
-    <SectionCard title="Upload a mod">
-      <Dropzone
-        onDrop={handleDrop}
-        onReject={() => notifyError(new Error('File was rejected.'), 'Upload failed')}
-        loading={upload.isPending}
-        multiple={false}
-        maxSize={200 * 1024 * 1024}
-        style={{ background: 'var(--vh-surface-2)', borderColor: 'var(--vh-border-strong)' }}
-      >
-        <Group justify="center" gap="md" mih={100} style={{ pointerEvents: 'none' }}>
+    <Dropzone
+      aria-label="Upload a mod"
+      className={classes.dropRow}
+      onDrop={handleDrop}
+      onReject={() => notifyError(new Error('File was rejected.'), 'Upload failed')}
+      loading={upload.isPending}
+      multiple={false}
+      maxSize={200 * 1024 * 1024}
+    >
+      <Group justify="space-between" wrap="nowrap" gap="sm" mih={48} px="sm" style={{ pointerEvents: 'none' }}>
+        <Group gap="sm" wrap="nowrap">
           <Dropzone.Accept>
-            <ThemeIcon size={40} color="moss" variant="light">
-              <IconUpload size={22} />
+            <ThemeIcon size={24} color="moss" variant="light">
+              <IconUpload size={16} />
             </ThemeIcon>
           </Dropzone.Accept>
           <Dropzone.Reject>
-            <ThemeIcon size={40} color="blood" variant="light">
-              <IconX size={22} />
+            <ThemeIcon size={24} color="blood" variant="light">
+              <IconX size={16} />
             </ThemeIcon>
           </Dropzone.Reject>
           <Dropzone.Idle>
-            <ThemeIcon size={40} color="spirit" variant="light">
-              <IconFileZip size={22} />
+            <ThemeIcon size={24} color="spirit" variant="light">
+              <IconFileZip size={16} />
             </ThemeIcon>
           </Dropzone.Idle>
-          <div>
-            <Text size="sm">Drag a mod .zip or .dll here, or click to browse</Text>
-            <Text size="xs" c="dimmed">
-              Thunderstore-layout zips (with manifest.json) or a single BepInEx plugin .dll
-            </Text>
-          </div>
+          <Text size="sm">Drag a mod .zip or .dll here, or click to browse</Text>
         </Group>
-      </Dropzone>
-    </SectionCard>
+        <Text size="xs" c="dimmed" visibleFrom="sm">
+          Thunderstore-layout zips (with manifest.json) or a single BepInEx plugin .dll
+        </Text>
+      </Group>
+    </Dropzone>
   )
 }

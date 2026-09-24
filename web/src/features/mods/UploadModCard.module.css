@@ -1,0 +1,10 @@
+/* UploadModCard: a single 48px dropzone row instead of a full SectionCard. */
+.dropRow {
+  border: 1px dashed var(--vh-border-strong);
+  border-radius: 8px;
+  background: transparent;
+  min-height: 48px;
+}
+.dropRow:hover {
+  background: var(--vh-surface-2);
+}

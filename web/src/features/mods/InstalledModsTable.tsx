@@ -1,6 +1,7 @@
 // Table of mods installed on an instance: enable toggle, update/uninstall
 // actions, and a dependency count popover. Disabled with a call-to-action
 // when BepInEx itself is not installed yet.
+import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { safeHref } from '../../lib/format'
 import {
@@ -32,7 +33,7 @@ import { useExportModProfile, useModsOverview, useSetModEnabled, useUninstallMod
 import { useConfigFiles } from './useModConfig'
 import { matchModConfigs } from './helpers'
 
-export function InstalledModsTable({ id }: { id: string }) {
+export function InstalledModsTable({ id, actions }: { id: string; actions?: ReactNode }) {
   const { hasRole } = useAuth()
   const overview = useModsOverview(id)
   const { openJob } = useJobDrawer()
@@ -101,9 +102,11 @@ export function InstalledModsTable({ id }: { id: string }) {
 
   if (!bepinexInstalled) {
     return (
-      <Alert color="gray" icon={<IconPackage size={16} />} title="BepInEx required">
-        Install BepInEx above before installing or managing mods.
-      </Alert>
+      <SectionCard title="Installed mods" actions={actions}>
+        <Alert color="frost" icon={<IconPackage size={16} />} title="BepInEx required">
+          Install BepInEx above before installing or managing mods.
+        </Alert>
+      </SectionCard>
     )
   }
 
@@ -199,6 +202,7 @@ export function InstalledModsTable({ id }: { id: string }) {
       title="Installed mods"
       actions={
         <Group gap="xs">
+          {actions}
           {canOperate && updatable.length > 0 && (
             <Button
               size="xs"

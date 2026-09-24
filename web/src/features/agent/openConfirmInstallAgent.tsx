@@ -1,6 +1,6 @@
 // Confirm dialog for installing or updating the Valheim UI Agent. Split out
-// of AgentCard so AgentSetupNotice can open the same dialog from any mount
-// point (see docs/WORKPLAN.md U-A2).
+// of the mod loader card so AgentSetupNotice can open the same dialog from
+// any mount point (see docs/WORKPLAN.md U-A2).
 import { Stack } from '@mantine/core'
 import { modals } from '@mantine/modals'
 

@@ -1,6 +1,6 @@
-// Confirm dialog for installing or upgrading BepInEx. Split out of
-// BepInExCard so AgentSetupNotice can open the same dialog from any mount
-// point (see docs/WORKPLAN.md U-A2).
+// Confirm dialog for installing or upgrading BepInEx. Split out of the
+// mod loader card so AgentSetupNotice can open the same dialog from any
+// mount point (see docs/WORKPLAN.md U-A2).
 import { Stack } from '@mantine/core'
 import { modals } from '@mantine/modals'
 
