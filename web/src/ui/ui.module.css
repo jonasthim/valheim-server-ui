@@ -1,26 +1,8 @@
-.pageHeader {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--mantine-spacing-md);
-  flex-wrap: wrap;
-  padding-bottom: var(--mantine-spacing-sm);
-}
-.pageTitle {
-  letter-spacing: -0.02em;
-  line-height: 1.15;
-}
-.statTile {
-  position: relative;
-  overflow: hidden;
-  padding: var(--mantine-spacing-md) var(--mantine-spacing-lg);
-  min-height: 92px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 6px;
-  transition: border-color 120ms ease, transform 120ms ease;
-}
+.pageHeader { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--mantine-spacing-md); flex-wrap: wrap; padding-bottom: var(--mantine-spacing-md); }
+.pageHeader[data-rule] { border-bottom: 1px solid var(--vh-border); }
+.pageTitle { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.3; }
+.pageActions { margin-left: auto; }
+.statTile { position: relative; overflow: hidden; padding: 12px 16px; min-height: 72px; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; }
 .statTile[data-accent]::before {
   content: '';
   position: absolute;
@@ -30,31 +12,21 @@
   opacity: 0.9;
 }
 .statValue {
-  font-size: 1.6rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 /* Long values (dev version strings, ids) step down instead of breaking the tile. */
 .statValue[data-long] {
-  font-size: 1.05rem;
+  font-size: 14px;
   font-family: var(--mantine-font-family-monospace);
   letter-spacing: 0;
 }
-.sectionCard {
-  padding: 0;
-}
-.sectionHead {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--mantine-spacing-md);
-  padding: var(--mantine-spacing-md) var(--mantine-spacing-lg);
-  border-bottom: 1px solid var(--vh-border);
-  flex-wrap: wrap;
-}
+.sectionCard { padding: 0; }
+.sectionHead { display: flex; align-items: center; justify-content: space-between; gap: var(--mantine-spacing-sm); padding: 12px 16px; border-bottom: 1px solid var(--vh-border); flex-wrap: wrap; }
 /* Title+description column: grows, but demands a sensible width so the actions
    wrap to their own line on narrow screens instead of starving this text down
    to one word per line. */
@@ -71,12 +43,8 @@
   max-width: 100%;
   margin-left: auto;
 }
-.sectionBody {
-  padding: var(--mantine-spacing-lg);
-}
-.sectionBodyFlush {
-  padding: 0;
-}
+.sectionBody { padding: 16px; }
+.sectionBodyFlush { padding: 0; }
 .statusDot {
   width: 8px;
   height: 8px;
@@ -142,8 +110,15 @@
 .emptyParchment :global(.mantine-Text-root) { color: var(--vh-ink); }
 .emptyParchment .emptyIcon { background: var(--vh-ink); color: var(--vh-ember); }
 .emptyCompact { padding: 16px; }
-/* Applied to Paper/Card roots via the theme's component defaults: the one
-   elevation for borderless surfaces, no hover lift. */
-.elevated {
-  box-shadow: var(--vh-elevation);
-}
+/* StatStrip: one row of KPI cells; the 1px grid gap over a border-coloured
+   background draws the hairlines between cells in both directions. */
+.statStrip { display: grid; grid-template-columns: repeat(auto-fit, minmax(var(--strip-min, 140px), 1fr)); gap: 1px; margin: 0; background: var(--vh-border); border: 1px solid var(--vh-border); border-radius: var(--mantine-radius-md); overflow: hidden; }
+.statStrip[data-cols] { grid-template-columns: repeat(var(--strip-cols), minmax(0, 1fr)); }
+.statCell { background: var(--vh-surface); min-height: 56px; min-width: 0; padding: 10px 14px; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
+.statCell[data-accent] { box-shadow: inset 3px 0 0 var(--cell-accent); }
+.statCellLabel { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin: 0; font-size: 12px; font-weight: 500; line-height: 1.4; color: var(--vh-text-soft); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.statCellIcon { display: inline-flex; color: var(--vh-text-faint); }
+.statCellValue { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.2; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.statCellValue[data-long] { font-size: 14px; font-family: var(--mantine-font-family-monospace); letter-spacing: 0; }
+.statCellHint { margin: 0; font-size: 12px; line-height: 1.4; color: var(--vh-text-faint); }
+.statCellSpark { margin: 4px 0 0; }

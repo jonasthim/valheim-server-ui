@@ -32,7 +32,7 @@ export function StatTile({
 }) {
   const rootStyle = {
     ...(accent ? { '--tile-accent': accent } : {}),
-    ...(compact ? { padding: '8px 12px', minHeight: 'unset', gap: 4 } : {}),
+    ...(compact ? { padding: '8px 12px', minHeight: 'unset', gap: 2 } : {}),
   } as CSSProperties
   return (
     <Paper
@@ -52,7 +52,7 @@ export function StatTile({
         <div
           className={classes.statValue}
           data-long={typeof value === 'string' && value.length > 12 ? '' : undefined}
-          style={compact ? { fontSize: '1.1rem' } : undefined}
+          style={compact ? { fontSize: '16px' } : undefined}
         >
           {value}
         </div>
