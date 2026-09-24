@@ -49,3 +49,33 @@ export function openConfirmStop(opts: { instanceName: string; playersOnline: num
     onConfirm: opts.onConfirm,
   })
 }
+
+/**
+ * Confirms restarting the instance when players are online (they'll be
+ * disconnected immediately unless a delay is chosen instead). Skips the
+ * dialog when the server is empty. Shared by RestartControl (its "Restart
+ * now" menu item) and the command palette's "Restart {name}" action.
+ */
+export function openConfirmRestart(opts: { instanceName?: string; playersOnline: number; onConfirm: () => void }) {
+  if (opts.playersOnline === 0) {
+    opts.onConfirm()
+    return
+  }
+  modals.openConfirmModal({
+    title: 'Restart instance',
+    children: (
+      <Text size="sm">
+        {opts.instanceName && (
+          <>
+            Restart <strong>{opts.instanceName}</strong>?{' '}
+          </>
+        )}
+        {opts.playersOnline} player{opts.playersOnline === 1 ? ' is' : 's are'} currently online and will be
+        disconnected immediately. Restart now, or pick a delay to warn them first.
+      </Text>
+    ),
+    labels: { confirm: 'Restart now', cancel: 'Cancel' },
+    confirmProps: { color: 'orange' },
+    onConfirm: opts.onConfirm,
+  })
+}

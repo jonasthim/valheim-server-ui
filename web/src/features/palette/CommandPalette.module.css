@@ -1,0 +1,18 @@
+.search {
+  border-bottom: 1px solid var(--vh-border);
+  padding: 4px 12px;
+}
+
+.option {
+  min-height: 36px;
+  border-radius: 6px;
+}
+
+.option[data-combobox-selected] {
+  background: var(--vh-surface-2);
+}
+
+.groupLabel {
+  font-size: 12px;
+  color: var(--vh-text-soft);
+}

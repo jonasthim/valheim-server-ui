@@ -5,6 +5,8 @@ import { Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
 import { useEvents } from '../events/useEvents'
 import { JobDrawerHost } from '../features/jobs/JobDrawerHost'
+import { CommandPalette } from '../features/palette/CommandPalette'
+import { openPalette } from '../features/palette/paletteStore'
 import { UpgradeFlowHost } from '../features/system'
 import { ErrorBoundary } from '../ui'
 import { Sidebar } from './Sidebar'
@@ -24,8 +26,9 @@ export function Shell() {
   const isDesktop = useMediaQuery(`(min-width: ${theme.breakpoints.sm})`, true, { getInitialValueInEffect: false })
   const rail = collapsed && isDesktop
   useEvents(!!user)
-  // Temporary: relocated to the command palette hotkey set by B-4.
+  // Temporary: B-4 moves both into the keyboard-shortcuts layer.
   useHotkeys([['mod+B', () => setCollapsed((c) => !c)]])
+  useHotkeys([['mod+K', openPalette]], [])
 
   return (
     <JobDrawerHost>
@@ -42,7 +45,7 @@ export function Shell() {
           transitionDuration={160}
         >
           <AppShell.Header className={classes.header}>
-            <TopBar navOpened={opened} onToggleNav={toggle} />
+            <TopBar navOpened={opened} onToggleNav={toggle} onOpenPalette={openPalette} />
           </AppShell.Header>
 
           <AppShell.Navbar className={classes.navbar}>
@@ -60,6 +63,7 @@ export function Shell() {
           </AppShell.Main>
         </AppShell>
       </UpgradeFlowHost>
+      <CommandPalette />
     </JobDrawerHost>
   )
 }

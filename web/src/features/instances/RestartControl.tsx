@@ -4,10 +4,10 @@
 // server goes down. The delay is chosen here (presets or a custom value).
 import { useState } from 'react'
 import { Button, Group, Menu, Modal, NumberInput, Stack, Text } from '@mantine/core'
-import { modals } from '@mantine/modals'
 import { IconChevronDown, IconRefresh } from '@tabler/icons-react'
 import { useJobDrawer } from '../jobs'
 import { useRestartInstance } from './instanceActions'
+import { openConfirmRestart } from './openConfirmLifecycle'
 
 const PRESETS: { label: string; seconds: number }[] = [
   { label: 'In 1 minute', seconds: 60 },
@@ -44,27 +44,7 @@ export function RestartControl({
   }
 
   function restartNow() {
-    if (playersOnline > 0) {
-      modals.openConfirmModal({
-        title: 'Restart instance',
-        children: (
-          <Text size="sm">
-            {instanceName && (
-              <>
-                Restart <strong>{instanceName}</strong>?{' '}
-              </>
-            )}
-            {playersOnline} player{playersOnline === 1 ? ' is' : 's are'} currently online and will be disconnected
-            immediately. Restart now, or pick a delay to warn them first.
-          </Text>
-        ),
-        labels: { confirm: 'Restart now', cancel: 'Cancel' },
-        confirmProps: { color: 'orange' },
-        onConfirm: () => restartIn(0),
-      })
-    } else {
-      restartIn(0)
-    }
+    openConfirmRestart({ instanceName, playersOnline, onConfirm: () => restartIn(0) })
   }
 
   return (
