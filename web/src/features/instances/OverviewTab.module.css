@@ -24,6 +24,12 @@
   .row {
     grid-template-columns: 1fr;
   }
+
+  /* Connect address: a long hostname (vs. the short "127.0.0.1" in fixtures)
+     must break instead of overflowing its row on a narrow screen. */
+  .connectCode {
+    overflow-wrap: anywhere;
+  }
 }
 
 .mapHero {

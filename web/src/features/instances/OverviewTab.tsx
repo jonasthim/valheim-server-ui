@@ -334,7 +334,7 @@ export function OverviewTab({ id }: { id: string }) {
           </Button>
         </StatusRow>
         <StatusRow label="Connect" hint={`The query port (server browser / A2S) is port+1 (${instance.config.port + 1}).`}>
-          <Code fz="sm">
+          <Code fz="sm" className={classes.connectCode}>
             {host}:{instance.config.port}
           </Code>
           <CopyButton value={`${host}:${instance.config.port}`}>
