@@ -1,16 +1,22 @@
 .page {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
   padding: 24px 16px;
-  background: var(--vh-parchment, #B9AD8C);
-  background-image: radial-gradient(120% 90% at 50% 40%, transparent 55%, rgba(26,18,10,0.28) 100%);
+  background: var(--vh-bg, var(--mantine-color-body));
 }
 
-.panel {
-  width: min(420px, calc(100% - 32px));
-  background: var(--vh-surface, #241D16);
-  box-shadow: var(--vh-elevation, 0 10px 24px -14px rgba(0,0,0,0.6), 0 0 0 1px rgba(239,230,204,0.10));
-  border-radius: 14px;
-  padding: 32px 28px;
+.column {
+  width: min(360px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.wordmark {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  font-family: var(--mantine-font-family);
 }

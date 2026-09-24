@@ -52,4 +52,14 @@ test.describe.serial('first run and authentication', () => {
     await page.goto('/audit')
     await expect(page.getByText('user.create').first()).toBeVisible()
   })
+
+  test('login honours ?next= and shows ?error=', async ({ page }) => {
+    await page.goto('/login?error=oidc_error')
+    await expect(page.getByText('Sign-in failed')).toBeVisible()
+    await page.goto('/login?next=/jobs')
+    await page.getByLabel(/username/i).fill(ADMIN.username)
+    await page.getByRole('textbox', { name: 'Password' }).fill(ADMIN.password)
+    await page.getByRole('button', { name: /log in|sign in/i }).click()
+    await expect(page).toHaveURL(/\/jobs$/)
+  })
 })

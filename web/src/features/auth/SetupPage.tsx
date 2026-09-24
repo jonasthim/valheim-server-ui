@@ -73,7 +73,7 @@ export function SetupPage() {
           <form onSubmit={form.onSubmit(handleSubmit)}>
             <Stack gap="sm">
               {formError && (
-                <Alert color="red" icon={<IconAlertCircle size={16} />}>
+                <Alert color="blood" icon={<IconAlertCircle size={16} />}>
                   {formError}
                 </Alert>
               )}

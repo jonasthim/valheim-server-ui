@@ -71,7 +71,7 @@ export function LoginPage() {
     <AuthLayout intro="Sign in to manage your servers.">
       <Stack gap="md">
         {oidcError && (
-          <Alert color="red" icon={<IconAlertCircle size={16} />} title="Sign-in failed">
+          <Alert color="blood" icon={<IconAlertCircle size={16} />} title="Sign-in failed">
             {errorMessage(oidcError, 'Single sign-on failed.')}
           </Alert>
         )}
@@ -86,7 +86,7 @@ export function LoginPage() {
               <form onSubmit={form.onSubmit(handleSubmit)}>
                 <Stack gap="sm">
                   {formError && (
-                    <Alert color="red" icon={<IconAlertCircle size={16} />}>
+                    <Alert color="blood" icon={<IconAlertCircle size={16} />}>
                       {formError}
                     </Alert>
                   )}
