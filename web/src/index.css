@@ -1,5 +1,6 @@
-/* Global styles for the Valheim Server UI design system (see docs/DESIGN.md).
-   Tokens come from theme/theme.ts via the Mantine CSS variables resolver. */
+/* Global styles for the Valheim Server UI design system — "Ashlands" (see
+   docs/DESIGN.md). Tokens come from theme/theme.ts via the Mantine CSS
+   variables resolver. */
 
 @font-face {
   font-family: 'Geist';
@@ -17,22 +18,22 @@
   font-display: swap;
 }
 
+/* --- Base --- */
 html, body, #root { height: 100%; }
-
 body {
   background-color: var(--mantine-color-body);
+  color: var(--mantine-color-text);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
-
 ::selection { background: var(--vh-accent-soft); }
+code:not([class]) { font-family: var(--mantine-font-family-monospace); font-size: 0.92em; }
+.mono { font-family: var(--mantine-font-family-monospace); }
+.mantine-Title-root { font-variant-numeric: tabular-nums; }
 
-/* The display face (Cormorant Garamond) defaults to old-style figures, so a
-   "0" in a title reads as a lowercase o ("Running · 0 online"). Titles use
-   lining, tabular figures. */
-.mantine-Title-root {
-  font-variant-numeric: lining-nums tabular-nums;
-}
+/* --- Focus (WCAG 2.4.7 / 2.4.11): one ember ring everywhere; inputs use their own border + soft ring. --- */
+:focus-visible { outline: 2px solid var(--vh-ember); outline-offset: 2px; }
+.mantine-Input-input:focus-visible { outline: none; }
 
 /* Plain links (Text component={Link}) inherit text colour; Mantine Anchor
    keeps its own. WCAG 1.4.3/1.4.1: --vh-frost text fails 4.5:1 against the
@@ -55,62 +56,44 @@ a:not(.mantine-Anchor-root):hover { text-decoration: none; }
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.mantine-Anchor-root:hover { color: var(--vh-ember-text); }
 
 /* Scrollbars: thin and quiet. */
 * { scrollbar-width: thin; scrollbar-color: var(--vh-border-strong) transparent; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-thumb { background: var(--vh-border-strong); border-radius: 8px; }
 
-/* Surfaces: every Paper/Card uses the token surface colour. Cards are
-   borderless by default (theme.ts sets withBorder: false and an elevation
-   shadow instead); border-color only matters for the rare explicit
-   withBorder usage. */
-.mantine-Paper-root,
-.mantine-Card-root {
-  background-color: var(--vh-surface);
-  border-color: var(--vh-border);
-}
+/* --- Surfaces: borders carry structure; no card shadows. --- */
+.mantine-Paper-root, .mantine-Card-root { background-color: var(--vh-surface); border-color: var(--vh-border); }
 
-/* Tables: muted, sentence-case headers; hairline rows. */
-.mantine-Table-th {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--vh-text-soft);
-}
-.mantine-Table-table {
-  --table-border-color: var(--vh-border);
-}
+/* --- Controls: 32px default, 28px xs (Mantine's sm/xs are 36/30). --- */
+.mantine-Button-root { --button-height-sm: 32px; --button-height-xs: 28px; --button-padding-x-sm: 12px; --button-padding-x-xs: 10px; }
+.mantine-Input-wrapper { --input-height-sm: 32px; --input-height-xs: 28px; }
+.mantine-ActionIcon-root { --ai-size-input-sm: 32px; --ai-size-input-xs: 28px; }
 
-/* Inputs blend with the surface, and glow ember on focus. */
-.mantine-Input-input {
-  background-color: var(--vh-surface-2);
-  border-color: var(--vh-border);
-  transition: border-color 120ms ease, box-shadow 120ms ease;
-}
-.mantine-Input-input:focus,
-.mantine-Input-input:focus-within {
-  border-color: var(--vh-ember);
-  box-shadow: 0 0 0 3px var(--vh-accent-soft);
-}
+.mantine-Input-input { background-color: var(--vh-surface-2); border-color: var(--vh-border-strong); transition: border-color 120ms ease, box-shadow 120ms ease; }
+.mantine-Input-input:focus, .mantine-Input-input:focus-within { border-color: var(--vh-ember); box-shadow: 0 0 0 2px var(--vh-accent-soft); }
+
+.mantine-Table-table { --table-border-color: var(--vh-border); }
+.mantine-Table-th { font-size: 12px; font-weight: 500; color: var(--vh-text-soft); }
+.mantine-Table-thead .mantine-Table-th { padding-top: 7px; padding-bottom: 7px; }
 
 /* Tabs as an underline with an ember indicator. */
 .mantine-Tabs-list { border-bottom-color: var(--vh-border); }
 .mantine-Tabs-tab { font-weight: 500; color: var(--vh-text-soft); }
 .mantine-Tabs-tab[data-active] { color: var(--mantine-color-text); }
 
-/* Modals and drawers share the surface tokens. */
-.mantine-Modal-content, .mantine-Drawer-content, .mantine-Popover-dropdown, .mantine-Menu-dropdown {
-  background-color: var(--vh-surface);
-  border: 1px solid var(--vh-border);
-}
+.mantine-Modal-content, .mantine-Drawer-content { background-color: var(--vh-surface); border: 1px solid var(--vh-border); }
+.mantine-Popover-dropdown, .mantine-Menu-dropdown, .mantine-Combobox-dropdown { background-color: var(--vh-surface); border: 1px solid var(--vh-border); box-shadow: var(--mantine-shadow-md); }
+.mantine-Notification-root { background-color: var(--vh-surface); border-color: var(--vh-border); }
 
-.mono { font-family: var(--mantine-font-family-monospace); }
+.vh-eyebrow { font-size: 12px; font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--vh-text-soft); }
 
-/* Utility: small label used above stats and sections. */
-.vh-eyebrow {
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--vh-text-soft);
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

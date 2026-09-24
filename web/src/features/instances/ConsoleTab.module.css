@@ -15,7 +15,7 @@
   background-color: var(--vh-surface-2);
 }
 [data-mantine-color-scheme='dark'] .screen {
-  background-color: var(--vh-sidebar);
+  background-color: var(--vh-bg);
 }
 .promptRow {
   display: flex;
