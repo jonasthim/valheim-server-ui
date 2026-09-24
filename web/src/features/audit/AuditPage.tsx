@@ -6,7 +6,7 @@ import { IconHistory, IconSearch } from '@tabler/icons-react'
 import { api } from '../../api/client'
 import type { AuditEntry } from '../../api/types'
 import { fmtTime } from '../../lib/format'
-import { Dash, DataTable, EmptyState, LoadError, PageHeader, SectionCard } from '../../ui'
+import { Dash, DataTable, EmptyState, LoadError, PageHeader, SectionCard, Toolbar, TOOLBAR_INPUT_WIDTH } from '../../ui'
 import type { DataTableColumn } from '../../ui'
 
 interface AuditResponse {
@@ -164,26 +164,33 @@ export function AuditPage() {
     <Stack gap="lg">
       <PageHeader eyebrow="Administration" title="Audit log" description="Every action taken through this UI, newest first." />
 
-      <Group gap="sm" wrap="wrap">
-        <TextInput
-          placeholder="Filter by instance id"
-          leftSection={<IconSearch size={14} />}
-          value={instance}
-          onChange={(e) => setInstance(e.currentTarget.value)}
-          w={220}
-          aria-label="Filter by instance id"
-        />
-        <TextInput
-          placeholder="Filter by username"
-          leftSection={<IconSearch size={14} />}
-          value={username}
-          onChange={(e) => setUsername(e.currentTarget.value)}
-          w={220}
-          aria-label="Filter by username"
-        />
-      </Group>
-
       <SectionCard flush>
+        <Toolbar
+          canClear={instance !== '' || username !== ''}
+          onClear={() => {
+            setInstance('')
+            setUsername('')
+          }}
+        >
+          <TextInput
+            placeholder="Filter by instance id"
+            leftSection={<IconSearch size={14} />}
+            value={instance}
+            onChange={(e) => setInstance(e.currentTarget.value)}
+            size="sm"
+            w={TOOLBAR_INPUT_WIDTH}
+            aria-label="Filter by instance id"
+          />
+          <TextInput
+            placeholder="Filter by username"
+            leftSection={<IconSearch size={14} />}
+            value={username}
+            onChange={(e) => setUsername(e.currentTarget.value)}
+            size="sm"
+            w={TOOLBAR_INPUT_WIDTH}
+            aria-label="Filter by username"
+          />
+        </Toolbar>
         <DataTable
           columns={columns}
           rows={entries}

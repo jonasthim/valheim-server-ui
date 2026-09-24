@@ -8,7 +8,7 @@ import { IconEye, IconListCheck, IconSearch, IconX } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtTime } from '../../lib/format'
 import type { Job, JobStatus } from '../../api/types'
-import { Dash, DataTable, EmptyState, LoadError, PageHeader, SectionCard, StatusPill } from '../../ui'
+import { Dash, DataTable, EmptyState, LoadError, PageHeader, SectionCard, StatusPill, Toolbar, TOOLBAR_INPUT_WIDTH } from '../../ui'
 import type { DataTableColumn } from '../../ui'
 import { useJobs, useCancelJob } from './useJobs'
 import { jobStatusColor, jobTypeLabel, jobDuration, isJobCancellable, jobInstancePath } from './jobHelpers'
@@ -123,26 +123,33 @@ function JobsPageContent() {
     <Stack gap="lg">
       <PageHeader eyebrow="Servers" title="Jobs" description="Background work across every instance — installs, backups, mods and more." />
 
-      <Group gap="sm" wrap="wrap">
-        <TextInput
-          label="Instance"
-          placeholder="Filter by instance id"
-          leftSection={<IconSearch size={14} />}
-          value={instanceFilter}
-          onChange={(e) => setInstanceFilter(e.currentTarget.value)}
-          w={220}
-        />
-        <Select
-          label="Status"
-          data={STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
-          value={statusFilter}
-          onChange={(v) => setStatusFilter((v as JobStatus | '') ?? '')}
-          w={180}
-          clearable={false}
-        />
-      </Group>
-
       <SectionCard flush>
+        <Toolbar
+          canClear={instanceFilter !== '' || statusFilter !== ''}
+          onClear={() => {
+            setInstanceFilter('')
+            setStatusFilter('')
+          }}
+        >
+          <TextInput
+            aria-label="Instance"
+            placeholder="Filter by instance id"
+            leftSection={<IconSearch size={14} />}
+            value={instanceFilter}
+            onChange={(e) => setInstanceFilter(e.currentTarget.value)}
+            size="sm"
+            w={TOOLBAR_INPUT_WIDTH}
+          />
+          <Select
+            aria-label="Status"
+            data={STATUS_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+            value={statusFilter}
+            onChange={(v) => setStatusFilter((v as JobStatus | '') ?? '')}
+            size="sm"
+            w={TOOLBAR_INPUT_WIDTH}
+            clearable={false}
+          />
+        </Toolbar>
         <DataTable
           columns={columns}
           rows={jobs}
