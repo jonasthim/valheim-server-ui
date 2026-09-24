@@ -59,7 +59,8 @@ test.describe.serial('instance lifecycle with the fake game server', () => {
     await expect(page.getByText(/saved|updated/i).first()).toBeVisible()
 
     await page.goto('/instances/main/players')
-    await page.getByRole('tab', { name: /banned/i }).click()
+    await page.getByRole('radiogroup', { name: 'Player list' }).getByText('Banned', { exact: true }).click()
+    await expect(page).toHaveURL(/list=banned/)
     await page.getByPlaceholder(/platform id/i).first().fill('76561198000000099')
     await page.getByPlaceholder(/comment/i).first().fill('griefer')
     await page.getByRole('button', { name: /^add$/i }).first().click()
