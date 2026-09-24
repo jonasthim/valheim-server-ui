@@ -1,6 +1,7 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { Center, Loader } from '@mantine/core'
 import { useAuth } from './useAuth'
+import { ForbiddenPage } from '../features/system'
 import type { Role } from '../api/types'
 
 /** Redirects to /setup while no users exist, to /login when unauthenticated. */
@@ -21,6 +22,6 @@ export function RequireAuth() {
 
 export function RequireRole({ min }: { min: Role }) {
   const { hasRole } = useAuth()
-  if (!hasRole(min)) return <Navigate to="/" replace />
+  if (!hasRole(min)) return <ForbiddenPage required={min} />
   return <Outlet />
 }

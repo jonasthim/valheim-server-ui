@@ -23,6 +23,14 @@ export async function login(page: Page) {
   await expect(page).toHaveURL(/\/$/)
 }
 
+export async function loginAs(page: Page, username: string, password: string) {
+  await page.goto('/login')
+  await page.getByLabel(/username/i).fill(username)
+  await page.getByRole('textbox', { name: 'Password' }).fill(password)
+  await page.getByRole('button', { name: /log in|sign in/i }).click()
+  await expect(page).toHaveURL(/\/$/)
+}
+
 export async function createInstance(
   page: Page,
   opts: { id: string; name: string; serverName: string; world: string; port: number; crossplay?: boolean },

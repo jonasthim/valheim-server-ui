@@ -11,6 +11,8 @@ import { LifecycleControls } from './LifecycleControls'
 import { PendingRestartBanner } from './PendingRestartBanner'
 import classes from './InstancePage.module.css'
 import { pageTitle } from '../../lib/title'
+import { ApiError } from '../../api/client'
+import { NotFoundPage } from '../system'
 // Tab panels are code-split; keepMounted={false} means each loads on first
 // visit, behind the Suspense boundary around the panels below.
 const OverviewTab = lazy(() => import('./OverviewTab').then((m) => ({ default: m.OverviewTab })))
@@ -42,7 +44,10 @@ export function InstancePage() {
   const state = status?.state
   const config = inst.data?.config
 
+  if (!isInstanceTab(tab)) return <NotFoundPage />
+
   if (inst.isError) {
+    if (inst.error instanceof ApiError && inst.error.status === 404) return <NotFoundPage />
     return (
       <Stack>
         <PageHeader eyebrow={`Instance ${id}`} title={id} />

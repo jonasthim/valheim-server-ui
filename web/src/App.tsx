@@ -5,6 +5,7 @@ import { Shell } from './layout/Shell'
 import { RouteErrorPage } from './layout/RouteErrorPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { SetupPage } from './features/auth/SetupPage'
+import { NotFoundPage } from './features/system'
 
 // Route-level pages are code-split: each loads on first navigation, behind the
 // Suspense boundary in Shell. LoginPage/SetupPage stay eager (first paint).
@@ -38,7 +39,7 @@ const router = createBrowserRouter(
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/audit" element={<AuditPage />} />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>
     </Route>,

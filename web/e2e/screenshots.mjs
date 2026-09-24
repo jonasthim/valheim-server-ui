@@ -215,6 +215,7 @@ async function main() {
     ['settings', '/settings'],
     ['audit', '/audit'],
     ['account', '/account'],
+    ['not-found', '/this-page-does-not-exist'],
   ]
   async function shot(name, p) {
     await page.goto(`${base}${p}`, { waitUntil: 'networkidle' })
