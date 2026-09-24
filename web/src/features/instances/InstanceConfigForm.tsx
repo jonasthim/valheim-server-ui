@@ -1,5 +1,6 @@
 // Shared InstanceConfig form used by CreateInstancePage (POST /instances) and
-// ConfigTab (PATCH /instances/{id}). Owns the @mantine/form instance so both
+// ConfigTab (PATCH /instances/{id}). Renders the fields for the
+// @mantine/form instance the page obtains from useInstanceConfigForm, so both
 // callers get identical fields/validation; the caller only sees the resolved
 // InstanceConfig on submit, never the form's internal (string-based) shape.
 import { useState } from 'react'
@@ -19,15 +20,13 @@ import {
   TagsInput,
   TextInput,
 } from '@mantine/core'
-import { useForm } from '@mantine/form'
-import type { BackupKind, InstanceConfig, Modifiers, RemoteBackupConfig } from '../../api/types'
+import type { BackupKind, Modifiers } from '../../api/types'
 import { SectionCard } from '../../ui'
 import { BACKUP_KIND_LABELS } from './backups/constants'
 import { useBackupTargets } from './backups/useBackups'
-import { INSTANCE_ID_PATTERN, WORLD_NAME_PATTERN, slugify } from './instanceHelpers'
+import { slugify } from './instanceHelpers'
+import type { FormHelpers, InstanceConfigFormApi, InstanceConfigFormSubmit } from './useInstanceConfigForm'
 import classes from './InstanceConfigForm.module.css'
-
-const DEFAULT_REMOTE_BACKUP_KINDS: BackupKind[] = ['manual', 'scheduled']
 
 const REMOTE_BACKUP_KIND_OPTIONS: { value: BackupKind; label: string }[] = (
   Object.keys(BACKUP_KIND_LABELS) as BackupKind[]
@@ -35,137 +34,12 @@ const REMOTE_BACKUP_KIND_OPTIONS: { value: BackupKind; label: string }[] = (
 
 type ModifierKey = keyof Modifiers
 
-interface ModifiersFormValues {
-  combat: string
-  deathpenalty: string
-  resources: string
-  raids: string
-  portals: string
-}
-
-interface ConfigFormValues {
-  name: string
-  world: string
-  password: string
-  port: number
-  public: boolean
-  crossplay: boolean
-  preset: string
-  modifiers: ModifiersFormValues
-  setkeys: string[]
-  save_interval_sec: number
-  game_backups: number
-  game_backup_short_sec: number
-  game_backup_long_sec: number
-  extra_args: string[]
-  bepinex_enabled: boolean
-  backup_keep_last: number
-  backup_keep_days: number
-  backup_before_update: boolean
-  remote_backup_target_id: string
-  remote_backup_kinds: BackupKind[]
-}
-
-interface FormValues {
-  id: string
-  name: string
-  config: ConfigFormValues
-  autostart: boolean
-  install: boolean
-}
-
-export interface InstanceConfigFormInitial {
-  id?: string
-  name: string
-  config: InstanceConfig
-  autostart: boolean
-}
-
-export interface InstanceConfigFormSubmit {
-  id: string
-  name: string
-  config: InstanceConfig
-  autostart: boolean
-  install: boolean
-}
-
-export interface FormHelpers {
-  setErrors: (errors: Record<string, string>) => void
-}
-
 export interface InstanceConfigFormProps {
-  mode: 'create' | 'edit'
-  initial: InstanceConfigFormInitial
-  /** True when config.password came back masked ("********") — keep it read-only until unlocked. */
-  passwordMasked?: boolean
-  /** Disable every field and hide the submit button (viewer looking at ConfigTab). */
+  api: InstanceConfigFormApi
+  formId: string
+  /** Disable every field (viewer looking at ConfigTab); the save control lives outside this form. */
   readOnly?: boolean
-  submitting?: boolean
-  submitLabel: string
   onSubmit: (values: InstanceConfigFormSubmit, helpers: FormHelpers) => void
-}
-
-function configToForm(config: InstanceConfig): ConfigFormValues {
-  const m = config.modifiers ?? {}
-  return {
-    name: config.name,
-    world: config.world,
-    password: config.password,
-    port: config.port,
-    public: config.public,
-    crossplay: config.crossplay,
-    preset: config.preset ?? '',
-    modifiers: {
-      combat: m.combat ?? '',
-      deathpenalty: m.deathpenalty ?? '',
-      resources: m.resources ?? '',
-      raids: m.raids ?? '',
-      portals: m.portals ?? '',
-    },
-    setkeys: config.setkeys ?? [],
-    save_interval_sec: config.save_interval_sec,
-    game_backups: config.game_backups,
-    game_backup_short_sec: config.game_backup_short_sec,
-    game_backup_long_sec: config.game_backup_long_sec,
-    extra_args: config.extra_args ?? [],
-    bepinex_enabled: config.bepinex_enabled,
-    backup_keep_last: config.backup_keep_last,
-    backup_keep_days: config.backup_keep_days,
-    backup_before_update: config.backup_before_update,
-    remote_backup_target_id: config.remote_backup?.target_id ?? '',
-    remote_backup_kinds: config.remote_backup?.kinds ?? DEFAULT_REMOTE_BACKUP_KINDS,
-  }
-}
-
-function formToConfig(v: ConfigFormValues): InstanceConfig {
-  const modifiers: Modifiers = {}
-  ;(Object.keys(v.modifiers) as ModifierKey[]).forEach((key) => {
-    const value = v.modifiers[key]
-    if (value) (modifiers as Record<ModifierKey, string>)[key] = value
-  })
-  return {
-    name: v.name,
-    world: v.world,
-    password: v.password,
-    port: v.port,
-    public: v.public,
-    crossplay: v.crossplay,
-    preset: (v.preset || '') as InstanceConfig['preset'],
-    modifiers,
-    setkeys: v.setkeys as InstanceConfig['setkeys'],
-    save_interval_sec: v.save_interval_sec,
-    game_backups: v.game_backups,
-    game_backup_short_sec: v.game_backup_short_sec,
-    game_backup_long_sec: v.game_backup_long_sec,
-    extra_args: v.extra_args,
-    bepinex_enabled: v.bepinex_enabled,
-    backup_keep_last: v.backup_keep_last,
-    backup_keep_days: v.backup_keep_days,
-    backup_before_update: v.backup_before_update,
-    remote_backup: v.remote_backup_target_id
-      ? ({ target_id: v.remote_backup_target_id, kinds: v.remote_backup_kinds } satisfies RemoteBackupConfig)
-      : undefined,
-  }
 }
 
 const PRESET_OPTIONS = [
@@ -268,68 +142,27 @@ function presetLabel(value: string) {
   return PRESET_OPTIONS.find((o) => o.value === value)?.label ?? value
 }
 
-export function InstanceConfigForm({
-  mode,
-  initial,
-  passwordMasked = false,
-  readOnly = false,
-  submitting = false,
-  submitLabel,
-  onSubmit,
-}: InstanceConfigFormProps) {
-  const [idTouched, setIdTouched] = useState(mode === 'edit')
-  const [passwordUnlocked, setPasswordUnlocked] = useState(!passwordMasked)
+export function InstanceConfigForm({ api, formId, readOnly = false, onSubmit }: InstanceConfigFormProps) {
+  const [idTouched, setIdTouched] = useState(api.mode === 'edit')
   const targetsQ = useBackupTargets()
   const targetOptions = [
     { value: '', label: 'None' },
     ...(targetsQ.data ?? []).map((t) => ({ value: t.id, label: t.name })),
   ]
 
-  const form = useForm<FormValues>({
-    initialValues: {
-      id: initial.id ?? '',
-      name: initial.name,
-      config: configToForm(initial.config),
-      autostart: initial.autostart,
-      install: true,
-    },
-    validate: {
-      id: (v) => (mode === 'create' && !INSTANCE_ID_PATTERN.test(v) ? 'Lowercase letters, digits and "-", starting with a letter or digit, up to 32 characters' : null),
-      name: (v) => (v.trim().length > 0 && v.length <= 64 ? null : 'Required, up to 64 characters'),
-      config: {
-        name: (v) => (v.trim().length > 0 && v.length <= 64 ? null : 'Required, up to 64 characters'),
-        world: (v) => (WORLD_NAME_PATTERN.test(v) ? null : 'Letters, digits, spaces, "_" or "-", 1-32 characters'),
-        password: (v, values) => {
-          if (passwordMasked && !passwordUnlocked) return null
-          if (v.length < 5 || v.length > 32) return '5-32 characters'
-          if (values.config.name && v && values.config.name.toLowerCase().includes(v.toLowerCase())) {
-            return 'Must not be contained in the server name'
-          }
-          return null
-        },
-        port: (v) => (Number.isInteger(v) && v >= 1024 && v <= 65000 ? null : 'Between 1024 and 65000'),
-      },
-    },
-  })
-
   function handleNameChange(value: string) {
-    form.setFieldValue('name', value)
-    if (mode === 'create' && !idTouched) form.setFieldValue('id', slugify(value))
-  }
-
-  function handleSubmit(values: FormValues) {
-    const password = passwordMasked && !passwordUnlocked ? initial.config.password : values.config.password
-    const config = formToConfig({ ...values.config, password })
-    onSubmit(
-      { id: values.id, name: values.name, config, autostart: values.autostart, install: values.install },
-      { setErrors: (errors) => form.setErrors(errors) },
-    )
+    api.form.setFieldValue('name', value)
+    if (api.mode === 'create' && !idTouched) api.form.setFieldValue('id', slugify(value))
   }
 
   return (
-    <form onSubmit={form.onSubmit(handleSubmit)}>
+    <form
+      id={formId}
+      onSubmit={api.form.onSubmit((v) => onSubmit(api.toSubmit(v), { setErrors: (e) => api.form.setErrors(e) }))}
+      className={classes.form}
+    >
       <fieldset disabled={readOnly} style={{ border: 0, padding: 0, margin: 0 }}>
-        <Stack gap="lg">
+        <Stack gap="md">
           <SectionCard title="Server" description="Identity, in-game name and network port.">
             <Stack gap="sm">
               <SimpleGrid cols={{ base: 1, sm: 2 }} className={classes.inputRow}>
@@ -337,18 +170,18 @@ export function InstanceConfigForm({
                   label="Display name"
                   description="Shown in this UI"
                   required
-                  {...form.getInputProps('name')}
+                  {...api.form.getInputProps('name')}
                   onChange={(e) => handleNameChange(e.currentTarget.value)}
                 />
                 <TextInput
                   label="Instance ID"
-                  description={mode === 'create' ? 'Used in URLs and file paths; cannot be changed later' : 'Cannot be changed'}
+                  description={api.mode === 'create' ? 'Used in URLs and file paths; cannot be changed later' : 'Cannot be changed'}
                   required
-                  disabled={mode === 'edit'}
-                  {...form.getInputProps('id')}
+                  disabled={api.mode === 'edit'}
+                  {...api.form.getInputProps('id')}
                   onChange={(e) => {
                     setIdTouched(true)
-                    form.setFieldValue('id', e.currentTarget.value)
+                    api.form.setFieldValue('id', e.currentTarget.value)
                   }}
                 />
               </SimpleGrid>
@@ -356,17 +189,17 @@ export function InstanceConfigForm({
                 label="Server name"
                 description="Shown to players in the server browser"
                 required
-                {...form.getInputProps('config.name')}
+                {...api.form.getInputProps('config.name')}
               />
               <SimpleGrid cols={{ base: 1, sm: 2 }} className={classes.inputRow}>
-                <TextInput label="World name" required {...form.getInputProps('config.world')} />
+                <TextInput label="World name" required {...api.form.getInputProps('config.world')} />
                 <NumberInput
                   label="Port"
                   description="Uses port, port+1 and port+2 UDP"
                   required
                   min={1024}
                   max={65000}
-                  {...form.getInputProps('config.port')}
+                  {...api.form.getInputProps('config.port')}
                 />
               </SimpleGrid>
             </Stack>
@@ -374,7 +207,7 @@ export function InstanceConfigForm({
 
           <SectionCard title="Access & visibility" description="Who can find and join this server.">
             <Stack gap="sm">
-              {passwordMasked && !passwordUnlocked ? (
+              {api.passwordMasked && !api.passwordUnlocked ? (
                 <Group align="flex-end" gap="sm">
                   <PasswordInput
                     label="Password"
@@ -383,7 +216,7 @@ export function InstanceConfigForm({
                     readOnly
                     style={{ flex: 1 }}
                   />
-                  <Button variant="light" onClick={() => setPasswordUnlocked(true)}>
+                  <Button variant="light" onClick={api.unlockPassword}>
                     Change password
                   </Button>
                 </Group>
@@ -392,22 +225,22 @@ export function InstanceConfigForm({
                   label="Password"
                   description="5-32 characters, not contained in the server name"
                   required
-                  {...form.getInputProps('config.password')}
+                  {...api.form.getInputProps('config.password')}
                 />
               )}
               <Group>
-                <Switch label="Public" description="List on the community server list" {...form.getInputProps('config.public', { type: 'checkbox' })} />
-                <Switch label="Crossplay" description="Allow non-Steam platforms" {...form.getInputProps('config.crossplay', { type: 'checkbox' })} />
+                <Switch label="Public" description="List on the community server list" {...api.form.getInputProps('config.public', { type: 'checkbox' })} />
+                <Switch label="Crossplay" description="Allow non-Steam platforms" {...api.form.getInputProps('config.crossplay', { type: 'checkbox' })} />
               </Group>
             </Stack>
           </SectionCard>
 
           <SectionCard title="World rules" description="Difficulty preset and per-rule overrides.">
             <Stack gap="sm">
-              <Select label="Preset" data={PRESET_OPTIONS} {...form.getInputProps('config.preset')} />
+              <Select label="Preset" data={PRESET_OPTIONS} {...api.form.getInputProps('config.preset')} />
               <Text size="xs" c="dimmed">
-                {presetOverridesRules(form.values.config.preset)
-                  ? `Rules left on "From preset" use the ${presetLabel(form.values.config.preset)} preset's values; pick a value to override just that rule.`
+                {presetOverridesRules(api.form.values.config.preset)
+                  ? `Rules left on "From preset" use the ${presetLabel(api.form.values.config.preset)} preset's values; pick a value to override just that rule.`
                   : 'Every rule runs at Normal unless you pick another value.'}
               </Text>
               <SimpleGrid cols={{ base: 1, sm: 3 }} className={classes.inputRow}>
@@ -415,15 +248,15 @@ export function InstanceConfigForm({
                   <Select
                     key={f.key}
                     label={f.label}
-                    data={selectData(f.options, presetOverridesRules(form.values.config.preset))}
-                    {...form.getInputProps(`config.modifiers.${f.key}`)}
+                    data={selectData(f.options, presetOverridesRules(api.form.values.config.preset))}
+                    {...api.form.getInputProps(`config.modifiers.${f.key}`)}
                   />
                 ))}
               </SimpleGrid>
               <Checkbox.Group
                 label="World keys"
-                value={form.values.config.setkeys}
-                onChange={(v) => form.setFieldValue('config.setkeys', v)}
+                value={api.form.values.config.setkeys}
+                onChange={(v) => api.form.setFieldValue('config.setkeys', v)}
               >
                 <SimpleGrid cols={{ base: 1, sm: 2 }} mt="xs">
                   {SETKEY_OPTIONS.map((o) => (
@@ -437,16 +270,16 @@ export function InstanceConfigForm({
           <SectionCard title="Saves & backups" description="Save cadence and how many copies are kept.">
             <Stack gap="sm">
               <SimpleGrid cols={{ base: 1, sm: 2 }} className={classes.inputRow}>
-                <NumberInput label="Save interval (sec)" min={60} {...form.getInputProps('config.save_interval_sec')} />
-                <NumberInput label="Game backups to keep (Valheim's own)" min={0} {...form.getInputProps('config.game_backups')} />
-                <NumberInput label="Short backup interval (sec)" min={60} {...form.getInputProps('config.game_backup_short_sec')} />
-                <NumberInput label="Long backup interval (sec)" min={60} {...form.getInputProps('config.game_backup_long_sec')} />
-                <NumberInput label="Manager backups: keep last" min={0} {...form.getInputProps('config.backup_keep_last')} />
-                <NumberInput label="Manager backups: keep days" min={0} {...form.getInputProps('config.backup_keep_days')} />
+                <NumberInput label="Save interval (sec)" min={60} {...api.form.getInputProps('config.save_interval_sec')} />
+                <NumberInput label="Game backups to keep (Valheim's own)" min={0} {...api.form.getInputProps('config.game_backups')} />
+                <NumberInput label="Short backup interval (sec)" min={60} {...api.form.getInputProps('config.game_backup_short_sec')} />
+                <NumberInput label="Long backup interval (sec)" min={60} {...api.form.getInputProps('config.game_backup_long_sec')} />
+                <NumberInput label="Manager backups: keep last" min={0} {...api.form.getInputProps('config.backup_keep_last')} />
+                <NumberInput label="Manager backups: keep days" min={0} {...api.form.getInputProps('config.backup_keep_days')} />
               </SimpleGrid>
               <Switch
                 label="Back up before updating"
-                {...form.getInputProps('config.backup_before_update', { type: 'checkbox' })}
+                {...api.form.getInputProps('config.backup_before_update', { type: 'checkbox' })}
               />
 
               <Divider label="Off-site copy" labelPosition="left" />
@@ -455,13 +288,13 @@ export function InstanceConfigForm({
                 description="Copy backups here after they are created; configured by an admin in Settings"
                 data={targetOptions}
                 allowDeselect={false}
-                {...form.getInputProps('config.remote_backup_target_id')}
+                {...api.form.getInputProps('config.remote_backup_target_id')}
               />
-              {form.values.config.remote_backup_target_id && (
+              {api.form.values.config.remote_backup_target_id && (
                 <Checkbox.Group
                   label="Copy these backups"
-                  value={form.values.config.remote_backup_kinds}
-                  onChange={(v) => form.setFieldValue('config.remote_backup_kinds', v as BackupKind[])}
+                  value={api.form.values.config.remote_backup_kinds}
+                  onChange={(v) => api.form.setFieldValue('config.remote_backup_kinds', v as BackupKind[])}
                 >
                   <SimpleGrid cols={{ base: 1, sm: 3 }} mt="xs">
                     {REMOTE_BACKUP_KIND_OPTIONS.map((o) => (
@@ -483,27 +316,27 @@ export function InstanceConfigForm({
                       label="Extra launch arguments"
                       description="Passed verbatim after the generated arguments"
                       placeholder="Type and press Enter"
-                      {...form.getInputProps('config.extra_args')}
+                      {...api.form.getInputProps('config.extra_args')}
                     />
                     <Switch
                       label="BepInEx enabled"
                       description="Only takes effect once BepInEx is installed from the Mods tab"
-                      {...form.getInputProps('config.bepinex_enabled', { type: 'checkbox' })}
+                      {...api.form.getInputProps('config.bepinex_enabled', { type: 'checkbox' })}
                     />
                     {/* Create-only: an existing instance toggles autostart
                         immediately from the Overview tab instead. */}
-                    {mode === 'create' && (
+                    {api.mode === 'create' && (
                       <Switch
                         label="Autostart"
                         description="Start this instance automatically when the manager starts"
-                        {...form.getInputProps('autostart', { type: 'checkbox' })}
+                        {...api.form.getInputProps('autostart', { type: 'checkbox' })}
                       />
                     )}
-                    {mode === 'create' && (
+                    {api.mode === 'create' && (
                       <Checkbox
                         label="Download game files now"
                         description="Uncheck to create the instance without installing it yet"
-                        {...form.getInputProps('install', { type: 'checkbox' })}
+                        {...api.form.getInputProps('install', { type: 'checkbox' })}
                       />
                     )}
                   </Stack>
@@ -511,19 +344,6 @@ export function InstanceConfigForm({
               </Accordion.Item>
             </Accordion>
           </SectionCard>
-
-          {!readOnly && (
-            <Group justify="flex-end" className={classes.submitBar}>
-              <Button type="submit" loading={submitting}>
-                {submitLabel}
-              </Button>
-            </Group>
-          )}
-          {readOnly && (
-            <Text c="dimmed" size="sm">
-              You have read-only access to this configuration.
-            </Text>
-          )}
         </Stack>
       </fieldset>
     </form>

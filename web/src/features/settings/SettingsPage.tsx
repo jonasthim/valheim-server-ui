@@ -29,6 +29,7 @@ import { fmtAgo } from '../../lib/format'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { PageHeader, SectionCard, LoadError } from '../../ui'
 import { ReleaseNotesModal, useCheckAppUpdate, useSystemInfo, useUpgradeAppAction } from '../system'
+import { FormFooter } from '../instances/FormFooter'
 import { BackupTargetsCard } from './BackupTargetsCard'
 import { NotificationsCard } from './NotificationsCard'
 import { DEFAULT_ROLE_OPTIONS } from './options'
@@ -86,7 +87,10 @@ export function SettingsPage() {
   const canAdmin = hasRole('admin')
 
   useEffect(() => {
-    if (settingsQ.data) form.setValues(settingsQ.data)
+    if (settingsQ.data) {
+      form.setValues(settingsQ.data)
+      form.resetDirty(settingsQ.data)
+    }
     // Re-sync whenever the server copy changes (initial load, or after a save);
     // deliberately not depending on `form` to avoid re-running every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -127,7 +131,7 @@ export function SettingsPage() {
 
   if (settingsQ.isLoading) {
     return (
-      <Stack gap="lg" maw={760}>
+      <Stack gap="lg" maw={720}>
         <Skeleton height={40} width={220} />
         <Skeleton height={260} />
         <Skeleton height={100} />
@@ -138,7 +142,7 @@ export function SettingsPage() {
   // Save would overwrite the real settings with defaults.
   if (settingsQ.isError) {
     return (
-      <Stack gap="lg" maw={760}>
+      <Stack gap="lg" maw={720}>
         <PageHeader eyebrow="Administration" title="Settings" description="Application, update and sign-in configuration." />
         <LoadError error={settingsQ.error} title="Could not load settings" onRetry={() => settingsQ.refetch()} />
       </Stack>
@@ -150,11 +154,11 @@ export function SettingsPage() {
   const redirectUri = oidc.redirect_uri || ''
 
   return (
-    <Stack gap="lg" maw={760}>
+    <Stack gap="lg" maw={720}>
       <PageHeader eyebrow="Administration" title="Settings" description="Application, update and sign-in configuration." />
 
-      <form onSubmit={form.onSubmit((values) => saveMutation.mutate(values))}>
-        <Stack gap="lg">
+      <form id="settings-form" onSubmit={form.onSubmit((values) => saveMutation.mutate(values))}>
+        <Stack gap="md">
           <SectionCard title="Authentication">
             <Stack gap="md">
               <Switch
@@ -393,14 +397,10 @@ export function SettingsPage() {
               )}
             </Stack>
           </SectionCard>
-
-          <Group justify="flex-end">
-            <Button type="submit" loading={saveMutation.isPending}>
-              Save settings
-            </Button>
-          </Group>
         </Stack>
       </form>
+
+      <FormFooter formId="settings-form" submitLabel="Save settings" submitting={saveMutation.isPending} />
 
       {systemQ.data?.app_update && (
         <ReleaseNotesModal opened={notesOpen} onClose={() => setNotesOpen(false)} appUpdate={systemQ.data.app_update} />

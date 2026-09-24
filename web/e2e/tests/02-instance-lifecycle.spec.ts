@@ -54,7 +54,8 @@ test.describe.serial('instance lifecycle with the fake game server', () => {
     await page.goto('/instances/main/config')
     const serverName = page.getByLabel(/server name/i)
     await serverName.fill('E2E Server Renamed')
-    await page.getByRole('button', { name: /save/i }).first().click()
+    await expect(page.getByRole('button', { name: 'Save changes' })).toHaveAttribute('form', 'instance-config-form')
+    await page.getByRole('button', { name: 'Save changes' }).click()
     await expect(page.getByText(/saved|updated/i).first()).toBeVisible()
 
     await page.goto('/instances/main/players')

@@ -9,7 +9,9 @@ import { notifyError, notifySuccess } from '../../lib/notify'
 import { SectionCard } from '../../ui'
 import classes from './ConfigTab.module.css'
 import { useInstance } from './useInstance'
-import { InstanceConfigForm, type InstanceConfigFormSubmit } from './InstanceConfigForm'
+import { FormFooter } from './FormFooter'
+import { InstanceConfigForm } from './InstanceConfigForm'
+import { useInstanceConfigForm, type InstanceConfigFormSubmit } from './useInstanceConfigForm'
 import { mapConfigFieldErrors } from './instanceHelpers'
 import { DeleteInstanceModal } from './DeleteInstanceModal'
 
@@ -17,12 +19,9 @@ import { DeleteInstanceModal } from './DeleteInstanceModal'
 export function ConfigTab({ id }: { id: string }) {
   const { hasRole } = useAuth()
   const navigate = useNavigate()
-  const qc = useQueryClient()
   const inst = useInstance(id)
-  const [submitting, setSubmitting] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
 
-  const canEdit = hasRole('operator')
   const canDelete = hasRole('admin')
 
   if (inst.isLoading) {
@@ -39,7 +38,47 @@ export function ConfigTab({ id }: { id: string }) {
   }
 
   const instance = inst.data
+
+  return (
+    <Stack>
+      {/* Own component so useInstanceConfigForm (a hook) only runs once
+          instance data exists — keeps this component's hook order stable
+          across the loading/not-found early returns above. */}
+      <ConfigTabBody key={id} id={id} instance={instance} />
+
+      {canDelete && (
+        <SectionCard title="Danger zone" description="Permanently delete this instance. Optionally remove its files too." className={classes.dangerCard}>
+          <Group justify="flex-end">
+            <Button color="red" variant="outline" onClick={() => setDeleteOpen(true)}>
+              Delete instance
+            </Button>
+          </Group>
+        </SectionCard>
+      )}
+
+      <DeleteInstanceModal
+        id={id}
+        name={instance.name}
+        opened={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        onDeleted={() => navigate('/')}
+      />
+    </Stack>
+  )
+}
+
+function ConfigTabBody({ id, instance }: { id: string; instance: Instance }) {
+  const { hasRole } = useAuth()
+  const qc = useQueryClient()
+  const [submitting, setSubmitting] = useState(false)
+  const canEdit = hasRole('operator')
   const passwordMasked = instance.config.password === '********'
+
+  const formApi = useInstanceConfigForm({
+    mode: 'edit',
+    initial: { id: instance.id, name: instance.name, config: instance.config, autostart: instance.status.autostart },
+    passwordMasked,
+  })
 
   async function handleSubmit(values: InstanceConfigFormSubmit, helpers: { setErrors: (e: Record<string, string>) => void }) {
     setSubmitting(true)
@@ -73,34 +112,15 @@ export function ConfigTab({ id }: { id: string }) {
   }
 
   return (
-    <Stack>
-      <InstanceConfigForm
-        mode="edit"
-        initial={{ id: instance.id, name: instance.name, config: instance.config, autostart: instance.status.autostart }}
-        passwordMasked={passwordMasked}
-        readOnly={!canEdit}
-        submitting={submitting}
-        submitLabel="Save changes"
-        onSubmit={handleSubmit}
-      />
-
-      {canDelete && (
-        <SectionCard title="Danger zone" description="Permanently delete this instance. Optionally remove its files too." className={classes.dangerCard}>
-          <Group justify="flex-end">
-            <Button color="red" variant="outline" onClick={() => setDeleteOpen(true)}>
-              Delete instance
-            </Button>
-          </Group>
-        </SectionCard>
+    <>
+      <InstanceConfigForm api={formApi} formId="instance-config-form" readOnly={!canEdit} onSubmit={handleSubmit} />
+      {canEdit ? (
+        <FormFooter formId="instance-config-form" submitLabel="Save changes" submitting={submitting} />
+      ) : (
+        <Text c="dimmed" size="sm">
+          You have read-only access to this configuration.
+        </Text>
       )}
-
-      <DeleteInstanceModal
-        id={id}
-        name={instance.name}
-        opened={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
-        onDeleted={() => navigate('/')}
-      />
-    </Stack>
+    </>
   )
 }

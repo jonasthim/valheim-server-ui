@@ -29,7 +29,14 @@ export {
   WORLD_NAME_PATTERN,
 } from './instanceHelpers'
 export { InstanceConfigForm } from './InstanceConfigForm'
-export type { InstanceConfigFormInitial, InstanceConfigFormSubmit, FormHelpers } from './InstanceConfigForm'
+export { useInstanceConfigForm } from './useInstanceConfigForm'
+export type {
+  InstanceConfigFormInitial,
+  InstanceConfigFormSubmit,
+  FormHelpers,
+  InstanceConfigFormApi,
+  InstanceConfigFormValues,
+} from './useInstanceConfigForm'
 export { DeleteInstanceModal } from './DeleteInstanceModal'
 export { LifecycleControls } from './LifecycleControls'
 export { CreateInstancePage } from './CreateInstancePage'

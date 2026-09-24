@@ -6,7 +6,9 @@ import type { CreateInstanceRequest, Instance, Job } from '../../api/types'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { PageHeader } from '../../ui'
 import { useJobDrawer } from '../jobs'
-import { InstanceConfigForm, type InstanceConfigFormSubmit } from './InstanceConfigForm'
+import { FormFooter } from './FormFooter'
+import { InstanceConfigForm } from './InstanceConfigForm'
+import { useInstanceConfigForm, type InstanceConfigFormSubmit } from './useInstanceConfigForm'
 import { mapConfigFieldErrors } from './instanceHelpers'
 
 const EMPTY_CONFIG: CreateInstanceRequest['config'] = {
@@ -34,6 +36,9 @@ export function CreateInstancePage() {
   const navigate = useNavigate()
   const { openJob } = useJobDrawer()
   const [submitting, setSubmitting] = useState(false)
+  // Named formApi (not `api`, per the card's pseudo-code) to avoid shadowing
+  // the `api` HTTP client imported above, which handleSubmit below calls.
+  const formApi = useInstanceConfigForm({ mode: 'create', initial: { name: '', config: EMPTY_CONFIG, autostart: false } })
 
   async function handleSubmit(values: InstanceConfigFormSubmit, helpers: { setErrors: (e: Record<string, string>) => void }) {
     setSubmitting(true)
@@ -70,19 +75,14 @@ export function CreateInstancePage() {
   }
 
   return (
-    <Stack gap="xl">
+    <Stack gap="lg">
       <PageHeader
         eyebrow="Instances"
         title="New instance"
         description="Configure and install a new Valheim dedicated server."
       />
-      <InstanceConfigForm
-        mode="create"
-        initial={{ name: '', config: EMPTY_CONFIG, autostart: false }}
-        submitting={submitting}
-        submitLabel="Create instance"
-        onSubmit={handleSubmit}
-      />
+      <InstanceConfigForm api={formApi} formId="instance-config-form" onSubmit={handleSubmit} />
+      <FormFooter formId="instance-config-form" submitLabel="Create instance" submitting={submitting} />
     </Stack>
   )
 }
