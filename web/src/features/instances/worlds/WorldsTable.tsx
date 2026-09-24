@@ -1,11 +1,12 @@
-import { ActionIcon, Badge, Button, Group, Skeleton, Table, Text, Tooltip } from '@mantine/core'
+import { ActionIcon, Badge, Button, Group, Text, Tooltip } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { IconDownload, IconRefreshAlert, IconTrash } from '@tabler/icons-react'
 import { openConfirmWorldAction } from './openConfirmWorldAction'
 import { api } from '../../../api/client'
 import type { World } from '../../../api/types'
 import { fmtAgo, fmtBytes } from '../../../lib/format'
-import { EmptyState } from '../../../ui'
+import { DataTable, EmptyState } from '../../../ui'
+import type { DataTableColumn } from '../../../ui'
 
 export function WorldsTable({
   id,
@@ -59,108 +60,92 @@ export function WorldsTable({
     })
   }
 
-  if (isLoading) {
-    return (
-      <div style={{ padding: 'var(--mantine-spacing-lg)' }}>
-        <Skeleton height={120} />
-      </div>
-    )
-  }
-
-  if (worlds.length === 0) {
-    return (
-      <EmptyState
-        compact
-        title="No worlds found in the save directory yet."
-        description="Upload a world or start the server to create one."
-      />
-    )
-  }
+  const columns: DataTableColumn<World>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      render: (w) => (
+        <Group gap="xs">
+          <Text fw={500}>{w.name}</Text>
+          {w.active && (
+            <Badge color="green" variant="light">
+              Active
+            </Badge>
+          )}
+          {w.has_db === false && w.has_fwl !== false && (
+            <Tooltip
+              multiline
+              w={320}
+              label="Valheim writes the world metadata immediately and the world data at the first save: every save interval (30 min by default) or when the server stops. Until then the world has no data to back up or download."
+            >
+              {/* Focusable with the explanation as its name, so the
+                  tooltip's text is reachable without a pointer. */}
+              <Badge
+                color="yellow"
+                variant="light"
+                style={{ cursor: 'help' }}
+                tabIndex={0}
+                aria-label="Not saved yet: Valheim writes the world data at the first save; until then there is nothing to back up or download."
+              >
+                Not saved yet
+              </Badge>
+            </Tooltip>
+          )}
+          {w.has_fwl === false && (
+            <Badge color="red" variant="light">
+              Missing metadata
+            </Badge>
+          )}
+        </Group>
+      ),
+    },
+    { key: 'size', header: 'Size', render: (w) => fmtBytes(w.size_bytes) },
+    { key: 'modified', header: 'Modified', render: (w) => fmtAgo(w.modified_at) },
+  ]
 
   return (
-    <Table.ScrollContainer minWidth={720}>
-      <Table verticalSpacing="xs" highlightOnHover>
-        <Table.Thead>
-          <Table.Tr>
-            <Table.Th>Name</Table.Th>
-            <Table.Th>Size</Table.Th>
-            <Table.Th>Modified</Table.Th>
-            <Table.Th />
-            <Table.Th />
-          </Table.Tr>
-        </Table.Thead>
-        <Table.Tbody>
-          {worlds.map((w) => (
-            <Table.Tr key={w.name}>
-              <Table.Td>
-                <Group gap="xs">
-                  <Text fw={500}>{w.name}</Text>
-                  {w.active && (
-                    <Badge color="green" variant="light">
-                      Active
-                    </Badge>
-                  )}
-                  {w.has_db === false && w.has_fwl !== false && (
-                    <Tooltip
-                      multiline
-                      w={320}
-                      label="Valheim writes the world metadata immediately and the world data at the first save: every save interval (30 min by default) or when the server stops. Until then the world has no data to back up or download."
+    <DataTable
+      columns={columns}
+      rows={worlds}
+      rowKey={(w) => w.name}
+      loading={isLoading}
+      minWidth={720}
+      empty={
+        <EmptyState
+          compact
+          title="No worlds found in the save directory yet."
+          description="Upload a world or start the server to create one."
+        />
+      }
+      actions={
+        canManage
+          ? (w) => (
+              <Group gap="xs" wrap="nowrap" justify="flex-end">
+                <Tooltip label="Download as zip">
+                  <ActionIcon
+                    component="a"
+                    href={api.url(`/instances/${id}/worlds/${encodeURIComponent(w.name)}/download`)}
+                    variant="subtle"
+                    aria-label={`Download ${w.name}`}
+                  >
+                    <IconDownload size={16} />
+                  </ActionIcon>
+                </Tooltip>
+                {w.active ? (
+                  <Tooltip label="Back up, delete the save files and let Valheim create a new world with a new seed">
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      color="red"
+                      leftSection={<IconRefreshAlert size={14} />}
+                      loading={regeneratePending}
+                      onClick={() => confirmRegenerate(w.name)}
                     >
-                      {/* Focusable with the explanation as its name, so the
-                          tooltip's text is reachable without a pointer. */}
-                      <Badge
-                        color="yellow"
-                        variant="light"
-                        style={{ cursor: 'help' }}
-                        tabIndex={0}
-                        aria-label="Not saved yet: Valheim writes the world data at the first save; until then there is nothing to back up or download."
-                      >
-                        Not saved yet
-                      </Badge>
-                    </Tooltip>
-                  )}
-                  {w.has_fwl === false && (
-                    <Badge color="red" variant="light">
-                      Missing metadata
-                    </Badge>
-                  )}
-                </Group>
-              </Table.Td>
-              <Table.Td>{fmtBytes(w.size_bytes)}</Table.Td>
-              <Table.Td>{fmtAgo(w.modified_at)}</Table.Td>
-              <Table.Td>
-                {canManage && (
-                  <Tooltip label="Download as zip">
-                    <ActionIcon
-                      component="a"
-                      href={api.url(`/instances/${id}/worlds/${encodeURIComponent(w.name)}/download`)}
-                      variant="subtle"
-                      aria-label={`Download ${w.name}`}
-                    >
-                      <IconDownload size={16} />
-                    </ActionIcon>
+                      Regenerate
+                    </Button>
                   </Tooltip>
-                )}
-              </Table.Td>
-              <Table.Td>
-                {canManage && w.active && (
-                  <Group gap="xs" wrap="nowrap" justify="flex-end">
-                    <Tooltip label="Back up, delete the save files and let Valheim create a new world with a new seed">
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        color="red"
-                        leftSection={<IconRefreshAlert size={14} />}
-                        loading={regeneratePending}
-                        onClick={() => confirmRegenerate(w.name)}
-                      >
-                        Regenerate
-                      </Button>
-                    </Tooltip>
-                  </Group>
-                )}
-                {canManage && !w.active && (
-                  <Group gap="xs" wrap="nowrap" justify="flex-end">
+                ) : (
+                  <>
                     <Button size="xs" variant="light" loading={makeActivePending} onClick={() => confirmMakeActive(w.name)}>
                       Make active
                     </Button>
@@ -175,13 +160,12 @@ export function WorldsTable({
                         <IconTrash size={16} />
                       </ActionIcon>
                     </Tooltip>
-                  </Group>
+                  </>
                 )}
-              </Table.Td>
-            </Table.Tr>
-          ))}
-        </Table.Tbody>
-      </Table>
-    </Table.ScrollContainer>
+              </Group>
+            )
+          : undefined
+      }
+    />
   )
 }

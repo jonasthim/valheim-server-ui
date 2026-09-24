@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react'
-import { Anchor, Button, Code, Group, Popover, Skeleton, Stack, Table, Text, TextInput } from '@mantine/core'
+import { Anchor, Button, Code, Group, Popover, Stack, Text, TextInput } from '@mantine/core'
 import { useDebouncedValue } from '@mantine/hooks'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import { IconHistory, IconSearch } from '@tabler/icons-react'
 import { api } from '../../api/client'
 import type { AuditEntry } from '../../api/types'
 import { fmtTime } from '../../lib/format'
-import { EmptyState, LoadError, PageHeader, SectionCard } from '../../ui'
+import { Dash, DataTable, EmptyState, LoadError, PageHeader, SectionCard } from '../../ui'
+import type { DataTableColumn } from '../../ui'
 
 interface AuditResponse {
   entries: AuditEntry[]
@@ -113,11 +114,7 @@ function ChangesCell({ entry }: { entry: AuditEntry }) {
     )
   }
 
-  return (
-    <Text size="sm" c="dimmed">
-      -
-    </Text>
-  )
+  return <Dash />
 }
 
 const PAGE_SIZE = 100
@@ -146,6 +143,23 @@ export function AuditPage() {
 
   const entries = useMemo(() => query.data?.pages.flatMap((p) => p.entries) ?? [], [query.data])
 
+  const columns: DataTableColumn<AuditEntry>[] = [
+    { key: 'time', header: 'Time', render: (e) => <Text size="sm">{fmtTime(e.ts)}</Text> },
+    { key: 'user', header: 'User', render: (e) => e.username || <Dash /> },
+    {
+      key: 'action',
+      header: 'Action',
+      render: (e) => (
+        <Text size="sm" ff="monospace">
+          {e.action}
+        </Text>
+      ),
+    },
+    { key: 'instance', header: 'Instance', render: (e) => e.instance_id || <Dash /> },
+    { key: 'target', header: 'Target', render: (e) => e.target || <Dash /> },
+    { key: 'changes', header: 'Changes', render: (e) => <ChangesCell entry={e} /> },
+  ]
+
   return (
     <Stack gap="lg">
       <PageHeader eyebrow="Administration" title="Audit log" description="Every action taken through this UI, newest first." />
@@ -170,66 +184,20 @@ export function AuditPage() {
       </Group>
 
       <SectionCard flush>
-        <Table.ScrollContainer minWidth={900}>
-          <Table verticalSpacing="xs">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Time</Table.Th>
-                <Table.Th>User</Table.Th>
-                <Table.Th>Action</Table.Th>
-                <Table.Th>Instance</Table.Th>
-                <Table.Th>Target</Table.Th>
-                <Table.Th>Changes</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {query.isLoading &&
-                Array.from({ length: 5 }).map((_, i) => (
-                  <Table.Tr key={i}>
-                    <Table.Td colSpan={6}>
-                      <Skeleton height={18} />
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              {query.isError && (
-                <Table.Tr>
-                  <Table.Td colSpan={6}>
-                    <LoadError
-                      error={query.error}
-                      title="Could not load the audit log"
-                      onRetry={() => query.refetch()}
-                    />
-                  </Table.Td>
-                </Table.Tr>
-              )}
-              {!query.isLoading && !query.isError && entries.length === 0 && (
-                <Table.Tr>
-                  <Table.Td colSpan={6}>
-                    <EmptyState icon={<IconHistory size={22} />} title="No audit entries match these filters." />
-                  </Table.Td>
-                </Table.Tr>
-              )}
-              {entries.map((e) => (
-                <Table.Tr key={e.id}>
-                  <Table.Td>
-                    <Text size="sm">{fmtTime(e.ts)}</Text>
-                  </Table.Td>
-                  <Table.Td>{e.username || '-'}</Table.Td>
-                  <Table.Td>
-                    <Text size="sm" ff="monospace">
-                      {e.action}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>{e.instance_id || '-'}</Table.Td>
-                  <Table.Td>{e.target || '-'}</Table.Td>
-                  <Table.Td>
-                    <ChangesCell entry={e} />
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+        <DataTable
+          columns={columns}
+          rows={entries}
+          rowKey={(e) => e.id}
+          loading={query.isLoading}
+          error={
+            query.isError ? (
+              <LoadError error={query.error} title="Could not load the audit log" onRetry={() => query.refetch()} />
+            ) : undefined
+          }
+          empty={<EmptyState icon={<IconHistory size={22} />} title="No audit entries match these filters." />}
+          stickyHeader
+          minWidth={900}
+        />
       </SectionCard>
 
       <Group justify="center">

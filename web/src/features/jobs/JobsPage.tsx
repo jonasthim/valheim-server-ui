@@ -1,14 +1,15 @@
 // Jobs list: filters by instance/status, refetches every 10s as an SSE
 // fallback, and opens JobDrawer on row click or the `?job=<id>` deep link.
 import { useEffect, useRef, useState } from 'react'
-import { ActionIcon, Anchor, Group, Select, Skeleton, Stack, Table, Text, TextInput, Tooltip } from '@mantine/core'
+import { ActionIcon, Anchor, Group, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core'
 import { modals } from '@mantine/modals'
 import { Link, useSearchParams } from 'react-router-dom'
 import { IconEye, IconListCheck, IconSearch, IconX } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtTime } from '../../lib/format'
 import type { Job, JobStatus } from '../../api/types'
-import { EmptyState, LoadError, PageHeader, SectionCard, StatusPill } from '../../ui'
+import { Dash, DataTable, EmptyState, LoadError, PageHeader, SectionCard, StatusPill } from '../../ui'
+import type { DataTableColumn } from '../../ui'
 import { useJobs, useCancelJob } from './useJobs'
 import { jobStatusColor, jobTypeLabel, jobDuration, isJobCancellable, jobInstancePath } from './jobHelpers'
 import { JobDrawerHost } from './JobDrawerHost'
@@ -79,6 +80,45 @@ function JobsPageContent() {
 
   const jobs = jobsQuery.data ?? []
 
+  const columns: DataTableColumn<Job>[] = [
+    {
+      key: 'status',
+      header: 'Status',
+      render: (job) => (
+        <StatusPill color={jobStatusColor(job.status)} pulse={job.status === 'running'}>
+          {job.status}
+        </StatusPill>
+      ),
+    },
+    { key: 'type', header: 'Type', render: (job) => jobTypeLabel(job.type) },
+    { key: 'title', header: 'Title', render: (job) => job.title || <Dash /> },
+    {
+      key: 'instance',
+      header: 'Instance',
+      render: (job) => {
+        const instancePath = jobInstancePath(job)
+        return instancePath ? (
+          <Anchor component={Link} to={instancePath} onClick={(e) => e.stopPropagation()} size="sm">
+            {job.instance_id}
+          </Anchor>
+        ) : (
+          <Dash />
+        )
+      },
+    },
+    { key: 'requested_by', header: 'Requested by', render: (job) => job.requested_by || <Dash /> },
+    {
+      key: 'created',
+      header: 'Created',
+      render: (job) => (
+        <Text size="sm" title={fmtTime(job.created_at)}>
+          {fmtAgo(job.created_at)}
+        </Text>
+      ),
+    },
+    { key: 'duration', header: 'Duration', render: (job) => jobDuration(job) },
+  ]
+
   return (
     <Stack gap="lg">
       <PageHeader eyebrow="Servers" title="Jobs" description="Background work across every instance — installs, backups, mods and more." />
@@ -103,106 +143,37 @@ function JobsPageContent() {
       </Group>
 
       <SectionCard flush>
-        <Table.ScrollContainer minWidth={900}>
-          <Table verticalSpacing="sm">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>Type</Table.Th>
-                <Table.Th>Title</Table.Th>
-                <Table.Th>Instance</Table.Th>
-                <Table.Th>Requested by</Table.Th>
-                <Table.Th>Created</Table.Th>
-                <Table.Th>Duration</Table.Th>
-                <Table.Th>Actions</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {jobsQuery.isLoading &&
-                Array.from({ length: 4 }).map((_, i) => (
-                  <Table.Tr key={i}>
-                    <Table.Td colSpan={8}>
-                      <Skeleton height={20} />
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              {jobsQuery.isError && (
-                <Table.Tr>
-                  <Table.Td colSpan={8}>
-                    <LoadError
-                      error={jobsQuery.error}
-                      title="Could not load jobs"
-                      onRetry={() => jobsQuery.refetch()}
-                    />
-                  </Table.Td>
-                </Table.Tr>
+        <DataTable
+          columns={columns}
+          rows={jobs}
+          rowKey={(job) => job.id}
+          loading={jobsQuery.isLoading}
+          error={
+            jobsQuery.isError ? (
+              <LoadError error={jobsQuery.error} title="Could not load jobs" onRetry={() => jobsQuery.refetch()} />
+            ) : undefined
+          }
+          empty={<EmptyState icon={<IconListCheck size={22} />} title="No jobs match these filters." />}
+          stickyHeader
+          minWidth={900}
+          onRowClick={(job) => openRow(job.id)}
+          actions={(job) => (
+            <Group gap={4} wrap="nowrap" justify="flex-end">
+              <Tooltip label="Open log">
+                <ActionIcon variant="subtle" aria-label="Open log" onClick={() => openRow(job.id)}>
+                  <IconEye size={16} />
+                </ActionIcon>
+              </Tooltip>
+              {isJobCancellable(job.status) && hasRole('operator') && (
+                <Tooltip label="Cancel job">
+                  <ActionIcon variant="subtle" color="red" aria-label="Cancel job" onClick={() => requestCancel(job)}>
+                    <IconX size={16} />
+                  </ActionIcon>
+                </Tooltip>
               )}
-              {!jobsQuery.isLoading && !jobsQuery.isError && jobs.length === 0 && (
-                <Table.Tr>
-                  <Table.Td colSpan={8}>
-                    <EmptyState icon={<IconListCheck size={22} />} title="No jobs match these filters." />
-                  </Table.Td>
-                </Table.Tr>
-              )}
-              {jobs.map((job) => {
-                const instancePath = jobInstancePath(job)
-                return (
-                  <Table.Tr key={job.id} onClick={() => openRow(job.id)} style={{ cursor: 'pointer' }}>
-                    <Table.Td>
-                      <StatusPill color={jobStatusColor(job.status)} pulse={job.status === 'running'}>
-                        {job.status}
-                      </StatusPill>
-                    </Table.Td>
-                    <Table.Td>{jobTypeLabel(job.type)}</Table.Td>
-                    <Table.Td>{job.title || <Text c="dimmed">-</Text>}</Table.Td>
-                    <Table.Td>
-                      {instancePath ? (
-                        <Anchor
-                          component={Link}
-                          to={instancePath}
-                          onClick={(e) => e.stopPropagation()}
-                          size="sm"
-                        >
-                          {job.instance_id}
-                        </Anchor>
-                      ) : (
-                        <Text c="dimmed">-</Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>{job.requested_by || <Text c="dimmed">-</Text>}</Table.Td>
-                    <Table.Td>
-                      <Text size="sm" title={fmtTime(job.created_at)}>
-                        {fmtAgo(job.created_at)}
-                      </Text>
-                    </Table.Td>
-                    <Table.Td>{jobDuration(job)}</Table.Td>
-                    <Table.Td>
-                      <Group gap={4} wrap="nowrap" justify="flex-end" onClick={(e) => e.stopPropagation()}>
-                        <Tooltip label="Open log">
-                          <ActionIcon variant="subtle" aria-label="Open log" onClick={() => openRow(job.id)}>
-                            <IconEye size={16} />
-                          </ActionIcon>
-                        </Tooltip>
-                        {isJobCancellable(job.status) && hasRole('operator') && (
-                          <Tooltip label="Cancel job">
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              aria-label="Cancel job"
-                              onClick={() => requestCancel(job)}
-                            >
-                              <IconX size={16} />
-                            </ActionIcon>
-                          </Tooltip>
-                        )}
-                      </Group>
-                    </Table.Td>
-                  </Table.Tr>
-                )
-              })}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
+            </Group>
+          )}
+        />
       </SectionCard>
     </Stack>
   )

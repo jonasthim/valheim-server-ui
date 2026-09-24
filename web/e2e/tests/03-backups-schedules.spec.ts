@@ -116,6 +116,7 @@ test.describe.serial('world regenerate and delete with typed confirmation', () =
     seedWorld('main', 'Scratch')
     await page.goto('/instances/main/worlds')
     const row = page.getByRole('row', { name: /Scratch/ })
+    await row.hover()
     await row.getByRole('button', { name: /delete scratch/i }).click()
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('button', { name: /delete world/i })).toBeDisabled()

@@ -9,7 +9,6 @@ import {
   NumberInput,
   PasswordInput,
   Stack,
-  Table,
   Text,
   TextInput,
 } from '@mantine/core'
@@ -22,7 +21,8 @@ import { useAuth } from '../../auth/useAuth'
 import { api, ApiError } from '../../api/client'
 import { notifyError, notifySuccess } from '../../lib/notify'
 import { fmtTime } from '../../lib/format'
-import { PageHeader, SectionCard, LoadError } from '../../ui'
+import { Dash, DataTable, EmptyState, PageHeader, SectionCard, LoadError } from '../../ui'
+import type { DataTableColumn } from '../../ui'
 import type { APIToken, SessionInfo } from '../../api/types'
 import { useRevokeOtherSessions, useRevokeSession, useSessions } from './useSessions'
 import { useCreateToken, useRevokeToken, useTokens } from './useTokens'
@@ -127,6 +127,26 @@ function SessionsCard() {
     })
   }
 
+  const columns: DataTableColumn<SessionInfo>[] = [
+    {
+      key: 'browser',
+      header: 'Browser',
+      render: (session) => (
+        <Text size="sm" maw={280} style={{ overflowWrap: 'anywhere' }}>
+          {session.user_agent || <Dash />}
+        </Text>
+      ),
+    },
+    { key: 'ip', header: 'IP', render: (session) => session.ip || <Dash /> },
+    { key: 'signed_in', header: 'Signed in', render: (session) => fmtTime(session.created_at) },
+    { key: 'last_seen', header: 'Last seen', render: (session) => fmtTime(session.last_seen_at) },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (session) => (session.current ? <Badge variant="light">This session</Badge> : <Dash />),
+    },
+  ]
+
   return (
     <SectionCard
       title="Sessions"
@@ -136,58 +156,31 @@ function SessionsCard() {
         </Button>
       }
     >
-      {sessionsQ.isLoading && (
-        <Group justify="center" py="md">
-          <Loader size="sm" />
-        </Group>
-      )}
-      {sessionsQ.isError && (
-        <LoadError error={sessionsQ.error} title="Could not load sessions" onRetry={() => sessionsQ.refetch()} />
-      )}
-      {!sessionsQ.isLoading && !sessionsQ.isError && (
-        <Table.ScrollContainer minWidth={560}>
-          <Table verticalSpacing="sm">
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Browser</Table.Th>
-                <Table.Th>IP</Table.Th>
-                <Table.Th>Signed in</Table.Th>
-                <Table.Th>Last seen</Table.Th>
-                <Table.Th />
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {sessions.map((session) => (
-                <Table.Tr key={session.id}>
-                  <Table.Td>
-                    <Text size="sm" maw={280} style={{ overflowWrap: 'anywhere' }}>
-                      {session.user_agent || '-'}
-                    </Text>
-                  </Table.Td>
-                  <Table.Td>{session.ip || '-'}</Table.Td>
-                  <Table.Td>{fmtTime(session.created_at)}</Table.Td>
-                  <Table.Td>{fmtTime(session.last_seen_at)}</Table.Td>
-                  <Table.Td>
-                    {session.current ? (
-                      <Badge variant="light">This session</Badge>
-                    ) : (
-                      <Button
-                        size="xs"
-                        variant="subtle"
-                        color="red"
-                        loading={revokeSession.isPending && revokeSession.variables === session.id}
-                        onClick={() => confirmRevoke(session)}
-                      >
-                        Sign out
-                      </Button>
-                    )}
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-        </Table.ScrollContainer>
-      )}
+      <DataTable
+        columns={columns}
+        rows={sessions}
+        rowKey={(session) => session.id}
+        loading={sessionsQ.isLoading}
+        error={
+          sessionsQ.isError ? (
+            <LoadError error={sessionsQ.error} title="Could not load sessions" onRetry={() => sessionsQ.refetch()} />
+          ) : undefined
+        }
+        minWidth={560}
+        actions={(session) =>
+          !session.current && (
+            <Button
+              size="xs"
+              variant="subtle"
+              color="red"
+              loading={revokeSession.isPending && revokeSession.variables === session.id}
+              onClick={() => confirmRevoke(session)}
+            >
+              Sign out
+            </Button>
+          )
+        }
+      />
     </SectionCard>
   )
 }
@@ -293,6 +286,14 @@ function TokensCard() {
     })
   }
 
+  const columns: DataTableColumn<APIToken>[] = [
+    { key: 'name', header: 'Name', render: (token) => token.name },
+    { key: 'token', header: 'Token', render: (token) => <Code>{token.prefix}…</Code> },
+    { key: 'created', header: 'Created', render: (token) => fmtTime(token.created_at) },
+    { key: 'last_used', header: 'Last used', render: (token) => (token.last_used_at ? fmtTime(token.last_used_at) : 'never') },
+    { key: 'expires', header: 'Expires', render: (token) => (token.expires_at ? fmtTime(token.expires_at) : 'never') },
+  ]
+
   return (
     <SectionCard
       title="API tokens"
@@ -302,66 +303,36 @@ function TokensCard() {
         </Button>
       }
     >
-      {tokensQ.isLoading && (
-        <Group justify="center" py="md">
-          <Loader size="sm" />
-        </Group>
-      )}
-      {tokensQ.isError && (
-        <LoadError error={tokensQ.error} title="Could not load tokens" onRetry={() => tokensQ.refetch()} />
-      )}
-      {!tokensQ.isLoading && !tokensQ.isError && (
-        <Stack gap="sm">
-          {tokens.length === 0 ? (
-            <Text size="sm" c="dimmed">
-              No API tokens yet.
-            </Text>
-          ) : (
-            <Table.ScrollContainer minWidth={640}>
-              <Table verticalSpacing="sm">
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Name</Table.Th>
-                    <Table.Th>Token</Table.Th>
-                    <Table.Th>Created</Table.Th>
-                    <Table.Th>Last used</Table.Th>
-                    <Table.Th>Expires</Table.Th>
-                    <Table.Th />
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {tokens.map((token) => (
-                    <Table.Tr key={token.id}>
-                      <Table.Td>{token.name}</Table.Td>
-                      <Table.Td>
-                        <Code>{token.prefix}…</Code>
-                      </Table.Td>
-                      <Table.Td>{fmtTime(token.created_at)}</Table.Td>
-                      <Table.Td>{token.last_used_at ? fmtTime(token.last_used_at) : 'never'}</Table.Td>
-                      <Table.Td>{token.expires_at ? fmtTime(token.expires_at) : 'never'}</Table.Td>
-                      <Table.Td>
-                        <Button
-                          size="xs"
-                          variant="subtle"
-                          color="red"
-                          loading={revokeToken.isPending && revokeToken.variables === token.id}
-                          onClick={() => confirmRevoke(token)}
-                        >
-                          Revoke
-                        </Button>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
+      <Stack gap="sm">
+        <DataTable
+          columns={columns}
+          rows={tokens}
+          rowKey={(token) => token.id}
+          loading={tokensQ.isLoading}
+          error={
+            tokensQ.isError ? (
+              <LoadError error={tokensQ.error} title="Could not load tokens" onRetry={() => tokensQ.refetch()} />
+            ) : undefined
+          }
+          minWidth={640}
+          empty={<EmptyState compact title="No API tokens yet." />}
+          actions={(token) => (
+            <Button
+              size="xs"
+              variant="subtle"
+              color="red"
+              loading={revokeToken.isPending && revokeToken.variables === token.id}
+              onClick={() => confirmRevoke(token)}
+            >
+              Revoke
+            </Button>
           )}
-          <Text size="xs" c="dimmed">
-            Scripts and monitors authenticate with <Code>Authorization: Bearer &lt;token&gt;</Code> — no cookie or
-            CSRF header needed.
-          </Text>
-        </Stack>
-      )}
+        />
+        <Text size="xs" c="dimmed">
+          Scripts and monitors authenticate with <Code>Authorization: Bearer &lt;token&gt;</Code> — no cookie or
+          CSRF header needed.
+        </Text>
+      </Stack>
       <CreateTokenModal opened={modalOpened} onClose={closeModal} />
     </SectionCard>
   )
@@ -400,7 +371,7 @@ export function AccountPage() {
                 <Text size="xs" c="dimmed">
                   Email
                 </Text>
-                <Text size="sm">{user.email || '-'}</Text>
+                <Text size="sm">{user.email || <Dash />}</Text>
               </Stack>
               <Stack gap={2}>
                 <Text size="xs" c="dimmed">

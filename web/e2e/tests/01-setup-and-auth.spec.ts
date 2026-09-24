@@ -49,6 +49,7 @@ test.describe.serial('first run and authentication', () => {
     await dialog.getByRole('textbox', { name: /^password/i }).fill('operator-password-1')
     await dialog.getByRole('button', { name: /create|save/i }).click()
     await expect(page.getByRole('cell', { name: 'ops' }).first()).toBeVisible()
+    await expect(page.getByRole('columnheader', { name: 'User' })).toBeVisible()
     await page.goto('/audit')
     await expect(page.getByText('user.create').first()).toBeVisible()
   })

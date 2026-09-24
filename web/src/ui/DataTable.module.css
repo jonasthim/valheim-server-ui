@@ -1,0 +1,16 @@
+.table { --table-border-color: var(--vh-border); }
+.th { height: 32px; padding-block: 0; font-size: 12px; font-weight: 600; color: var(--vh-text-soft); white-space: nowrap; }
+.td { height: 36px; padding-block: 4px; font-size: 13px; }
+.table[data-density='default'] .td { height: 40px; }
+.clickable { cursor: pointer; }
+.clickable:focus-visible { outline: 2px solid var(--vh-ember); outline-offset: -2px; }
+.actionsCell { text-align: right; white-space: nowrap; width: 1%; }
+.actions { display: inline-flex; gap: 4px; justify-content: flex-end; opacity: 0; transition: opacity 100ms ease; }
+.tr:hover .actions, .tr:focus-within .actions { opacity: 1; }
+@media (hover: none), (max-width: 48em) {
+  .actions { opacity: 1; }
+}
+.stickyCol { position: sticky; left: 0; z-index: 1; background: var(--vh-surface); }
+.sortButton { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.sortButton:focus-visible { outline: 2px solid var(--vh-ember); outline-offset: 2px; border-radius: 4px; }
+.dash { color: var(--vh-text-faint); }

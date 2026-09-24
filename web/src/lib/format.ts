@@ -18,7 +18,7 @@ export function fmtPercent(n: number | undefined | null): string {
 }
 
 export function fmtBytes(n: number | undefined | null): string {
-  if (n === undefined || n === null) return '-'
+  if (n === undefined || n === null) return '—'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let v = n
   let i = 0
@@ -30,9 +30,9 @@ export function fmtBytes(n: number | undefined | null): string {
 }
 
 export function fmtTime(iso: string | undefined | null): string {
-  return iso ? dayjs(iso).format('YYYY-MM-DD HH:mm:ss') : '-'
+  return iso ? dayjs(iso).format('YYYY-MM-DD HH:mm:ss') : '—'
 }
 
 export function fmtAgo(iso: string | undefined | null): string {
-  return iso ? dayjs(iso).fromNow() : '-'
+  return iso ? dayjs(iso).fromNow() : '—'
 }

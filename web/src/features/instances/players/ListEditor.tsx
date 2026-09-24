@@ -3,9 +3,10 @@ import { ActionIcon, Button, Group, Skeleton, Stack, Table, Text, TextInput, Too
 import { modals } from '@mantine/modals'
 import { IconPlus, IconTrash } from '@tabler/icons-react'
 import type { ListKind } from '../../../api/types'
-import { LoadError } from '../../../ui'
+import { Dash, LoadError } from '../../../ui'
 import { usePlayerList, useSavePlayerList } from './usePlayers'
 import { PLATFORM_ID_PATTERN } from './constants'
+import dt from '../../../ui/DataTable.module.css'
 
 /** Kind-specific confirm-dialog copy for removing one entry from a list. */
 const REMOVE_CONFIRM_COPY: Record<
@@ -88,7 +89,7 @@ export function ListEditor({ id, kind, canEdit }: { id: string; kind: ListKind; 
 
       {!query.isLoading && !query.isError && (
         <Table.ScrollContainer minWidth={480}>
-          <Table verticalSpacing="xs">
+          <Table verticalSpacing="xs" classNames={{ th: dt.th, td: dt.td, tr: dt.tr, table: dt.table }}>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Platform id</Table.Th>
@@ -113,7 +114,7 @@ export function ListEditor({ id, kind, canEdit }: { id: string; kind: ListKind; 
                       {e.id}
                     </Text>
                   </Table.Td>
-                  <Table.Td>{e.comment || '-'}</Table.Td>
+                  <Table.Td>{e.comment || <Dash />}</Table.Td>
                   {canEdit && (
                     <Table.Td>
                       <Tooltip label="Remove">
