@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Button, Group, Text } from '@mantine/core'
 import { Dropzone } from '@mantine/dropzone'
 import { IconUpload, IconX } from '@tabler/icons-react'
-import { notifications } from '@mantine/notifications'
 import { SectionCard } from '../../../ui'
+import { notifyWarning } from '../../../lib/notify'
 import { useUploadBackup } from './useBackups'
 
 export function BackupUploadCard({ id }: { id: string }) {
@@ -13,7 +13,7 @@ export function BackupUploadCard({ id }: { id: string }) {
   function handleDrop(files: File[]) {
     const zip = files.find((f) => f.name.toLowerCase().endsWith('.zip'))
     if (!zip) {
-      notifications.show({ title: 'Not a backup', message: 'Only .zip files exported from this UI are accepted.', color: 'yellow' })
+      notifyWarning('Only .zip files exported from this UI are accepted.', 'Not a backup')
       return
     }
     setFile(zip)

@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { Button, Checkbox, Group, List, Stack, Text } from '@mantine/core'
 import { Dropzone } from '@mantine/dropzone'
 import { IconUpload, IconX } from '@tabler/icons-react'
-import { notifications } from '@mantine/notifications'
 import { SectionCard } from '../../../ui'
+import { notifyWarning } from '../../../lib/notify'
 import { useUploadWorlds } from './useWorlds'
 
 const ALLOWED_EXT = ['.db', '.fwl', '.zip']
@@ -22,11 +22,10 @@ export function WorldUploadCard({ id }: { id: string }) {
     const accepted = dropped.filter(isAllowed)
     const rejected = dropped.length - accepted.length
     if (rejected > 0) {
-      notifications.show({
-        title: 'Some files skipped',
-        message: `Only .db, .fwl or .zip files are accepted (${rejected} file${rejected === 1 ? '' : 's'} ignored).`,
-        color: 'yellow',
-      })
+      notifyWarning(
+        `Only .db, .fwl or .zip files are accepted (${rejected} file${rejected === 1 ? '' : 's'} ignored).`,
+        'Some files skipped',
+      )
     }
     setFiles((prev) => [...prev, ...accepted])
   }
