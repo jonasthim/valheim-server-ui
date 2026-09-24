@@ -13,6 +13,8 @@ test.describe.serial('instance lifecycle with the fake game server', () => {
     fakeInstall('main')
     await page.reload()
     await page.getByRole('button', { name: /^start$/i }).first().click()
+    // Lifecycle buttons live once, in the page header (C-2), not per tab.
+    await expect(page.getByRole('button', { name: /^start$/i })).toHaveCount(1)
     await expect(page.getByText(/^running$/i).first()).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('123456').first()).toBeVisible({ timeout: 20_000 })
 

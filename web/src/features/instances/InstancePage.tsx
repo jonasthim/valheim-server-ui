@@ -1,10 +1,14 @@
 import { lazy, Suspense } from 'react'
 import { Badge, Box, Center, Indicator, Loader, NativeSelect, Stack, Tabs } from '@mantine/core'
 import { useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from '../../auth/useAuth'
 import { useInstance } from './useInstance'
+import { useInstanceStatus } from './instanceActions'
 import { INSTANCE_TAB_ICONS, INSTANCE_TAB_LABELS, INSTANCE_TABS } from './tabs'
 import { useInstanceTabBadges } from './useTabBadges'
+import { LifecycleControls } from './LifecycleControls'
 import { PendingRestartBanner } from './PendingRestartBanner'
+import classes from './InstancePage.module.css'
 // Tab panels are code-split; keepMounted={false} means each loads on first
 // visit, behind the Suspense boundary around the panels below.
 const OverviewTab = lazy(() => import('./OverviewTab').then((m) => ({ default: m.OverviewTab })))
@@ -25,9 +29,14 @@ import { stateColor, stateLabel } from './instanceHelpers'
 export function InstancePage() {
   const { id = '', tab = 'overview' } = useParams()
   const navigate = useNavigate()
+  const { hasRole } = useAuth()
   const inst = useInstance(id)
   const badges = useInstanceTabBadges(id)
-  const state = inst.data?.status.state
+  // The 10s poll and SSE both write ['instances', id, 'status']; fall back to
+  // the instance detail's embedded status until the poll resolves once.
+  const live = useInstanceStatus(id)
+  const status = live.data?.status ?? inst.data?.status
+  const state = status?.state
   const config = inst.data?.config
 
   if (inst.isError) {
@@ -52,9 +61,19 @@ export function InstancePage() {
           )
         }
         description={config ? `World ${config.world} on port ${config.port}` : undefined}
+        actions={
+          inst.data && status && hasRole('operator') ? (
+            <LifecycleControls id={id} name={inst.data.name} status={status} size="sm" />
+          ) : undefined
+        }
       />
-      {inst.data && <PendingRestartBanner id={id} name={inst.data.name} status={inst.data.status} />}
-      <Tabs value={tab} onChange={(t) => navigate(`/instances/${id}/${t ?? 'overview'}`)} keepMounted={false}>
+      {inst.data && status && <PendingRestartBanner id={id} name={inst.data.name} status={status} />}
+      <Tabs
+        value={tab}
+        onChange={(t) => navigate(`/instances/${id}/${t ?? 'overview'}`)}
+        keepMounted={false}
+        classNames={{ list: classes.list, tab: classes.tab, tabLabel: classes.tabLabel }}
+      >
         <Box visibleFrom="sm" style={{ overflowX: 'auto' }}>
           <Tabs.List style={{ flexWrap: 'nowrap' }}>
             {INSTANCE_TABS.map((t) => {
@@ -64,7 +83,7 @@ export function InstancePage() {
                 <Tabs.Tab
                   key={t}
                   value={t}
-                  leftSection={<Icon size={16} stroke={1.8} />}
+                  leftSection={<Icon size={16} stroke={1.75} />}
                   rightSection={
                     badge?.count !== undefined ? (
                       <Badge size="xs" circle color={badge.color}>

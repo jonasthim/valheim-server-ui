@@ -1,5 +1,5 @@
-// Unified Start/Stop/Restart/Install/Update row shared by the Overview tab
-// and the dashboard instance card, so lifecycle actions look and behave
+// Unified Start/Stop/Restart/Install/Update row shared by the instance page
+// header and the dashboard instance card, so lifecycle actions look and behave
 // identically everywhere (confirms, warnings, job-drawer hand-off).
 import { Button, Group } from '@mantine/core'
 import { IconDownload, IconPlayerPlay, IconPlayerStop } from '@tabler/icons-react'
@@ -64,6 +64,7 @@ export function LifecycleControls({
         instanceName={name}
         playersOnline={status.players_online}
         disabled={!canRestart(status.state)}
+        size={size}
       />
       {canInstall(status.state) && (
         <Button

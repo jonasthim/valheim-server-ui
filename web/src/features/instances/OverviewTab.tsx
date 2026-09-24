@@ -45,7 +45,6 @@ import { useInstance } from './useInstance'
 import { useCheckForUpdate, useInstanceEvents, useInstanceStatus, useSetAutostart } from './instanceActions'
 import { useInstanceMetrics, type MetricRange } from './useMetrics'
 import { stateColor, stateLabel } from './instanceHelpers'
-import { LifecycleControls } from './LifecycleControls'
 
 // Owned by WP-11. Props: the instance id.
 export function OverviewTab({ id }: { id: string }) {
@@ -380,7 +379,6 @@ export function OverviewTab({ id }: { id: string }) {
                 {fmtAgo(status.last_crash_at)}
               </Alert>
             )}
-            <LifecycleControls id={id} name={instance.name} status={status} />
           </Stack>
         </SectionCard>
 

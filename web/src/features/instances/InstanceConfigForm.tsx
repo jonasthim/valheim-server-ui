@@ -490,11 +490,15 @@ export function InstanceConfigForm({
                       description="Only takes effect once BepInEx is installed from the Mods tab"
                       {...form.getInputProps('config.bepinex_enabled', { type: 'checkbox' })}
                     />
-                    <Switch
-                      label="Autostart"
-                      description="Start this instance automatically when the manager starts"
-                      {...form.getInputProps('autostart', { type: 'checkbox' })}
-                    />
+                    {/* Create-only: an existing instance toggles autostart
+                        immediately from the Overview tab instead. */}
+                    {mode === 'create' && (
+                      <Switch
+                        label="Autostart"
+                        description="Start this instance automatically when the manager starts"
+                        {...form.getInputProps('autostart', { type: 'checkbox' })}
+                      />
+                    )}
                     {mode === 'create' && (
                       <Checkbox
                         label="Download game files now"

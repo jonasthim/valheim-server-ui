@@ -23,6 +23,7 @@ export function RestartControl({
   instanceName,
   color,
   variant = 'outline',
+  size = 'xs',
 }: {
   id: string
   disabled?: boolean
@@ -30,6 +31,8 @@ export function RestartControl({
   instanceName?: string
   color?: string
   variant?: string
+  /** Mantine Button size of the trigger; LifecycleControls forwards its own. */
+  size?: string
 }) {
   const restart = useRestartInstance(id)
   const { openJob } = useJobDrawer()
@@ -69,7 +72,7 @@ export function RestartControl({
       <Menu shadow="md" position="bottom-end" withinPortal>
         <Menu.Target>
           <Button
-            size="xs"
+            size={size}
             variant={variant}
             color={color}
             leftSection={<IconRefresh size={14} />}

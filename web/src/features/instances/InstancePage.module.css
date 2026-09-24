@@ -1,0 +1,30 @@
+/* Underline tab strip for the instance page (C-2): one hairline under the
+   row, 13px labels, and a 2px ember bar that sits on the hairline for the
+   active tab. */
+.list {
+  border-bottom: 1px solid var(--vh-border);
+  gap: 2px;
+}
+/* Mantine's default variant paints its own 2px line under the list with a
+   ::before; without this it stacks on the hairline above into a 3px band. */
+.list::before {
+  content: none;
+}
+.tab {
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 10px;
+  color: var(--vh-text-soft);
+  border-bottom-width: 2px;
+  margin-bottom: -1px;
+}
+.tab[data-active] {
+  color: var(--mantine-color-text);
+  border-bottom-color: var(--vh-ember);
+}
+.tab:hover {
+  background: var(--vh-surface-2);
+}
+.tabLabel {
+  line-height: 1.2;
+}

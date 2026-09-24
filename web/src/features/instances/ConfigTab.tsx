@@ -44,10 +44,11 @@ export function ConfigTab({ id }: { id: string }) {
   async function handleSubmit(values: InstanceConfigFormSubmit, helpers: { setErrors: (e: Record<string, string>) => void }) {
     setSubmitting(true)
     try {
+      // Autostart is not part of the edit form (C-2): the Overview switch
+      // PATCHes it on its own, so leaving it out keeps that value untouched.
       const payload: UpdateInstanceRequest = {
         name: values.name,
         config: values.config,
-        autostart: values.autostart,
       }
       const res = await api.patch<{ instance: Instance }>(`/instances/${id}`, payload)
       qc.setQueryData(['instances', id, 'detail'], res.instance)
