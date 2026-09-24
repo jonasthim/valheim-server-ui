@@ -173,20 +173,6 @@ export function MapTab({ id }: { id: string }) {
             <StatusPill color={data.connected ? "moss" : "gray"}>
               {data.connected ? "live" : "agent offline"}
             </StatusPill>
-            {data.stale && (
-              <Badge
-                color="orange"
-                variant="light"
-                leftSection={<IconAlertTriangle size={12} />}
-              >
-                cached image
-              </Badge>
-            )}
-            {info && info.state === "ready" && (
-              <Badge variant="outline" color="gray">
-                {info.size} px, seed {info.seed}
-              </Badge>
-            )}
             {hasRole("operator") && data.connected && data.map_supported && (
               <Button
                 size="xs"
@@ -276,6 +262,20 @@ export function MapTab({ id }: { id: string }) {
                 ? ` (scanned ${fmtAgo(data.objects_updated_at)})`
                 : ""}
             </Text>
+            {data.stale && (
+              <Badge
+                color="orange"
+                variant="light"
+                leftSection={<IconAlertTriangle size={12} />}
+              >
+                cached image
+              </Badge>
+            )}
+            {info && info.state === "ready" && (
+              <Badge variant="outline" color="gray">
+                {info.size} px, seed {info.seed}
+              </Badge>
+            )}
             <Text size="xs" c="dimmed">
               Beyond the 10 km circle lies the edge of the world.
             </Text>

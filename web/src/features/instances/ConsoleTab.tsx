@@ -10,6 +10,7 @@ import { SectionCard } from '../../ui'
 import { notifyError } from '../../lib/notify'
 import { highlightColor } from './instanceHelpers'
 import { useLogFiles, useLogFileTail, useLogSearch } from './useLogs'
+import { useViewportFill } from './useViewportFill'
 import classes from './ConsoleTab.module.css'
 
 const MAX_LINES = 2000
@@ -54,6 +55,8 @@ export function ConsoleTab({ id }: { id: string }) {
   // null until a live instance.players event arrives; the players query seeds the chips before that.
   const [liveOnline, setLiveOnline] = useState<PlayersEvent['online'] | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
+  const screenRef = useRef<HTMLDivElement>(null)
+  const offset = useViewportFill(screenRef, 80)
 
   const isLive = selectedLog === LIVE_LOG_NAME
 
@@ -131,32 +134,21 @@ export function ConsoleTab({ id }: { id: string }) {
   }
 
   return (
-    <Stack>
-      <Group justify="space-between" wrap="wrap">
-        <Group gap="xs">
-          <Text size="sm" fw={600}>
-            Online:
+    <Stack gap="sm">
+      <Group gap="xs" wrap="wrap">
+        <Text size="sm" fw={600}>
+          Online:
+        </Text>
+        {online.length === 0 && (
+          <Text size="sm" c="dimmed">
+            no players seen yet
           </Text>
-          {online.length === 0 && (
-            <Text size="sm" c="dimmed">
-              no players seen yet
-            </Text>
-          )}
-          {online.map((p) => (
-            <Badge key={p.platform_id ?? p.name} variant="light" color="green">
-              {p.name}
-            </Badge>
-          ))}
-        </Group>
-        <Select
-          size="xs"
-          w={260}
-          label="Log"
-          data={selectData}
-          value={selectedLog}
-          onChange={(v) => setSelectedLog(v ?? LIVE_LOG_NAME)}
-          allowDeselect={false}
-        />
+        )}
+        {online.map((p) => (
+          <Badge key={p.platform_id ?? p.name} variant="light" color="green">
+            {p.name}
+          </Badge>
+        ))}
       </Group>
 
       <SectionCard flush>
@@ -168,9 +160,18 @@ export function ConsoleTab({ id }: { id: string }) {
                 : `${displayLines.length} lines shown from ${selectedLog}`}
             </Text>
             <Group gap="sm" wrap="wrap">
+              <Select
+                size="xs"
+                w={220}
+                aria-label="Log"
+                data={selectData}
+                value={selectedLog}
+                onChange={(v) => setSelectedLog(v ?? LIVE_LOG_NAME)}
+                allowDeselect={false}
+              />
               <Switch size="xs" label="Auto-follow" checked={follow} onChange={(e) => setFollow(e.currentTarget.checked)} />
               <Button
-                size="xs"
+                size="compact-xs"
                 variant="subtle"
                 color="gray"
                 leftSection={<IconTrash size={14} />}
@@ -182,7 +183,7 @@ export function ConsoleTab({ id }: { id: string }) {
                 Clear view
               </Button>
               <Button
-                size="xs"
+                size="compact-xs"
                 variant="subtle"
                 color="gray"
                 component="a"
@@ -196,7 +197,14 @@ export function ConsoleTab({ id }: { id: string }) {
             </Group>
           </div>
 
-          <ScrollArea h={440} viewportRef={viewportRef} onScrollPositionChange={handleScroll} className={classes.screen}>
+          <ScrollArea
+            ref={screenRef}
+            h={`calc(100dvh - ${offset}px)`}
+            mih={320}
+            viewportRef={viewportRef}
+            onScrollPositionChange={handleScroll}
+            className={classes.screen}
+          >
             <Stack gap={2} p="sm">
               {displayLines.map((line, i) => (
                 <LogLine key={i} line={line} />

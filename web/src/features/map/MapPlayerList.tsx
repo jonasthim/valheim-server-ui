@@ -3,10 +3,10 @@
 // hidden" tag for players who opted out of sharing their position on the
 // map, and a Kick action for operators while the agent is connected.
 // Precedent: features/instances/players/PlayersOnlinePanel.tsx.
-import { Badge, Button, Group, Table, Text } from '@mantine/core'
+import { Badge, Button, Group, Text } from '@mantine/core'
 import { Link } from 'react-router-dom'
 import type { AgentPlayer } from '../../api/types'
-import { SectionCard } from '../../ui'
+import { DataTable, EmptyState, SectionCard } from '../../ui'
 import { openConfirmKick } from '../agent/openConfirmKick'
 
 export function MapPlayerList({
@@ -33,44 +33,42 @@ export function MapPlayerList({
         </Button>
       }
     >
-      {players.length === 0 && (
-        <Text c="dimmed" size="sm" p="lg">
-          Nobody online.
-        </Text>
-      )}
-
-      {players.length > 0 && (
-        <Table verticalSpacing="xs">
-          <Table.Tbody>
-            {players.map((p) => (
-              <Table.Tr key={p.uid}>
-                <Table.Td>
-                  <Group gap={6} wrap="nowrap">
-                    <Text size="sm">{p.name}</Text>
-                    {(p.visible === false || !p.position) && (
-                      <Badge size="sm" color="gray" variant="outline">
-                        position hidden
-                      </Badge>
-                    )}
-                  </Group>
-                </Table.Td>
-                {canKick && (
-                  <Table.Td align="right">
-                    <Button
-                      size="xs"
-                      color="red"
-                      variant="subtle"
-                      onClick={() => openConfirmKick({ name: p.name, onConfirm: () => onKick?.(p.name) })}
-                    >
-                      Kick
-                    </Button>
-                  </Table.Td>
+      <DataTable
+        minWidth={320}
+        columns={[
+          {
+            key: 'player',
+            header: 'Player',
+            render: (p) => (
+              <Group gap={6} wrap="nowrap">
+                <Text size="sm">{p.name}</Text>
+                {(p.visible === false || !p.position) && (
+                  <Badge size="sm" color="gray" variant="outline">
+                    position hidden
+                  </Badge>
                 )}
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      )}
+              </Group>
+            ),
+          },
+        ]}
+        rows={players}
+        rowKey={(p) => p.uid}
+        empty={<EmptyState compact title="Nobody online." />}
+        actions={
+          canKick
+            ? (p) => (
+                <Button
+                  size="compact-xs"
+                  color="red"
+                  variant="subtle"
+                  onClick={() => openConfirmKick({ name: p.name, onConfirm: () => onKick?.(p.name) })}
+                >
+                  Kick
+                </Button>
+              )
+            : undefined
+        }
+      />
     </SectionCard>
   )
 }

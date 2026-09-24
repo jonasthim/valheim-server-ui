@@ -8,7 +8,8 @@
   justify-content: space-between;
   gap: var(--mantine-spacing-sm);
   flex-wrap: wrap;
-  padding: var(--mantine-spacing-xs) var(--mantine-spacing-md);
+  padding: 6px 12px;
+  min-height: 36px;
   border-bottom: 1px solid var(--vh-border);
 }
 .screen {
@@ -21,7 +22,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px var(--mantine-spacing-md);
+  padding: 6px 12px;
   border-top: 1px solid var(--vh-border);
   background-color: var(--vh-surface);
 }
