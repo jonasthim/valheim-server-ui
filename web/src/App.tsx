@@ -1,7 +1,8 @@
 import { lazy } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider } from 'react-router-dom'
 import { RequireAuth, RequireRole } from './auth/guards'
 import { Shell } from './layout/Shell'
+import { RouteErrorPage } from './layout/RouteErrorPage'
 import { LoginPage } from './features/auth/LoginPage'
 import { SetupPage } from './features/auth/SetupPage'
 
@@ -17,10 +18,11 @@ const AuditPage = lazy(() => import('./features/audit/AuditPage').then((m) => ({
 const AccountPage = lazy(() => import('./features/account/AccountPage').then((m) => ({ default: m.AccountPage })))
 
 // Route map from docs/ARCHITECTURE.md §15. Tabs inside an instance are handled
-// by InstancePage via the :tab param.
-export default function App() {
-  return (
-    <Routes>
+// by InstancePage via the :tab param. A pathless root route carries one
+// errorElement over login/setup and the shell alike.
+const router = createBrowserRouter(
+  createRoutesFromElements(
+    <Route errorElement={<RouteErrorPage />}>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/setup" element={<SetupPage />} />
       <Route element={<RequireAuth />}>
@@ -39,6 +41,10 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Route>
-    </Routes>
-  )
+    </Route>,
+  ),
+)
+
+export default function App() {
+  return <RouterProvider router={router} />
 }

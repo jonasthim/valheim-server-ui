@@ -5,7 +5,6 @@ import './index.css'
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter } from 'react-router-dom'
 import { MantineProvider } from '@mantine/core'
 import { Notifications } from '@mantine/notifications'
 import { ModalsProvider } from '@mantine/modals'
@@ -27,11 +26,9 @@ createRoot(document.getElementById('root')!).render(
       <Notifications position="bottom-right" autoClose={3500} limit={4} containerWidth={380} />
       <ModalsProvider>
         <QueryClientProvider client={queryClient}>
-          <BrowserRouter>
-            <AuthProvider>
-              <App />
-            </AuthProvider>
-          </BrowserRouter>
+          <AuthProvider>
+            <App />
+          </AuthProvider>
         </QueryClientProvider>
       </ModalsProvider>
     </MantineProvider>
