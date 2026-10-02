@@ -224,3 +224,32 @@ reveal terrain (the server sees them), which matches the game's own rule
 that exploration is not secret. The table format is parsed best effort and
 skipped on error, so a game update can degrade history without breaking the
 map.
+
+## ADR-025 Gameplay tweaks ship as a second bundled plugin
+
+**Context.** Jonas asked for two gameplay changes that have nothing to do
+with telemetry or control: feed hungry tamed animals from sign-marked
+chests, and let specific random events (raids) be switched off. The agent
+(ADR-022) is the manager's control and telemetry channel and must stay
+harmless to gameplay — nothing it does should change what happens in the
+world. Folding these into the agent would mix that guarantee with features
+players might reasonably want to turn off independently, and would make the
+agent harder to keep stable across game updates.
+
+**Decision.** Ship the gameplay tweaks as a separate BepInEx plugin,
+`ValheimUI.Gameplay` (docs/ARCHITECTURE.md §21), bundled and installed the
+same way as the agent — with BepInEx, and from the same "Install/update
+Valheim UI plugins" job — but as its own assembly, package, cfg file and
+Mods-tab card. It can be disabled or uninstalled without touching the agent,
+the live map, or any other part of the manager, and could later be
+distributed on Thunderstore on its own.
+
+**Consequences.** Two plugin zips to build, test and release
+(`valheim-ui-agent.zip`, `valheim-ui-gameplay.zip`) instead of one; `plugin/
+build.sh` and the CI `plugin` job build and upload both, and the release job
+embeds both. One install job still covers both (the job type stays
+`agent_install`; only its title changed), so operators do not get a second
+button to press. No new API: the Gameplay card reuses the existing
+config-file endpoints. A failure to install or default-configure the
+gameplay plugin is only a warning, never a failure of the agent install,
+since the agent is the one the job (and BepInEx install) is named for.

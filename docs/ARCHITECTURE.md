@@ -950,3 +950,170 @@ explored or discovered by a shared boss pin. Shared pins are drawn
 regardless of the fog on their own layer; a boss pin that sits on a
 location is merged into that location's marker. Players are
 always drawn. Agents before 1.7.0 report no fog; the toggle explains why.
+
+## 21. Valheim UI Gameplay (server plugin)
+
+`ValheimUI.Gameplay` (`plugin/ValheimUI.Gameplay/`, C#, net472, BepInEx 5) is a
+second, opt-in server plugin: small gameplay tweaks (autofeed, a raid filter)
+that have nothing to do with the manager's own telemetry and control channel.
+It ships separately from the agent (ADR-025) so a server owner can disable or
+uninstall it without touching the live map, players panel or admin commands —
+and so it can later stand on its own on Thunderstore. GUID
+`se.jonasthim.valheimui.gameplay`, package `jonasthim-ValheimUI_Gameplay`
+(manifest `name` `ValheimUI_Gameplay`), DLL `ValheimUI.Gameplay.dll`, config
+`BepInEx/config/se.jonasthim.valheimui.gameplay.cfg`. Like the agent, it does
+nothing on a game client (`SystemInfo.graphicsDeviceType !=
+GraphicsDeviceType.Null` guard in `Awake()`) and never lets an exception
+escape `Update()` or a Harmony patch.
+
+**Config reference** (`Plugin.cs`'s `Config.Bind` calls; the manager's default
+copy is `gameplayConfigBody` in `internal/agent/config.go`):
+
+| Section | Key | Default | Range | Meaning |
+|---|---|---|---|---|
+| `Autofeed` | `Enabled` | `false` | — | Master switch for autofeed. |
+| `Autofeed` | `SignPrefix` | `feed` | — | Case-insensitive prefix of a sign's text that marks a chest as a feed chest. Empty marks every chest in range. |
+| `Autofeed` | `SignRadius` | `2.0` | 0.5–6 | Metres between the sign and the chest it marks. |
+| `Autofeed` | `Range` | `20` | 1–100 | Metres between a feed chest and the animal it can feed. |
+| `Autofeed` | `IntervalSeconds` | `30` | 5–600 | Seconds between scans for hungry animals. |
+| `Autofeed` | `Debug` | `false` | — | Logs each individual feed (animal prefab, chest prefab, distance). Added automatically if missing, so a hand-written cfg still loads. |
+| `Raids` | `Enabled` | `true` | — | Master switch for the raid filter. |
+| `Raids` | `Disabled` | (empty) | — | Comma-separated random event names that never start by themselves, e.g. `army_eikthyr,wolves`. The event command still starts them. |
+
+**Live reload.** A `FileSystemWatcher` on the cfg's directory (`ConfigReload.cs`)
+watches Created/Changed/Renamed — the manager writes the file atomically
+(tmp + rename), which surfaces as Renamed, not Changed — and marks the file
+dirty; `GameplayPlugin.Update()` calls `ConfigReload.Poll()`, which calls
+`Config.Reload()` on the main thread once the file has been quiet for 500 ms,
+guarded against reload storms by ignoring events for one second after a
+reload (BepInEx can touch the file itself). `Config.SettingChanged` then
+re-applies both features' values; the handler does not try to tell which
+entry moved and just re-applies everything, which is cheap.
+
+**Raid filter.** `RandEventSystem` (server-only) picks random events two
+ways, so the filter needs two Harmony patches (`RaidFilter.cs`):
+
+1. The normal path calls the private `GetPossibleRandomEvents()` to build the
+   candidate list, then picks one at random. A **postfix** on
+   `GetPossibleRandomEvents()` removes entries whose `RandomEvent.m_name` is
+   in `[Raids] Disabled` (case-insensitive) before anything is picked.
+2. "Standalone" events (`RandomEvent.m_standaloneInterval > 0`) are started
+   directly through the private `SetRandomEvent`, bypassing (1). A **prefix**
+   on `SetRandomEvent` returns `false` (skips the call) for a disabled name —
+   unless the call was forced by the public `SetRandomEventByName` (the
+   manager's `event` command and the game's own console command), which a
+   bypass flag (`_forced`, set by a prefix and always cleared by a
+   `HarmonyFinalizer` on `SetRandomEventByName`, so it never gets stuck true)
+   lets through regardless. Nothing is written to the world; a disabled raid
+   can always still be started deliberately.
+
+**Autofeed.** Tamed animals near players are simulated on the players'
+clients, so the server cannot call `MonsterAI`/`Tameable` methods on them
+directly. `Autofeed.cs` instead works on the ZDOs, the data the server owns
+the authoritative copy of and syncs to every peer, as a small state machine
+driven from `Update()`:
+
+- **Idle** until `Enabled` and `IntervalSeconds` have elapsed since the last
+  scan started.
+- **Scanning**: walks a one-time snapshot of every ZDO (a live
+  `Dictionary<ZDOID,ZDO>` is not safe to enumerate across frames) in slices
+  bounded by a 2 ms per-`Update()` budget — the same convention as the
+  agent's `MapRenderer.Step(budgetMs)` — bucketing each ZDO by its prefab's
+  components into signs with non-empty text, chests (`Container`) not
+  currently `InUse`, and tamed (`ZDOVars.s_tamed`) animals whose prefab has
+  both `Tameable` and a `MonsterAI` with at least one consumable item.
+- Once the snapshot is exhausted, **Match** and **Feed** run synchronously in
+  that `Update()` call: feed chests are chests within `SignRadius` of a sign
+  whose trimmed text starts with `SignPrefix` (every chest when `SignPrefix`
+  is empty); hungry tames are the game's own rule, `Tameable.IsHungry()`,
+  computed from the ZDO rather than the live component (most tamed animals in
+  the world are not loaded as game objects on the server): the time since
+  `ZDOVars.s_tameLastFeeding` exceeds `Tameable.m_fedDuration`. For each
+  hungry tame, the *nearest* feed chest within `Range` that still holds a
+  matching item (`Inventory` loaded once from `ZDOVars.s_items` via
+  `new ZPackage(bytes)`, `Load`) loses one unit (`RemoveOneItem`); the tame's
+  feeding timer is reset (`Set(ZDOVars.s_tameLastFeeding, …Ticks)`) and both
+  ZDOs are force-sent (`ZDOMan.ForceSendZDO`) so every peer picks the change
+  up at once. A chest's inventory is loaded once and saved once per scan even
+  if several animals eat from it; at most 200 feeds happen per scan.
+- Before matching, every candidate ZDO is re-validated against
+  `ZDOMan.instance.GetZDO(id)` by reference equality (`IsLive`): the scan
+  spans several frames, so an object destroyed meanwhile may have been
+  released to the ZDO pool and recycled, and only objects the world table
+  still maps to the same instance are used.
+- **Ownership caveat.** The plugin never takes ownership of a ZDO before
+  writing it. If the owning client overwrites the same ZDO in the same tick,
+  the feed is lost and simply retried on the next scan (eventually
+  consistent) — this is believed safe based on the design but not yet proven
+  live; the plugin README's validation protocol is the check. If it is not,
+  the documented (not implemented) fallback is to briefly take ownership of
+  the two ZDOs (`zdo.SetOwner(ZDOMan.GetSessionID())`, write, release next
+  frame).
+
+**Manager side** (`internal/agent`, `internal/mods/service.go`).
+
+- **Bundling.** `plugin/build.sh` builds both plugin projects and packages
+  two zips, `valheim-ui-agent.zip` and `valheim-ui-gameplay.zip` (same
+  Thunderstore layout). CI's `plugin` job uploads both in one `agent-plugin`
+  artifact; the release job copies both into `internal/agent/assets/`
+  (`//go:embed assets/*`) and lists both in `SHA256SUMS` and the release
+  notes.
+- `domain.BundledPlugin{Owner, Name, DLL, ConfigFile, Asset, Title,
+  EnvOverride}` describes each plugin; `domain.BundledAgent` and
+  `domain.BundledGameplay` are the two values. Env override
+  `VALHEIM_UI_GAMEPLAY_ZIP` mirrors `VALHEIM_UI_AGENT_ZIP` for local
+  development (`plugin/dist/*.zip` from `plugin/build.sh`), skipping the
+  embedded copy and the release download.
+- **Install.** `Service.installBundled(ctx, log, instanceID, plugin, bundle)`
+  is shared by both plugins: fetch the zip, extract it under the instance's
+  BepInEx directory, record it as a managed mod (source `bundled`). It runs
+  right after BepInEx (`installBepInEx`) and from
+  `EnqueueAgentInstall` (job type stays `agent_install`; job title "Install/
+  update Valheim UI plugins" — it now covers both). The agent's failure fails
+  the job; a missing or failing gameplay bundle is only a logged warning
+  ("… was not installed: …(install it later from the Mods tab)"), never a
+  failure of the agent install. After a successful gameplay install,
+  `agent.EnsureGameplayConfig(paths)` writes the default cfg
+  (`gameplayConfigBody`) atomically (tmp + rename) only if the file does not
+  exist yet, so the Gameplay card works before the first start; a failure to
+  write it is also only a warning.
+- **API.** No new endpoints. The card reads and writes the plugin's cfg
+  through the existing config-file endpoints (`GET`/`PUT
+  /instances/{id}/mods/configs/{fileName}`) and reads install state from the
+  mods overview (`mods[]` row `jonasthim-valheimui_gameplay`, `source:
+  bundled`, `version`) plus `agent.bundled_version` for "update available",
+  the same way the agent card does.
+
+**UI.** `GameplayCard` (`web/src/features/gameplay/`) sits on the Mods tab
+under the Mod loader card: header "Gameplay" with a pill (not installed /
+installed vX / update available), an Install/Update button for operators
+(reuses `useInstallAgent` and `openConfirmInstallAgent`, worded "plugins").
+Once installed, `useModConfig`/`useSaveModConfig(..., { notify: false })`
+back one form (`StickySaveBar`, `formId="gameplay-form"`,
+`useUnsavedChanges`) covering both sections: Autofeed's switch, sign prefix,
+sign radius, range and interval, and Raids' master switch plus a `DataTable`
+of raid names with a per-row "Allowed" `Switch`. The raid list comes from
+`useAgentCatalog` (connected agent, the world's real events) or the built-in
+`VANILLA_RAIDS` fallback (`web/src/features/gameplay/raids.ts`) when the agent
+is offline; `mergeRaidNames` (`gameplayConfig.ts`) keeps any name already in
+`Disabled` as a row even if it is unknown to either list, so nothing already
+switched off is lost from view. Saving shows "Gameplay settings saved,
+applied live". Viewers get the same controls disabled.
+
+**Testing.** Go: `internal/agent/agent_test.go`
+(`TestBundle_GameplayPluginIndependent`,
+`TestEnsureGameplayConfig_WritesDefaultOnceAndLeavesExistingFileAlone`) and
+`internal/mods/agent_test.go`
+(`TestInstallBepInEx_AlsoInstallsTheGameplayPluginAndDefaultCfg`,
+`TestInstallBepInEx_FailingGameplayBundleIsOnlyAWarning`, and an update-path
+case), all table-driven against a fake bundle, no network. Frontend:
+`gameplayConfig.test.ts` covers the pure cfg-entry mapping
+(`fromEntries`/`toUpdates`/`mergeRaidNames`) with Node's own test runner
+(`node --experimental-strip-types --test
+web/src/features/gameplay/gameplayConfig.test.ts`), since the e2e fake agent
+only reaches the "not installed" state. In-game: the plugin README's
+validation protocol (place a signed feed chest, tame animals nearby, toggle
+Autofeed from the manager, confirm the chest empties, the animals stop
+showing hungry, and a wrongly-signed or out-of-range chest/animal is left
+alone) is the check for the ZDO-ownership caveat above; it has not yet been
+run against a live server.

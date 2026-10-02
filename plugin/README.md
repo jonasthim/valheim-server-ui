@@ -28,3 +28,9 @@ Configuration: `BepInEx/config/se.jonasthim.valheimui.agent.cfg`. The API only
 listens on 127.0.0.1 unless `BindAddress` is changed. `[Chat] ServerName`
 overrides the name the `say` command speaks as; empty uses the game's server
 name.
+
+A second, separate plugin, [Valheim UI Gameplay](ValheimUI.Gameplay/README.md),
+ships alongside this one: opt-in gameplay tweaks (autofeed from sign-marked
+chests, a per-raid on/off filter) with their own cfg file and Mods-tab card,
+installed and updated the same way but independently enabled, disabled or
+uninstalled — it has no effect on anything above.

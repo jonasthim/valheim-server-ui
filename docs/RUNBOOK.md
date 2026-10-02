@@ -223,6 +223,8 @@ proven.
 | Live console stops updating behind a proxy | Buffering: add `proxy_buffering off` (nginx) or `flush_interval -1` (Caddy). |
 | "cross-origin request rejected" | `base_url` does not match the host the browser uses. |
 | Scheduled restart never fires | Schedules with `only_when_empty` skip while players are online; see the schedule's last result. Valheim cannot warn players, so this is by design. |
+| Autofeed does nothing | Check, in order: the Valheim UI Gameplay plugin is installed (Mods tab → Gameplay card) and its Autofeed switch is on; the sign's text does not start with the configured prefix (case-insensitive); the sign is farther than the sign radius from the chest; the animal is farther than the range from the chest; the animal is not hungry yet (the game's own feed timer, ~30 s for most vanilla animals); the chest is open by a player (skipped that scan, retried next scan). `BepInEx/LogOutput.log` on the game server has an `autofeed:` line per scan that fed something; enable `[Autofeed] Debug` in the cfg (or from the Gameplay card) for a line per feed. |
+| A raid I switched off still happened | It was started deliberately with the manager's or console's `event` command — the raid filter never blocks that, by design (ADR-025). Or the name in `[Raids] Disabled` differs from the world's actual event name: read the Raids table on the Gameplay card while the agent is connected (it lists the world's own names) rather than guessing. Or the Raids master switch on the Gameplay card is off. |
 
 ## 10. Uninstall
 
