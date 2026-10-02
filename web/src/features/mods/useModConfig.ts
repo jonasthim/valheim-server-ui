@@ -22,8 +22,10 @@ export function useModConfig(id: string, fileName: string | undefined) {
   })
 }
 
-/** PUT /instances/{id}/mods/configs/{fileName} — either `raw` or `values`. */
-export function useSaveModConfig(id: string, fileName: string | undefined) {
+/** PUT /instances/{id}/mods/configs/{fileName} — either `raw` or `values`.
+ * `notify: false` leaves the success toast to the caller (the Gameplay card
+ * shows its own "applied live" message). */
+export function useSaveModConfig(id: string, fileName: string | undefined, opts: { notify?: boolean } = {}) {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (body: ConfigFileUpdate) =>
@@ -33,7 +35,7 @@ export function useSaveModConfig(id: string, fileName: string | undefined) {
       // Covers the file list (mtime/size changed) and the overview, whose
       // `pending_restart` flips true for a running instance (docs/ARCHITECTURE.md §12).
       void qc.invalidateQueries({ queryKey: ['instances', id, 'mods'] })
-      notifySuccess('Config saved')
+      if (opts.notify !== false) notifySuccess('Config saved')
     },
     onError: (err) => notifyError(err, 'Could not save config'),
   })

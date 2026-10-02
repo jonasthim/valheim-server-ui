@@ -5,6 +5,7 @@ import { Button, Stack } from '@mantine/core'
 import { useDisclosure } from '@mantine/hooks'
 import { IconWorldSearch } from '@tabler/icons-react'
 import { useAuth } from '../../auth/useAuth'
+import { GameplayCard } from '../gameplay'
 import {
   CheckModUpdatesButton,
   ConfigEditor,
@@ -28,6 +29,8 @@ export function ModsTab({ id }: { id: string }) {
   return (
     <Stack gap="md">
       <ModLoaderCard id={id} />
+
+      <GameplayCard id={id} />
 
       <InstalledModsTable
         id={id}
