@@ -30,6 +30,7 @@ namespace ValheimUI.Gameplay
         internal static ConfigEntry<float> AutofeedSignRadius { get; private set; }
         internal static ConfigEntry<float> AutofeedRange { get; private set; }
         internal static ConfigEntry<int> AutofeedIntervalSeconds { get; private set; }
+        internal static ConfigEntry<bool> AutofeedDebug { get; private set; }
 
         private ConfigEntry<bool> _raidsEnabled;
         private ConfigEntry<string> _raidsDisabled;
@@ -46,6 +47,8 @@ namespace ValheimUI.Gameplay
                 new ConfigDescription("Maximum distance in metres between a feed chest and the animal it feeds.", new AcceptableValueRange<float>(1f, 100f)));
             AutofeedIntervalSeconds = Config.Bind("Autofeed", "IntervalSeconds", 30,
                 new ConfigDescription("Seconds between scans for hungry animals.", new AcceptableValueRange<int>(5, 600)));
+            AutofeedDebug = Config.Bind("Autofeed", "Debug", false,
+                "Logs each feed with the animal's and chest's prefab names and the distance between them. Verbose; leave off unless diagnosing autofeed.");
             _raidsEnabled = Config.Bind("Raids", "Enabled", true,
                 "Keep the raids listed in Disabled from starting on their own. Changes apply live.");
             _raidsDisabled = Config.Bind("Raids", "Disabled", "",
@@ -68,10 +71,15 @@ namespace ValheimUI.Gameplay
             }
 
             ApplyRaidFilterConfig();
+            ApplyAutofeedConfig();
             // BepInEx raises this for any entry, including after Config.Reload();
             // re-applying on every change is cheap and keeps us from having to
             // track which specific entries moved.
-            Config.SettingChanged += (_, __) => ApplyRaidFilterConfig();
+            Config.SettingChanged += (_, __) =>
+            {
+                ApplyRaidFilterConfig();
+                ApplyAutofeedConfig();
+            };
 
             ConfigReload.Start(Config, Logger);
         }
@@ -79,6 +87,17 @@ namespace ValheimUI.Gameplay
         private void ApplyRaidFilterConfig()
         {
             RaidFilter.Configure(_raidsEnabled.Value, _raidsDisabled.Value);
+        }
+
+        private void ApplyAutofeedConfig()
+        {
+            Autofeed.Configure(
+                AutofeedEnabled.Value,
+                AutofeedSignPrefix.Value,
+                AutofeedSignRadius.Value,
+                AutofeedRange.Value,
+                AutofeedIntervalSeconds.Value,
+                AutofeedDebug.Value);
         }
 
         private void Update()
@@ -90,6 +109,15 @@ namespace ValheimUI.Gameplay
             catch (Exception e)
             {
                 Logger.LogWarning("config reload poll failed: " + e.Message);
+            }
+
+            try
+            {
+                Autofeed.Step();
+            }
+            catch (Exception e)
+            {
+                Logger.LogWarning("autofeed step failed: " + e.Message);
             }
         }
 
