@@ -1,0 +1,8 @@
+{
+  "name": "ValheimUI_Gameplay",
+  "author": "jonasthim",
+  "version_number": "__VERSION__",
+  "website_url": "https://github.com/jonasthim/valheim-server-ui",
+  "description": "Opt-in gameplay helpers for Valheim Server UI: autofeed tamed animals from sign-marked chests and switch individual raids off. Server-side only; players install nothing.",
+  "dependencies": ["denikson-BepInExPack_Valheim-5.4.2333"]
+}

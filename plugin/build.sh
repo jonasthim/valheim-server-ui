@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds the Valheim UI Agent plugin and packages it as a Thunderstore-style
-# zip the manager installs like any other mod.
+# Builds the Valheim UI Agent and Valheim UI Gameplay plugins and packages
+# each as a Thunderstore-style zip the manager installs like any other mod.
 #
 #   plugin/build.sh [VERSION]      VERSION is X.Y.Z (default 0.0.0)
 #
@@ -31,6 +31,19 @@ if [[ ! -f "$MANAGED/assembly_valheim.dll" ]]; then
   rm -rf "$LIB/server"
 fi
 
+# Packs $1 (a directory) into $2 (a zip path), preferring zip but falling
+# back to bsdtar (this workstation has no zip; CI has both). A failure here
+# must fail the script: the old `( cd ... && zip ... )` subshell swallowed
+# packaging errors.
+package_zip() {
+  local src="$1" out="$2"
+  if command -v zip >/dev/null 2>&1; then
+    ( cd "$src" && zip -qr "$out" . ) || exit 1
+  else
+    ( cd "$src" && bsdtar -a -cf "$out" -- * ) || exit 1
+  fi
+}
+
 echo "==> building ValheimUI.Agent $VERSION"
 cat > ValheimUI.Agent/Version.cs <<CS
 namespace ValheimUI.Agent
@@ -46,14 +59,38 @@ CS
 dotnet build ValheimUI.Agent/ValheimUI.Agent.csproj -c Release --nologo \
   -p:Version="$VERSION" -p:ValheimManaged="$MANAGED"
 
+echo "==> building ValheimUI.Gameplay $VERSION"
+cat > ValheimUI.Gameplay/Version.cs <<CS
+namespace ValheimUI.Gameplay
+{
+    // Rewritten by plugin/build.sh with the release version; 0.0.0 marks a
+    // local or branch build.
+    internal static class BuildInfo
+    {
+        public const string Version = "$VERSION";
+    }
+}
+CS
+dotnet build ValheimUI.Gameplay/ValheimUI.Gameplay.csproj -c Release --nologo \
+  -p:Version="$VERSION" -p:ValheimManaged="$MANAGED"
+
 echo "==> packaging"
 OUT="$PWD/dist"
 rm -rf "$OUT"
-mkdir -p "$OUT/pkg/plugins"
-cp ValheimUI.Agent/bin/Release/net472/ValheimUI.Agent.dll "$OUT/pkg/plugins/"
-sed "s/__VERSION__/$VERSION/" manifest.json > "$OUT/pkg/manifest.json"
-cp README.md "$OUT/pkg/README.md"
-[[ -f icon.png ]] && cp icon.png "$OUT/pkg/icon.png"
-( cd "$OUT/pkg" && zip -qr ../valheim-ui-agent.zip . )
-( cd "$OUT" && sha256sum valheim-ui-agent.zip )
+
+mkdir -p "$OUT/agent-pkg/plugins"
+cp ValheimUI.Agent/bin/Release/net472/ValheimUI.Agent.dll "$OUT/agent-pkg/plugins/"
+sed "s/__VERSION__/$VERSION/" manifest.json > "$OUT/agent-pkg/manifest.json"
+cp README.md "$OUT/agent-pkg/README.md"
+[[ -f icon.png ]] && cp icon.png "$OUT/agent-pkg/icon.png"
+package_zip "$OUT/agent-pkg" "$OUT/valheim-ui-agent.zip"
+
+mkdir -p "$OUT/gameplay-pkg/plugins"
+cp ValheimUI.Gameplay/bin/Release/net472/ValheimUI.Gameplay.dll "$OUT/gameplay-pkg/plugins/"
+sed "s/__VERSION__/$VERSION/" ValheimUI.Gameplay/manifest.json > "$OUT/gameplay-pkg/manifest.json"
+cp ValheimUI.Gameplay/README.md "$OUT/gameplay-pkg/README.md"
+package_zip "$OUT/gameplay-pkg" "$OUT/valheim-ui-gameplay.zip"
+
+( cd "$OUT" && sha256sum valheim-ui-agent.zip valheim-ui-gameplay.zip )
 echo "artifact: $OUT/valheim-ui-agent.zip"
+echo "artifact: $OUT/valheim-ui-gameplay.zip"

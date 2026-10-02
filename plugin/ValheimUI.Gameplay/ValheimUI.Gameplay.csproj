@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Valheim UI Gameplay: opt-in, server-side gameplay helpers for Valheim
+    Server UI (docs/ARCHITECTURE.md §21) — autofeed hungry tamed animals
+    from sign-marked chests and a per-raid on/off filter. Separate from
+    ValheimUI.Agent so it can be disabled or uninstalled independently.
+
+    Game assemblies are never committed: plugin/build.sh downloads the
+    dedicated server with SteamCMD (anonymous) and points ValheimManaged at
+    its Managed/ directory. BepInEx comes from its NuGet feed.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ValheimUI.Gameplay</AssemblyName>
+    <RootNamespace>ValheimUI.Gameplay</RootNamespace>
+    <Version>0.0.0</Version>
+    <Nullable>disable</Nullable>
+    <Deterministic>true</Deterministic>
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <ValheimManaged Condition="'$(ValheimManaged)' == ''">$(MSBuildThisFileDirectory)../lib/valheim</ValheimManaged>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="BepInEx.Core" Version="5.4.21" IncludeAssets="compile" />
+    <PackageReference Include="HarmonyX" Version="2.10.1" IncludeAssets="compile" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="assembly_valheim">
+      <HintPath>$(ValheimManaged)/assembly_valheim.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="assembly_utils">
+      <HintPath>$(ValheimManaged)/assembly_utils.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ValheimManaged)/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ValheimManaged)/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>
