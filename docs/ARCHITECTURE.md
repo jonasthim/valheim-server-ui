@@ -986,7 +986,11 @@ watches Created/Changed/Renamed — the manager writes the file atomically
 dirty; `GameplayPlugin.Update()` calls `ConfigReload.Poll()`, which calls
 `Config.Reload()` on the main thread once the file has been quiet for 500 ms,
 guarded against reload storms by ignoring events for one second after a
-reload (BepInEx can touch the file itself). `Config.SettingChanged` then
+reload (BepInEx can touch the file itself). Because `FileSystemWatcher` is
+not reliable under the dedicated server's Mono runtime, `Poll()` also stats
+the file every 2 s (mtime and size) and marks it dirty on any change; the log
+line says which path fired (`config reloaded (watcher|polled)`).
+`Config.SettingChanged` then
 re-applies both features' values; the handler does not try to tell which
 entry moved and just re-applies everything, which is cheap.
 
@@ -1041,14 +1045,20 @@ driven from `Update()`:
   spans several frames, so an object destroyed meanwhile may have been
   released to the ZDO pool and recycled, and only objects the world table
   still maps to the same instance are used.
-- **Ownership caveat.** The plugin never takes ownership of a ZDO before
-  writing it. If the owning client overwrites the same ZDO in the same tick,
-  the feed is lost and simply retried on the next scan (eventually
-  consistent) — this is believed safe based on the design but not yet proven
-  live; the plugin README's validation protocol is the check. If it is not,
-  the documented (not implemented) fallback is to briefly take ownership of
-  the two ZDOs (`zdo.SetOwner(ZDOMan.GetSessionID())`, write, release next
-  frame).
+- **Revision lead (1.18.1).** The plugin never takes ownership of a ZDO. A
+  peer applies an incoming ZDO update only when the packet's `DataRevision`
+  is strictly greater than its own copy (`ZDOMan.RPC_ZDOData`:
+  `if (num4 <= zDO.DataRevision) continue;`), and the owner of a wandering
+  animal bumps its local revision on every position change
+  (`InternalSetPosition` → `IncreaseDataRevision()` when `IsOwner()`), so the
+  server's copy is normally behind. A plain `Set` (+1) from the server was
+  therefore discarded by the owning client in 1.18.0: the chest lost the item
+  while the animal stayed hungry. Every server-side write now adds
+  `RevisionLead = 1000` to the ZDO's `DataRevision` before the force-send; the
+  owner accepts it and resumes counting from the applied value, and
+  `ZDOPeer.ShouldSend` (`>`) still forwards it to everyone else. The animal is
+  written before any chest is saved, so a chest never loses food without the
+  animal's write having been issued.
 
 **Manager side** (`internal/agent`, `internal/mods/service.go`).
 

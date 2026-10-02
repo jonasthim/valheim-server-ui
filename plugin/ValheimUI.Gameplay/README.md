@@ -32,7 +32,11 @@ plugin never needs a server restart to pick up a change.
 
 The manager writes this file atomically; the plugin notices the change and
 calls `Config.Reload()` on the main thread about half a second later — no
-restart.
+restart. Change detection uses a `FileSystemWatcher`, backed by a polling
+fallback (stats the file at most every 2 s) since the watcher is known to
+miss events on some Mono/Linux setups; the server log line says which one
+fired (`config reloaded (watcher)` vs `config reloaded (polled)`), so a
+polled-only reload for every change is a sign to check the watcher.
 
 ## The sign convention
 
@@ -65,7 +69,14 @@ of at most 2 ms per game tick, so a large world never causes a stutter:
    even if several animals eat from it in the same pass. At most 200 feeds
    happen per scan, and the server never takes ownership of a chest or
    animal to do this — if the owning client writes the same ZDO in the same
-   tick, the feed is lost and simply retried on the next scan.
+   tick, the feed is lost and simply retried on the next scan. Every write
+   here also jumps the ZDO's `DataRevision` ahead by 1000 (on top of the +1
+   the game's own `ZDO.Set` already applies): the client that owns a wandering
+   animal keeps bumping its own local revision every tick, and the game only
+   accepts an incoming update when its revision is strictly greater than the
+   peer's local one, so a plain +1 from the server is routinely ignored by
+   the very client the animal is simulated on. The owning client just resumes
+   counting up from the new value afterwards; this has no visible effect.
 
 **"Hungry"** uses the game's own rule (`Tameable.IsHungry()`): the time since
 the animal's last feeding exceeds its `m_fedDuration` (30 s for most vanilla

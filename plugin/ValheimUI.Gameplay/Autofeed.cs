@@ -42,6 +42,30 @@ namespace ValheimUI.Gameplay
         /// <summary>Safety valve: a scan feeds at most this many animals, however many are hungry.</summary>
         private const int MaxFeedsPerScan = 200;
 
+        /// <summary>
+        /// Added to <see cref="ZDO.DataRevision"/> on every server-side write
+        /// here, on top of the +1 that <c>ZDO.Set(...)</c> already applies via
+        /// <c>IncreaseDataRevision()</c>. <c>ZDOMan.RPC_ZDOData</c> (the
+        /// receiving peer's handler for an incoming ZDO update) only applies
+        /// the packet when it strictly exceeds the peer's own local revision:
+        /// <c>if (num4 &lt;= zDO.DataRevision) { ...; continue; }</c> — so for a
+        /// ZDO the *client* owns (a wandering tamed animal, whose own
+        /// <c>InternalSetPosition</c> calls <c>IncreaseDataRevision()</c> on
+        /// every position tick), the client's local revision is usually far
+        /// ahead of the server's, and a +1 write from here is silently
+        /// discarded by the very peer that needs to see it — the animal never
+        /// gets its fed timestamp even though the chest item was removed. A
+        /// lead of 1000 makes the server's revision jump far enough ahead
+        /// that <c>num4 &gt; zDO.DataRevision</c> holds on the owner even after
+        /// it has ticked a few hundred times since the server last heard from
+        /// it; the owner then simply resumes counting up from the applied
+        /// value, `uint` wraparound is harmless (it would take billions of
+        /// writes), and every other peer's <c>ZDOPeer.ShouldSend</c> — which
+        /// compares with a plain <c>&gt;</c> — still sees the new value as
+        /// newer and forwards it normally.
+        /// </summary>
+        private const uint RevisionLead = 1000;
+
         private enum State
         {
             Idle,
@@ -69,12 +93,15 @@ namespace ValheimUI.Gameplay
         private static readonly List<ZDO> Chests = new List<ZDO>();
         private static readonly List<ZDO> Tames = new List<ZDO>();
         private static readonly HashSet<string> WarnedMessages = new HashSet<string>();
+        private static string _lastLogged = "";
+        private static bool _loggedFirstScan;
 
         /// <summary>Applies new [Autofeed] values; re-read on every config change (G-1's SettingChanged handler). Safe to call every time, even mid-scan.</summary>
         public static void Configure(bool enabled, string signPrefix, float signRadius, float range, int intervalSeconds, bool debug)
         {
             try
             {
+                bool wasEnabled = _enabled;
                 _enabled = enabled;
                 _signPrefix = signPrefix ?? "";
                 _signRadius = signRadius;
@@ -82,6 +109,20 @@ namespace ValheimUI.Gameplay
                 _intervalSeconds = intervalSeconds > 0 ? intervalSeconds : 1;
                 _debug = debug;
                 if (!enabled) ResetScan();
+                if (enabled && !wasEnabled) _loggedFirstScan = false;
+
+                // Mirrors RaidFilter.Configure's _lastLogged pattern: log once
+                // per effective change, not once per SettingChanged event (the
+                // handler re-applies on every entry, including unrelated ones).
+                var summary = !enabled
+                    ? "autofeed: off"
+                    : "autofeed: on (prefix '" + _signPrefix + "', sign radius " + _signRadius.ToString("0.##") +
+                      " m, range " + _range.ToString("0.##") + " m, every " + _intervalSeconds + " s)";
+                if (summary != _lastLogged)
+                {
+                    _lastLogged = summary;
+                    GameplayPlugin.Log?.LogInfo(summary);
+                }
             }
             catch (Exception e)
             {
@@ -261,6 +302,7 @@ namespace ValheimUI.Gameplay
         {
             var feedChests = FindFeedChests();
             var hungryTames = FindHungryTames();
+            LogFirstScanDoneOnce(feedChests.Count, hungryTames.Count);
 
             if (feedChests.Count == 0 || hungryTames.Count == 0)
             {
@@ -325,6 +367,7 @@ namespace ValheimUI.Gameplay
 
                 best.Inventory.RemoveOneItem(bestItem);
                 tame.Set(ZDOVars.s_tameLastFeeding, ZNet.instance.GetTime().Ticks);
+                tame.DataRevision += RevisionLead; // see RevisionLead: beat the owning client's local revision so RPC_ZDOData does not discard this write.
                 zdoman.ForceSendZDO(tame.m_uid);
                 usedChests.Add(best.Zdo.m_uid);
                 fed++;
@@ -387,6 +430,7 @@ namespace ValheimUI.Gameplay
                 var pkg = new ZPackage();
                 load.Inventory.Save(pkg);
                 load.Zdo.Set(ZDOVars.s_items, pkg.GetArray());
+                load.Zdo.DataRevision += RevisionLead; // see RevisionLead: beat the owning client's local revision so RPC_ZDOData does not discard this write.
             }
             catch (Exception e)
             {
@@ -411,7 +455,10 @@ namespace ValheimUI.Gameplay
 
         private static void LogScanSummary(int fed, int chestsUsed, int feedChests, int hungryTames)
         {
-            if (fed > 0)
+            // Info whenever something happened (fed > 0) or Debug is turned
+            // on (an operator actively diagnosing autofeed wants every scan
+            // in the normal log, not filtered out at Debug level).
+            if (fed > 0 || _debug)
             {
                 GameplayPlugin.Log?.LogInfo("autofeed: fed " + fed + " animal(s) from " + chestsUsed + " chest(s) (" +
                     feedChests + " feed chests, " + hungryTames + " hungry)");
@@ -420,6 +467,15 @@ namespace ValheimUI.Gameplay
             {
                 GameplayPlugin.Log?.LogDebug("autofeed: " + feedChests + " feed chests, " + hungryTames + " hungry, 0 fed");
             }
+        }
+
+        /// <summary>Once per enable, logged on the first completed scan so an operator can tell the scan is actually running even when nothing needed feeding yet.</summary>
+        private static void LogFirstScanDoneOnce(int feedChestCount, int hungryCount)
+        {
+            if (_loggedFirstScan) return;
+            _loggedFirstScan = true;
+            GameplayPlugin.Log?.LogInfo("autofeed: first scan done — " + Chests.Count + " chests scanned, " +
+                feedChestCount + " feed chests, " + Tames.Count + " tamed animals, " + hungryCount + " hungry");
         }
 
         private static void LogWarningOnce(string context, Exception e)
