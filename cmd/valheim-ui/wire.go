@@ -148,9 +148,9 @@ func wireServices(ctx context.Context, deps *api.Deps) error {
 	// WP-08: BepInEx, Thunderstore and mod config editing.
 	// Server plugin: config writer, poller and the package the mods service
 	// installs together with BepInEx.
-	agentBundle := wireAgent(ctx, deps, inst)
+	agentBundle, gameplayBundle := wireAgent(ctx, deps, inst)
 
-	if err := wireMods(ctx, deps, inst, runner, agentBundle); err != nil {
+	if err := wireMods(ctx, deps, inst, runner, agentBundle, gameplayBundle); err != nil {
 		return fmt.Errorf("mods: %w", err)
 	}
 

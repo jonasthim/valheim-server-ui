@@ -23,6 +23,27 @@ const (
 	AgentAssetName = "valheim-ui-agent.zip"
 )
 
+// BundledPlugin describes a BepInEx plugin shipped inside the manager
+// (installed with BepInEx, resolved by internal/agent.Bundle; see
+// docs/ARCHITECTURE.md §20/§21).
+type BundledPlugin struct {
+	Owner, Name, DLL, ConfigFile, Asset, Title, EnvOverride string
+}
+
+// BundledAgent is the manager's own server plugin (ARCHITECTURE.md §20).
+var BundledAgent = BundledPlugin{
+	Owner: AgentModOwner, Name: AgentModName, DLL: AgentPluginDLL, ConfigFile: AgentConfigFile,
+	Asset: AgentAssetName, Title: "Valheim UI Agent", EnvOverride: "VALHEIM_UI_AGENT_ZIP",
+}
+
+// BundledGameplay is the opt-in gameplay helper plugin (autofeed, raid
+// filter; ARCHITECTURE.md §21).
+var BundledGameplay = BundledPlugin{
+	Owner: "jonasthim", Name: "valheimui_gameplay", DLL: "ValheimUI.Gameplay.dll",
+	ConfigFile: "se.jonasthim.valheimui.gameplay.cfg", Asset: "valheim-ui-gameplay.zip",
+	Title: "Valheim UI Gameplay", EnvOverride: "VALHEIM_UI_GAMEPLAY_ZIP",
+}
+
 // EventAgentStatus carries an AgentInfo for one instance whenever the poller
 // has news (connection changes, players moving).
 const EventAgentStatus = "agent.status"

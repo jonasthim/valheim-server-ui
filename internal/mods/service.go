@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jonasthim/valheim-server-ui/internal/agent"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 	"github.com/jonasthim/valheim-server-ui/internal/jobs"
 )
@@ -45,7 +46,12 @@ type InstanceAccessor interface {
 type Service struct {
 	// agent provides the Valheim UI Agent package installed together with
 	// BepInEx (nil disables that step).
-	agent    AgentBundle
+	agent AgentBundle
+	// gameplay provides the opt-in Valheim UI Gameplay package, installed
+	// the same way right after the agent (nil disables that step; a missing
+	// gameplay bundle at install time is a warning, never a failure of the
+	// agent install, see installBepInEx/EnqueueAgentInstall).
+	gameplay AgentBundle
 	db       *sql.DB
 	regs     *Registries
 	inst     InstanceAccessor
@@ -110,6 +116,10 @@ type AgentBundle interface {
 // SetAgentBundle enables installing the agent plugin with BepInEx.
 func (s *Service) SetAgentBundle(b AgentBundle) { s.agent = b }
 
+// SetGameplayBundle enables installing the opt-in Valheim UI Gameplay plugin
+// alongside the agent (both with BepInEx, and from EnqueueAgentInstall).
+func (s *Service) SetGameplayBundle(b AgentBundle) { s.gameplay = b }
+
 // ---------------------------------------------------------------- bepinex
 
 func (s *Service) installBepInEx(ctx context.Context, log *jobs.Logger, instanceID string) error {
@@ -139,19 +149,25 @@ func (s *Service) installBepInEx(ctx context.Context, log *jobs.Logger, instance
 	if s.agent != nil {
 		// The agent rides along with the loader so every modded server gets
 		// the live map, players and admin commands without a second step.
-		if err := s.installAgent(ctx, log, instanceID); err != nil {
-			log.Printf("warning: Valheim UI Agent was not installed: %v (install it later from the Mods tab)", err)
+		if err := s.installBundled(ctx, log, instanceID, domain.BundledAgent, s.agent); err != nil {
+			log.Printf("warning: %s was not installed: %v (install it later from the Mods tab)", domain.BundledAgent.Title, err)
+		}
+	}
+	if s.gameplay != nil {
+		if err := s.installBundled(ctx, log, instanceID, domain.BundledGameplay, s.gameplay); err != nil {
+			log.Printf("warning: %s was not installed: %v (install it later from the Mods tab)", domain.BundledGameplay.Title, err)
+		} else if err := agent.EnsureGameplayConfig(paths); err != nil {
+			log.Printf("warning: %s default config was not written: %v", domain.BundledGameplay.Title, err)
 		}
 	}
 	return nil
 }
 
-// installAgent fetches the bundled agent package and installs it as the
-// managed mod jonasthim-valheimui_agent (source "bundled"), replacing any
-// previous version's files.
-func (s *Service) installAgent(ctx context.Context, log *jobs.Logger, instanceID string) error {
+// installBundled fetches plugin p's package from bundle b and installs it as
+// a managed mod (source "bundled"), replacing any previous version's files.
+func (s *Service) installBundled(ctx context.Context, log *jobs.Logger, instanceID string, p domain.BundledPlugin, b AgentBundle) error {
 	paths := s.inst.Paths(instanceID)
-	zipPath, err := s.agent.Fetch(ctx)
+	zipPath, err := b.Fetch(ctx)
 	if err != nil {
 		return err
 	}
@@ -159,12 +175,12 @@ func (s *Service) installAgent(ctx context.Context, log *jobs.Logger, instanceID
 	if err != nil {
 		return err
 	}
-	owner, name := domain.AgentModOwner, domain.AgentModName
+	owner, name := p.Owner, p.Name
 	existing, err := s.getModByFullName(ctx, instanceID, owner, name)
 	if err != nil {
 		return err
 	}
-	log.Printf("installing Valheim UI Agent %s", version)
+	log.Printf("installing %s %s", p.Title, version)
 	files, err := extractPackage(zipPath, paths.Server, owner, name)
 	if err != nil {
 		return err
@@ -200,7 +216,7 @@ func (s *Service) installAgent(ctx context.Context, log *jobs.Logger, instanceID
 			return err
 		}
 	}
-	log.Printf("Valheim UI Agent %s installed", version)
+	log.Printf("%s %s installed", p.Title, version)
 	return nil
 }
 
@@ -224,11 +240,24 @@ func (s *Service) EnqueueAgentInstall(ctx context.Context, instanceID string, st
 		return nil, domain.Ef(domain.CodeInstanceRunning, "instance %q must be stopped first, or pass stop_if_running", instanceID)
 	}
 	return s.runner.Enqueue(ctx, jobs.Spec{
-		Type: domain.JobAgentInstall, InstanceID: instanceID, Title: "Install/update Valheim UI Agent",
+		Type: domain.JobAgentInstall, InstanceID: instanceID, Title: "Install/update Valheim UI plugins",
 		RequestedBy: requestedBy, Exclusive: true,
 	}, func(ctx context.Context, log *jobs.Logger) error {
 		err := withStoppedInstance(ctx, s.inst, instanceID, log, func(ctx context.Context) error {
-			return s.installAgent(ctx, log, instanceID)
+			// The agent is the one this job is named for: its failure fails
+			// the job. The gameplay plugin rides along, same as it does with
+			// BepInEx install, but a problem with it is only a warning.
+			if err := s.installBundled(ctx, log, instanceID, domain.BundledAgent, s.agent); err != nil {
+				return err
+			}
+			if s.gameplay != nil {
+				if err := s.installBundled(ctx, log, instanceID, domain.BundledGameplay, s.gameplay); err != nil {
+					log.Printf("warning: %s was not installed: %v (install it later from the Mods tab)", domain.BundledGameplay.Title, err)
+				} else if err := agent.EnsureGameplayConfig(s.inst.Paths(instanceID)); err != nil {
+					log.Printf("warning: %s default config was not written: %v", domain.BundledGameplay.Title, err)
+				}
+			}
+			return nil
 		})
 		if err == nil {
 			err = s.finishModJob(ctx, instanceID)

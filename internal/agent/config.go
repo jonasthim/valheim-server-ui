@@ -39,6 +39,12 @@ func ConfigPath(paths domain.InstancePaths) string {
 	return filepath.Join(paths.BepInExDir(), "config", domain.AgentConfigFile)
 }
 
+// GameplayConfigPath is the BepInEx config file the gameplay plugin
+// (domain.BundledGameplay) reads on load.
+func GameplayConfigPath(paths domain.InstancePaths) string {
+	return filepath.Join(paths.BepInExDir(), "config", domain.BundledGameplay.ConfigFile)
+}
+
 // Installed reports whether the agent plugin is present in the instance.
 func Installed(paths domain.InstancePaths) bool {
 	fi, err := os.Stat(PluginPath(paths))
@@ -153,6 +159,71 @@ func writeConfig(paths domain.InstancePaths, c Config) error {
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("agent: install config: %w", err)
+	}
+	return nil
+}
+
+// gameplayConfigBody is the default se.jonasthim.valheimui.gameplay.cfg
+// (BepInEx format, keys/defaults/descriptions as specced in the Gameplay
+// plugin's plan Design section and bound by Plugin.cs's Config.Bind calls).
+// The gameplay plugin rewrites the file with its own type hints and keeps
+// these values on first load, exactly like the agent's own config.
+const gameplayConfigBody = `## Written by Valheim Server UI the first time the Valheim UI Gameplay
+## plugin is installed; the plugin keeps these values and adds its own
+## descriptions the first time it loads. Edit from the manager's Mods tab or
+## this file directly: the plugin reloads it live, no restart needed.
+
+[Autofeed]
+
+## Feed hungry tamed animals from nearby chests marked with a sign. Changes apply live.
+Enabled = false
+
+## Case-insensitive prefix of a sign's text that marks a chest as a feed chest. Empty marks every chest in range.
+SignPrefix = feed
+
+## Maximum distance in metres between the sign and the chest.
+SignRadius = 2.0
+
+## Maximum distance in metres between a feed chest and the animal it feeds.
+Range = 20
+
+## Seconds between scans for hungry animals.
+IntervalSeconds = 30
+
+[Raids]
+
+## Keep the raids listed in Disabled from starting on their own. Changes apply live.
+Enabled = true
+
+## Comma-separated random event names that never start by themselves (e.g. army_eikthyr,wolves). The event command still starts them.
+Disabled =
+`
+
+// EnsureGameplayConfig writes the gameplay plugin's default config
+// (gameplayConfigBody) the first time it is installed, only when the file
+// does not exist yet, with the same atomic tmp+rename pattern as
+// EnsureConfig. An existing file (the plugin's own rewrite, or an operator's
+// edit) is left untouched.
+func EnsureGameplayConfig(paths domain.InstancePaths) error {
+	path := GameplayConfigPath(paths)
+	if fi, err := os.Stat(path); err == nil {
+		if !fi.Mode().IsRegular() {
+			return fmt.Errorf("agent: gameplay config path %s is not a regular file", path)
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("agent: stat gameplay config: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return fmt.Errorf("agent: create gameplay config dir: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(gameplayConfigBody), 0o640); err != nil { //nolint:gosec // no secrets in this file
+		return fmt.Errorf("agent: write gameplay config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("agent: install gameplay config: %w", err)
 	}
 	return nil
 }

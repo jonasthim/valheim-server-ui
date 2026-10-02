@@ -347,10 +347,10 @@ func TestService_CommandRequiresRunningAgent(t *testing.T) {
 }
 
 func TestBundle_Version(t *testing.T) {
-	if got := NewBundle("v1.5.0", t.TempDir(), nil, nil).Version(); got != "1.5.0" {
+	if got := NewBundle(domain.BundledAgent, "v1.5.0", t.TempDir(), nil, nil).Version(); got != "1.5.0" {
 		t.Fatalf("Version = %q", got)
 	}
-	if got := NewBundle("v1.0.1-16-gabc-dirty", t.TempDir(), nil, nil).Version(); got != "0.0.0" {
+	if got := NewBundle(domain.BundledAgent, "v1.0.1-16-gabc-dirty", t.TempDir(), nil, nil).Version(); got != "0.0.0" {
 		t.Fatalf("dev Version = %q", got)
 	}
 }
@@ -361,7 +361,7 @@ func TestBundle_OverrideAndMissing(t *testing.T) {
 	if err := os.WriteFile(zipPath, []byte("PK"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	b := NewBundle("v1.5.0", dir, nil, nil)
+	b := NewBundle(domain.BundledAgent, "v1.5.0", dir, nil, nil)
 	b.override = zipPath
 	if p, err := b.Fetch(context.Background()); err != nil || p != zipPath {
 		t.Fatalf("override: %q %v", p, err)
@@ -371,6 +371,69 @@ func TestBundle_OverrideAndMissing(t *testing.T) {
 		t.Fatal("expected an error with no embedded zip and no release source")
 	}
 	_ = time.Second
+}
+
+// TestBundle_GameplayPluginIndependent mirrors TestBundle_OverrideAndMissing
+// for the gameplay bundle, confirming the two bundles resolve independently
+// (own env override, own cache subdirectory) per card M-1.
+func TestBundle_GameplayPluginIndependent(t *testing.T) {
+	dir := t.TempDir()
+	zipPath := filepath.Join(dir, "gameplay.zip")
+	if err := os.WriteFile(zipPath, []byte("PK"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b := NewBundle(domain.BundledGameplay, "v1.18.0", dir, nil, nil)
+	if got := b.Version(); got != "1.18.0" {
+		t.Fatalf("Version = %q", got)
+	}
+	b.override = zipPath
+	if p, err := b.Fetch(context.Background()); err != nil || p != zipPath {
+		t.Fatalf("override: %q %v", p, err)
+	}
+	b.override = ""
+	if _, err := b.Fetch(context.Background()); err == nil {
+		t.Fatal("expected an error with no embedded zip and no release source")
+	}
+}
+
+func TestEnsureGameplayConfig_WritesDefaultOnceAndLeavesExistingFileAlone(t *testing.T) {
+	paths := testPaths(t)
+	path := GameplayConfigPath(paths)
+
+	if err := EnsureGameplayConfig(paths); err != nil {
+		t.Fatal(err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"[Autofeed]", "Enabled = false", "SignPrefix = feed", "SignRadius = 2.0",
+		"Range = 20", "IntervalSeconds = 30",
+		"[Raids]", "Enabled = true", "Disabled =",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("gameplay config missing %q:\n%s", want, body)
+		}
+	}
+
+	// A second call (e.g. a later BepInEx reinstall) must not touch an
+	// existing file: an operator's own edits, or the plugin's own rewrite
+	// with comments/type hints, must survive byte-for-byte.
+	edited := "## edited by an operator\n[Autofeed]\nEnabled = true\n"
+	if err := os.WriteFile(path, []byte(edited), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := EnsureGameplayConfig(paths); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != edited {
+		t.Fatalf("EnsureGameplayConfig overwrote an existing file:\n%s", after)
+	}
 }
 
 // TestService_StatusArraysNeverNull: before the world loads the plugin

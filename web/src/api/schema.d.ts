@@ -2916,7 +2916,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Install or update the agent plugin (instance must be stopped; BepInEx required) */
+        /** Install or update the bundled Valheim UI plugins (agent and gameplay; instance must be stopped; BepInEx required) */
         post: {
             parameters: {
                 query?: never;
@@ -4976,7 +4976,12 @@ export interface components {
              */
             run_seq: number;
         };
-        /** @enum {string} */
+        /**
+         * @description `agent_install` installs or updates the bundled Valheim UI plugins
+         *     (agent and gameplay); the job type name stays `agent_install` for
+         *     backward compatibility even though it now covers both.
+         * @enum {string}
+         */
         JobType: "install" | "update" | "backup" | "backup_upload" | "restore" | "world_import" | "world_regenerate" | "mod_install" | "mod_update" | "mod_uninstall" | "bepinex_install" | "agent_install" | "scheduled_restart" | "thunderstore_refresh" | "self_upgrade" | "restart";
         /** @enum {string} */
         JobStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";

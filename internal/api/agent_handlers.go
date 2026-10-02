@@ -334,6 +334,10 @@ func agentCommandHandler(d *Deps) http.HandlerFunc {
 	}
 }
 
+// installAgentHandler installs or updates the bundled Valheim UI plugins
+// (agent and gameplay; docs/openapi.yaml POST /instances/{instanceId}/agent/install).
+// A missing or unresolved gameplay bundle is a warning only: the job still
+// succeeds as long as the agent itself installs (internal/mods.Service.EnqueueAgentInstall).
 func installAgentHandler(d *Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := InstanceID(r)

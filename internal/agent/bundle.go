@@ -26,7 +26,7 @@ var assets embed.FS
 
 var semverTag = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
 
-// maxBundleBytes bounds the plugin package download.
+// maxBundleBytes bounds a plugin package download.
 const maxBundleBytes = 32 << 20
 
 // ReleaseSource looks up GitHub releases (implemented by selfupdate.Client).
@@ -35,12 +35,14 @@ type ReleaseSource interface {
 	Latest(ctx context.Context) (*selfupdate.Release, error)
 }
 
-// Bundle resolves the agent package (valheim-ui-agent.zip) for this manager
-// build, in order: an override path in VALHEIM_UI_AGENT_ZIP (development),
-// the copy embedded into release binaries, then the asset of the GitHub
-// release matching the manager's version (or the latest release for
-// untagged builds), verified against the release's SHA256SUMS.
+// Bundle resolves one bundled plugin's package (domain.BundledPlugin.Asset)
+// for this manager build, in order: an override path in the plugin's
+// EnvOverride env var (development), the copy embedded into release
+// binaries, then the asset of the GitHub release matching the manager's
+// version (or the latest release for untagged builds), verified against the
+// release's SHA256SUMS.
 type Bundle struct {
+	plugin   domain.BundledPlugin
 	version  string // manager version tag, e.g. v1.5.0, or "dev"
 	cacheDir string
 	releases ReleaseSource
@@ -48,13 +50,13 @@ type Bundle struct {
 	override string
 }
 
-// NewBundle builds a Bundle for the manager running version (as reported by
-// `valheim-ui version`), caching downloads under cacheDir.
-func NewBundle(version, cacheDir string, releases ReleaseSource, hc *http.Client) *Bundle {
+// NewBundle builds a Bundle for plugin, for the manager running version (as
+// reported by `valheim-ui version`), caching downloads under cacheDir.
+func NewBundle(plugin domain.BundledPlugin, version, cacheDir string, releases ReleaseSource, hc *http.Client) *Bundle {
 	if hc == nil {
 		hc = &http.Client{Timeout: 2 * time.Minute}
 	}
-	return &Bundle{version: version, cacheDir: cacheDir, releases: releases, http: hc, override: os.Getenv("VALHEIM_UI_AGENT_ZIP")}
+	return &Bundle{plugin: plugin, version: version, cacheDir: cacheDir, releases: releases, http: hc, override: os.Getenv(plugin.EnvOverride)}
 }
 
 // Version is the plugin version this bundle provides: the manager's own
@@ -72,7 +74,7 @@ func (b *Bundle) Fetch(ctx context.Context) (string, error) {
 		if fi, err := os.Stat(b.override); err == nil && fi.Mode().IsRegular() {
 			return b.override, nil
 		}
-		return "", fmt.Errorf("agent: VALHEIM_UI_AGENT_ZIP=%s is not a file", b.override)
+		return "", fmt.Errorf("agent: %s=%s is not a file", b.plugin.EnvOverride, b.override)
 	}
 	if p, ok, err := b.embedded(); err != nil {
 		return "", err
@@ -84,12 +86,12 @@ func (b *Bundle) Fetch(ctx context.Context) (string, error) {
 
 // embedded materialises the zip compiled into a release binary, if any.
 func (b *Bundle) embedded() (string, bool, error) {
-	data, err := fs.ReadFile(assets, "assets/"+domain.AgentAssetName)
+	data, err := fs.ReadFile(assets, "assets/"+b.plugin.Asset)
 	if err != nil || len(data) == 0 {
 		return "", false, nil
 	}
-	dir := filepath.Join(b.cacheDir, "agent", "embedded-"+b.Version())
-	path := filepath.Join(dir, domain.AgentAssetName)
+	dir := filepath.Join(b.cacheDir, "bundled", b.plugin.Name, "embedded-"+b.Version())
+	path := filepath.Join(dir, b.plugin.Asset)
 	if fi, err := os.Stat(path); err == nil && fi.Size() == int64(len(data)) {
 		return path, true, nil
 	}
@@ -120,8 +122,8 @@ func (b *Bundle) fromRelease(ctx context.Context) (string, error) {
 	if rel == nil {
 		return "", domain.Ef(domain.CodeUpstreamError, "no release found for %s", b.version)
 	}
-	dir := filepath.Join(b.cacheDir, "agent", rel.Tag)
-	path := filepath.Join(dir, domain.AgentAssetName)
+	dir := filepath.Join(b.cacheDir, "bundled", b.plugin.Name, rel.Tag)
+	path := filepath.Join(dir, b.plugin.Asset)
 	if fi, err := os.Stat(path); err == nil && fi.Size() > 0 {
 		return path, nil
 	}
@@ -129,14 +131,14 @@ func (b *Bundle) fromRelease(ctx context.Context) (string, error) {
 	var zipSize int64
 	for _, a := range rel.Assets {
 		switch a.Name {
-		case domain.AgentAssetName:
+		case b.plugin.Asset:
 			zipURL, zipSize = a.DownloadURL, a.Size
 		case "SHA256SUMS":
 			sumsURL = a.DownloadURL
 		}
 	}
 	if zipURL == "" {
-		return "", domain.Ef(domain.CodeUpstreamError, "release %s has no %s (releases before v1.5.0 ship no agent)", rel.Tag, domain.AgentAssetName)
+		return "", domain.Ef(domain.CodeUpstreamError, "release %s has no %s", rel.Tag, b.plugin.Asset)
 	}
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", fmt.Errorf("agent: cache dir: %w", err)
@@ -159,7 +161,7 @@ func (b *Bundle) fromRelease(ctx context.Context) (string, error) {
 		}
 		if want != "" && got != want {
 			_ = os.Remove(tmp)
-			return "", domain.Ef(domain.CodeUpstreamError, "%s checksum mismatch: expected %s, got %s", domain.AgentAssetName, want, got)
+			return "", domain.Ef(domain.CodeUpstreamError, "%s checksum mismatch: expected %s, got %s", b.plugin.Asset, want, got)
 		}
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -176,11 +178,11 @@ func (b *Bundle) download(ctx context.Context, url, dest string, size int64) err
 	req.Header.Set("Accept", "application/octet-stream")
 	resp, err := b.http.Do(req)
 	if err != nil {
-		return domain.Wrap(domain.CodeUpstreamError, "download "+domain.AgentAssetName, err)
+		return domain.Wrap(domain.CodeUpstreamError, "download "+b.plugin.Asset, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return domain.Ef(domain.CodeUpstreamError, "download %s: %s", domain.AgentAssetName, resp.Status)
+		return domain.Ef(domain.CodeUpstreamError, "download %s: %s", b.plugin.Asset, resp.Status)
 	}
 	limit := int64(maxBundleBytes)
 	if size > 0 && size < limit {
@@ -199,7 +201,7 @@ func (b *Bundle) download(ctx context.Context, url, dest string, size int64) err
 		return fmt.Errorf("agent: close download: %w", closeErr)
 	}
 	if size > 0 && n != size {
-		return domain.Ef(domain.CodeUpstreamError, "%s size mismatch: expected %d bytes, got %d", domain.AgentAssetName, size, n)
+		return domain.Ef(domain.CodeUpstreamError, "%s size mismatch: expected %d bytes, got %d", b.plugin.Asset, size, n)
 	}
 	return nil
 }
@@ -220,7 +222,7 @@ func (b *Bundle) expectedSum(ctx context.Context, url string) (string, error) {
 	sc := bufio.NewScanner(io.LimitReader(resp.Body, 64<<10))
 	for sc.Scan() {
 		fields := strings.Fields(sc.Text())
-		if len(fields) == 2 && strings.TrimPrefix(fields[1], "*") == domain.AgentAssetName {
+		if len(fields) == 2 && strings.TrimPrefix(fields[1], "*") == b.plugin.Asset {
 			return strings.ToLower(fields[0]), nil
 		}
 	}

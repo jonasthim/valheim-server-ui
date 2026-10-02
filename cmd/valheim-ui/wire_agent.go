@@ -14,20 +14,22 @@ import (
 	"github.com/jonasthim/valheim-server-ui/internal/selfupdate"
 )
 
-// wireAgent sets up the Valheim UI Agent integration: the bundle that
-// provides the plugin package (installed with BepInEx by the mods service),
-// the poller that talks to running agents, the status enricher and the
-// pre-start hook that writes the plugin's config. Returns the bundle for
-// wireMods.
-func wireAgent(ctx context.Context, deps *api.Deps, inst *instance.Service) *agent.Bundle {
+// wireAgent sets up the Valheim UI Agent integration: the bundles that
+// provide the agent and gameplay plugin packages (installed with BepInEx by
+// the mods service), the poller that talks to running agents, the status
+// enricher and the pre-start hook that writes the plugin's config. Returns
+// both bundles for wireMods.
+func wireAgent(ctx context.Context, deps *api.Deps, inst *instance.Service) (agentBundle, gameplayBundle *agent.Bundle) {
 	var copts []selfupdate.ClientOption
 	if base := os.Getenv("VALHEIM_UI_RELEASES_BASE_URL"); base != "" {
 		copts = append(copts, selfupdate.WithBaseURL(base))
 	}
 	releases := selfupdate.NewClient(domain.GitHubRepo, version, copts...)
-	bundle := agent.NewBundle(version, deps.Cfg.CacheDir(), releases, &http.Client{Timeout: 2 * time.Minute})
+	hc := &http.Client{Timeout: 2 * time.Minute}
+	agentBundle = agent.NewBundle(domain.BundledAgent, version, deps.Cfg.CacheDir(), releases, hc)
+	gameplayBundle = agent.NewBundle(domain.BundledGameplay, version, deps.Cfg.CacheDir(), releases, hc)
 
-	svc := agent.NewService(inst, deps.Bus, deps.Log, bundle)
+	svc := agent.NewService(inst, deps.Bus, deps.Log, agentBundle)
 	// F-2.3: persistent chat history, stored by the poller and served back
 	// through deps.Agent.ChatHistory.
 	svc.SetChatStore(db.NewChatLogRepo(deps.DB))
@@ -35,5 +37,5 @@ func wireAgent(ctx context.Context, deps *api.Deps, inst *instance.Service) *age
 	inst.RegisterPreStart(svc.PreStart)
 	deps.Agent = svc
 	go svc.Run(ctx)
-	return bundle
+	return agentBundle, gameplayBundle
 }
