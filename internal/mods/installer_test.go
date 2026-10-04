@@ -146,6 +146,8 @@ func TestRemoveManagedFiles_SkipsCfgAndPrunesEmptyDirs(t *testing.T) {
 		"BepInEx/plugins/Alice-CoreLib/CoreLib.dll",
 		"BepInEx/plugins/Alice-CoreLib/README.md",
 		"BepInEx/config/corelib.cfg",
+		"BepInEx/config/X.yml",
+		"BepInEx/config/X.JSON",
 	}
 	for _, f := range files {
 		abs := filepath.Join(serverDir, filepath.FromSlash(f))
@@ -166,6 +168,11 @@ func TestRemoveManagedFiles_SkipsCfgAndPrunesEmptyDirs(t *testing.T) {
 	}
 	if !fileExists(filepath.Join(serverDir, "BepInEx/config/corelib.cfg")) {
 		t.Error("cfg file must never be deleted by removeManagedFiles")
+	}
+	for _, f := range []string{"BepInEx/config/X.yml", "BepInEx/config/X.JSON"} {
+		if !fileExists(filepath.Join(serverDir, f)) {
+			t.Errorf("%s must never be deleted by removeManagedFiles", f)
+		}
 	}
 }
 

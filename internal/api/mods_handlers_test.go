@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -447,5 +449,66 @@ func TestModsAPI_BepInExRequiresInstalledToEnable(t *testing.T) {
 	rec := a.do(t, http.MethodPatch, "/api/v1/instances/main/mods/bepinex", map[string]any{"enabled": true})
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("expected 409 bepinex_missing, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestModsAPI_ConfigYAMLFormats(t *testing.T) {
+	a := newModsTestAPI(t)
+	createModsTestInstance(t, a, "main")
+	ctx := context.Background()
+	inst, err := a.inst.Get(ctx, "main")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(inst.Paths.BepInExDir(), "config")
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	orig := "# keep  \ngroups:\n  Food:\n    - Tier 2 Items # c\n"
+	if err := os.WriteFile(filepath.Join(dir, "Azumatt.Test.yml"), []byte(orig), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a.cfg"), []byte("[G]\nK = 1\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := a.do(t, http.MethodGet, "/api/v1/instances/main/mods/configs", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	var list struct {
+		Files []domain.ConfigFileInfo `json:"files"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &list)
+	if len(list.Files) != 2 || list.Files[0].Format != domain.ConfigFormatYAML || list.Files[1].Format != domain.ConfigFormatCfg {
+		t.Fatalf("unexpected list: %+v", list.Files)
+	}
+	if !strings.Contains(rec.Body.String(), `"format":"yaml"`) {
+		t.Errorf("list body lacks format: %s", rec.Body.String())
+	}
+
+	rec = a.do(t, http.MethodGet, "/api/v1/instances/main/mods/configs/Azumatt.Test.yml", nil)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"entries":[]`) || !strings.Contains(rec.Body.String(), `"format":"yaml"`) {
+		t.Fatalf("get yaml: %d %s", rec.Code, rec.Body.String())
+	}
+
+	bad := "groups:\n  Food: [\n"
+	rec = a.do(t, http.MethodPut, "/api/v1/instances/main/mods/configs/Azumatt.Test.yml", domain.ConfigFileUpdate{Raw: &bad})
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "validation_failed") || !strings.Contains(rec.Body.String(), `"raw"`) {
+		t.Fatalf("put invalid yaml: %d %s", rec.Code, rec.Body.String())
+	}
+	disk, _ := os.ReadFile(filepath.Join(dir, "Azumatt.Test.yml"))
+	if string(disk) != orig {
+		t.Errorf("file changed after rejected write: %q", disk)
+	}
+
+	good := orig + "# more  \n"
+	rec = a.do(t, http.MethodPut, "/api/v1/instances/main/mods/configs/Azumatt.Test.yml", domain.ConfigFileUpdate{Raw: &good})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("put valid yaml: %d %s", rec.Code, rec.Body.String())
+	}
+	disk, _ = os.ReadFile(filepath.Join(dir, "Azumatt.Test.yml"))
+	if string(disk) != good {
+		t.Errorf("not stored verbatim: %q", disk)
 	}
 }

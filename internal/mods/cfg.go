@@ -1,12 +1,17 @@
 package mods
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
@@ -257,17 +262,77 @@ func applyCfgValues(raw string, updates []domain.ConfigValueUpdate) (string, err
 	return joinLines(lines), nil
 }
 
+// configFormat maps a file name's (case-insensitive) extension to its format.
+func configFormat(name string) (domain.ConfigFileFormat, bool) {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".cfg":
+		return domain.ConfigFormatCfg, true
+	case ".yml", ".yaml":
+		return domain.ConfigFormatYAML, true
+	case ".json":
+		return domain.ConfigFormatJSON, true
+	}
+	return "", false
+}
+
 // configFileName validates a config file name from a URL path segment: a
-// plain basename ending in .cfg, no path separators.
+// plain basename (no separators, not a dotfile) with a known config format.
 func configFileName(name string) error {
-	if name == "" || filepath.Base(name) != name || !strings.HasSuffix(name, ".cfg") {
+	if name == "" || filepath.Base(name) != name || strings.HasPrefix(name, ".") {
+		return domain.E(domain.CodeValidationFailed, "invalid config file name")
+	}
+	if _, ok := configFormat(name); !ok {
 		return domain.E(domain.CodeValidationFailed, "invalid config file name")
 	}
 	return nil
 }
 
+// validateConfigSyntax checks that raw is syntactically valid for a yaml or
+// json config file. The text itself is never rewritten.
+func validateConfigSyntax(format domain.ConfigFileFormat, raw string) error {
+	switch format {
+	case domain.ConfigFormatYAML:
+		dec := yaml.NewDecoder(strings.NewReader(raw))
+		for {
+			var n yaml.Node
+			err := dec.Decode(&n)
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			if err != nil {
+				return fmt.Errorf("invalid YAML: %s", strings.TrimPrefix(err.Error(), "yaml: "))
+			}
+		}
+	case domain.ConfigFormatJSON:
+		if strings.TrimSpace(raw) == "" {
+			return errors.New("invalid JSON: empty file")
+		}
+		var v any
+		err := json.Unmarshal([]byte(raw), &v)
+		if err == nil {
+			return nil
+		}
+		var se *json.SyntaxError
+		if errors.As(err, &se) {
+			line, col := 1, 1
+			end := min(int(se.Offset), len(raw))
+			for i := 0; i < end; i++ {
+				if raw[i] == '\n' {
+					line++
+					col = 1
+				} else {
+					col++
+				}
+			}
+			return fmt.Errorf("invalid JSON: %v (line %d, column %d)", err, line, col)
+		}
+		return fmt.Errorf("invalid JSON: %v", err)
+	}
+	return nil
+}
+
 // removeConfigFiles deletes the named config files from the instance's config
-// dir. Each name is validated as a plain .cfg basename; a missing file is not
+// dir. Each name is validated as a plain config basename (.cfg/.yml/.yaml/.json); a missing file is not
 // an error (the mod may never have written it).
 func removeConfigFiles(paths domain.InstancePaths, names []string) error {
 	for _, name := range names {
@@ -286,7 +351,8 @@ func configDir(paths domain.InstancePaths) string {
 	return filepath.Join(paths.BepInExDir(), "config")
 }
 
-// listConfigFiles lists server/BepInEx/config/*.cfg.
+// listConfigFiles lists the regular config files (*.cfg, *.yml, *.yaml, *.json)
+// directly in server/BepInEx/config; subdirectories, symlinks and dotfiles are skipped.
 func listConfigFiles(paths domain.InstancePaths) ([]domain.ConfigFileInfo, error) {
 	dir := configDir(paths)
 	entries, err := os.ReadDir(dir)
@@ -298,7 +364,11 @@ func listConfigFiles(paths domain.InstancePaths) ([]domain.ConfigFileInfo, error
 	}
 	out := make([]domain.ConfigFileInfo, 0, len(entries))
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".cfg") {
+		if !e.Type().IsRegular() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		format, ok := configFormat(e.Name())
+		if !ok {
 			continue
 		}
 		info, err := e.Info()
@@ -307,6 +377,7 @@ func listConfigFiles(paths domain.InstancePaths) ([]domain.ConfigFileInfo, error
 		}
 		out = append(out, domain.ConfigFileInfo{
 			Name:       e.Name(),
+			Format:     format,
 			SizeBytes:  info.Size(),
 			ModifiedAt: info.ModTime().UTC(),
 		})
@@ -320,7 +391,7 @@ func readConfigFile(paths domain.InstancePaths, name string) (*domain.ConfigFile
 		return nil, err
 	}
 	p := filepath.Join(configDir(paths), name)
-	data, err := os.ReadFile(p) //nolint:gosec // name validated by configFileName (plain basename, .cfg suffix)
+	data, err := os.ReadFile(p) //nolint:gosec // name validated by configFileName (plain basename, known config extension)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, domain.NotFound("config file")
@@ -332,10 +403,16 @@ func readConfigFile(paths domain.InstancePaths, name string) (*domain.ConfigFile
 		return nil, fmt.Errorf("stat config file: %w", err)
 	}
 	raw := string(data)
+	format, _ := configFormat(name) // known: validated by configFileName
+	entries := []domain.ConfigEntry{}
+	if format == domain.ConfigFormatCfg {
+		entries = parseCfg(raw)
+	}
 	return &domain.ConfigFile{
 		Name:       name,
+		Format:     format,
 		Raw:        raw,
-		Entries:    parseCfg(raw),
+		Entries:    entries,
 		ModifiedAt: fi.ModTime().UTC(),
 	}, nil
 }
@@ -347,6 +424,19 @@ func writeConfigFile(paths domain.InstancePaths, name string, upd domain.ConfigF
 		return nil, err
 	}
 	p := filepath.Join(configDir(paths), name)
+	format, _ := configFormat(name) // known: validated by configFileName
+
+	if format != domain.ConfigFormatCfg {
+		if len(upd.Values) > 0 {
+			return nil, domain.Validation([]domain.FieldError{{Field: "values", Message: "only cfg files support key updates; send raw"}})
+		}
+		if upd.Raw == nil {
+			return nil, domain.E(domain.CodeValidationFailed, "either raw or values must be provided")
+		}
+		if err := validateConfigSyntax(format, *upd.Raw); err != nil {
+			return nil, domain.Validation([]domain.FieldError{{Field: "raw", Message: err.Error()}})
+		}
+	}
 
 	var newRaw string
 	switch {

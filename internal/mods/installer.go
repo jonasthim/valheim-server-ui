@@ -272,15 +272,29 @@ func copyDeclared(dst io.Writer, src io.Reader, declared uint64) error {
 	return nil
 }
 
+// isProtectedConfig reports whether rel (slash-separated, relative to the
+// server dir) is a config file that uninstall must never delete.
+func isProtectedConfig(rel string) bool {
+	if strings.HasSuffix(strings.ToLower(rel), ".cfg") {
+		return true
+	}
+	if !strings.HasPrefix(rel, "BepInEx/config/") {
+		return false
+	}
+	_, ok := configFormat(rel)
+	return ok
+}
+
 // removeManagedFiles deletes files (relative to serverDir), skipping any
-// *.cfg (never delete a config file, even one this mod recorded owning a
-// long time ago — ARCHITECTURE.md §12), then removes any now-empty parent
+// *.cfg and anything under BepInEx/config with a known config format (never
+// delete a config file, even one this mod recorded owning a long time ago —
+// ARCHITECTURE.md §12), then removes any now-empty parent
 // directories under BepInEx/.
 func removeManagedFiles(serverDir string, files []string) error {
 	bepinexDir := filepath.Join(serverDir, "BepInEx")
 	dirs := map[string]struct{}{}
 	for _, rel := range files {
-		if strings.HasSuffix(strings.ToLower(rel), ".cfg") {
+		if isProtectedConfig(rel) {
 			continue
 		}
 		abs := filepath.Join(serverDir, filepath.FromSlash(rel))

@@ -431,10 +431,17 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
   Every written path is recorded in `mods.files_json`; uninstall deletes those files
   and then empty parent dirs (never cfg files). Zip-slip is rejected.
 - **Enable/disable**: rename each managed `*.dll` to `*.dll.disabled` and back.
-- **Config editor**: lists `server/BepInEx/config/*.cfg`. Parser understands BepInEx
-  cfg: `[Section]`, `## description` lines, `# Setting type:`, `# Default value:`,
-  `# Acceptable values:` comments preceding `Key = Value`. Save rewrites only value
-  lines, preserving all comments and order; a raw-text mode exists as fallback.
+- **Config editor**: lists the regular files `*.cfg`, `*.yml`, `*.yaml` and `*.json`
+  (case-insensitive) directly in `server/BepInEx/config` (no subdirectories, symlinks or
+  dotfiles). Each file reports its `format` (`cfg|yaml|json`). `.cfg` files get the typed
+  view: the parser understands BepInEx cfg (`[Section]`, `## description` lines,
+  `# Setting type:`, `# Default value:`, `# Acceptable values:` comments preceding
+  `Key = Value`); save rewrites only value lines, preserving all comments and order, and a
+  raw-text mode exists as fallback. YAML and JSON files are raw-text only (`entries` is
+  always empty, `values` updates are rejected): on save the backend syntax-checks the text
+  (`yaml.v3`, `encoding/json`; the error names the line) and stores it byte for byte, never
+  parsing and rewriting it, so comments and formatting survive. Uninstall never deletes
+  these files either.
 - Any mod or config mutation while the instance is running sets `pending_restart`.
 
 ## 13. Authentication, authorisation, audit

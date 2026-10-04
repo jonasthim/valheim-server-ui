@@ -3567,7 +3567,7 @@ export interface paths {
                 };
             };
         };
-        /** @description Send either `raw` (whole file) or `values` (key updates, comments preserved). `values` is only valid for cfg files. For yaml and json files `raw` is syntax-checked before anything is written (400 `validation_failed` with field `raw` and the parser's message, e.g. the line number) and then stored byte for byte, so comments and formatting are kept. */
+        /** @description Send either `raw` (whole file) or `values` (key updates, comments preserved). `values` is only valid for cfg files. For yaml and json files `raw` is syntax-checked before anything is written (422 `validation_failed` with field `raw` and the parser's message, e.g. the line number) and then stored byte for byte, so comments and formatting are kept. */
         put: {
             parameters: {
                 query?: never;

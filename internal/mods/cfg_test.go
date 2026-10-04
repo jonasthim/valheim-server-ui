@@ -1,7 +1,9 @@
 package mods
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -255,5 +257,244 @@ func TestParseCfg_SectionsInNaturalOrder(t *testing.T) {
 	}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Errorf("section order\n got %v\nwant %v", got, want)
+	}
+}
+
+func TestConfigFormat_AndFileName(t *testing.T) {
+	cases := []struct {
+		name   string
+		format domain.ConfigFileFormat
+		ok     bool
+	}{
+		{"a.cfg", domain.ConfigFormatCfg, true},
+		{"A.CFG", domain.ConfigFormatCfg, true},
+		{"a.yml", domain.ConfigFormatYAML, true},
+		{"a.YAML", domain.ConfigFormatYAML, true},
+		{"a.Yml", domain.ConfigFormatYAML, true},
+		{"a.json", domain.ConfigFormatJSON, true},
+		{"a.JSON", domain.ConfigFormatJSON, true},
+		{"a.txt", "", false},
+		{"a", "", false},
+		{".a.yml", "", false},
+		{".Azumatt.AzuAutoStore.yml.swp", "", false},
+		{"sub/a.yml", "", false},
+		{"../a.json", "", false},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		err := configFileName(c.name)
+		if (err == nil) != c.ok {
+			t.Errorf("configFileName(%q): err=%v, want ok=%v", c.name, err, c.ok)
+		}
+		if c.ok {
+			if f, ok := configFormat(c.name); !ok || f != c.format {
+				t.Errorf("configFormat(%q) = %q,%v want %q", c.name, f, ok, c.format)
+			}
+		}
+	}
+}
+
+func newConfigDirPaths(t *testing.T) (domain.InstancePaths, string) {
+	t.Helper()
+	paths := domain.InstancePaths{Server: t.TempDir()}
+	dir := configDir(paths)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return paths, dir
+}
+
+func TestListConfigFiles_MixedFormats(t *testing.T) {
+	paths, dir := newConfigDirPaths(t)
+	for _, n := range []string{"b.cfg", "a.yml", "c.yaml", "d.JSON", "notes.txt", ".Azumatt.AzuAutoStore.yml.swp", ".hidden.yml"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "sub.yml"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(dir, "a.yml"), filepath.Join(dir, "link.yml")); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := listConfigFiles(paths)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]domain.ConfigFileFormat{}
+	var order []string
+	for _, f := range files {
+		got[f.Name] = f.Format
+		order = append(order, f.Name)
+	}
+	want := map[string]domain.ConfigFileFormat{
+		"a.yml": domain.ConfigFormatYAML, "b.cfg": domain.ConfigFormatCfg,
+		"c.yaml": domain.ConfigFormatYAML, "d.JSON": domain.ConfigFormatJSON,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for n, f := range want {
+		if got[n] != f {
+			t.Errorf("%s: format %q, want %q", n, got[n], f)
+		}
+	}
+	if strings.Join(order, ",") != "a.yml,b.cfg,c.yaml,d.JSON" {
+		t.Errorf("not sorted by name: %v", order)
+	}
+}
+
+func loadYAMLFixture(t *testing.T) []byte {
+	t.Helper()
+	data, err := os.ReadFile("testdata/Azumatt.AzuAutoStore.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+func TestYAMLFixture_ReadAndByteIdenticalWrite(t *testing.T) {
+	paths, dir := newConfigDirPaths(t)
+	fixture := loadYAMLFixture(t)
+	if !strings.Contains(string(fixture), "#- Food") {
+		t.Fatal("fixture lost its commented-out list items")
+	}
+	name := "Azumatt.AzuAutoStore.yml"
+	if err := os.WriteFile(filepath.Join(dir, name), fixture, 0o640); err != nil {
+		t.Fatal(err)
+	}
+
+	cf, err := readConfigFile(paths, name)
+	if err != nil {
+		t.Fatalf("readConfigFile: %v", err)
+	}
+	if cf.Format != domain.ConfigFormatYAML || cf.Raw != string(fixture) {
+		t.Errorf("format=%q, raw unchanged=%v", cf.Format, cf.Raw == string(fixture))
+	}
+	if cf.Entries == nil || len(cf.Entries) != 0 {
+		t.Errorf("entries must be empty and non-nil, got %#v", cf.Entries)
+	}
+
+	raw := string(fixture)
+	if _, err := writeConfigFile(paths, name, domain.ConfigFileUpdate{Raw: &raw}); err != nil {
+		t.Fatalf("writeConfigFile: %v", err)
+	}
+	after, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(fixture) {
+		t.Error("file is not byte-identical after writing the fixture back")
+	}
+}
+
+func TestWriteConfigFile_YAMLInvalidLeavesFileUntouched(t *testing.T) {
+	paths, dir := newConfigDirPaths(t)
+	fixture := loadYAMLFixture(t)
+	name := "Azumatt.AzuAutoStore.yml"
+	if err := os.WriteFile(filepath.Join(dir, name), fixture, 0o640); err != nil {
+		t.Fatal(err)
+	}
+	broken := "groups:\n  Food:\n - a\n    - b\n   bad: [\n"
+	_, err := writeConfigFile(paths, name, domain.ConfigFileUpdate{Raw: &broken})
+	var de *domain.Error
+	if !errors.As(err, &de) || de.Code != domain.CodeValidationFailed {
+		t.Fatalf("expected validation error, got %v", err)
+	}
+	if len(de.Fields) != 1 || de.Fields[0].Field != "raw" || !strings.Contains(de.Fields[0].Message, "line") {
+		t.Errorf("unexpected field errors: %+v", de.Fields)
+	}
+	after, _ := os.ReadFile(filepath.Join(dir, name))
+	if string(after) != string(fixture) {
+		t.Error("file on disk changed despite a rejected write")
+	}
+}
+
+func TestWriteConfigFile_YAMLJSONRoundTrips(t *testing.T) {
+	cases := []struct{ name, raw string }{
+		{"empty.yml", "{}"},
+		{"empty-nl.yaml", "{}\n"},
+		{"neg.yml", "-5: a\n7: b\n  \n# comment  \n"},
+		{"comment-only.yml", "# nothing here  \n"},
+		{"multi.yml", "a: 1\n---\nb: 2\n"},
+		{"crlf.yml", "a: 1\r\nb: 2\r\n"},
+		{"ok.json", "{\"a\": [1, 2],\n \"b\": null}  "},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			paths, dir := newConfigDirPaths(t)
+			raw := c.raw
+			cf, err := writeConfigFile(paths, c.name, domain.ConfigFileUpdate{Raw: &raw})
+			if err != nil {
+				t.Fatalf("write: %v", err)
+			}
+			if cf.Raw != c.raw {
+				t.Errorf("raw returned %q, want %q", cf.Raw, c.raw)
+			}
+			disk, _ := os.ReadFile(filepath.Join(dir, c.name))
+			if string(disk) != c.raw {
+				t.Errorf("disk %q, want %q", disk, c.raw)
+			}
+		})
+	}
+}
+
+func TestWriteConfigFile_YAMLRejectsValuesAndMissingRaw(t *testing.T) {
+	paths, _ := newConfigDirPaths(t)
+	_, err := writeConfigFile(paths, "a.yml", domain.ConfigFileUpdate{
+		Values: []domain.ConfigValueUpdate{{Section: "s", Key: "k", Value: "v"}},
+	})
+	var de *domain.Error
+	if !errors.As(err, &de) || len(de.Fields) != 1 || de.Fields[0].Field != "values" {
+		t.Fatalf("expected values field error, got %v", err)
+	}
+	if _, err := writeConfigFile(paths, "a.yml", domain.ConfigFileUpdate{}); err == nil {
+		t.Error("expected error when neither raw nor values is given")
+	}
+}
+
+func TestValidateConfigSyntax(t *testing.T) {
+	cases := []struct {
+		name    string
+		format  domain.ConfigFileFormat
+		raw     string
+		wantErr string // substring; empty = valid
+	}{
+		{"yaml empty", domain.ConfigFormatYAML, "", ""},
+		{"yaml comment only", domain.ConfigFormatYAML, "# hi\n", ""},
+		{"yaml bad indent", domain.ConfigFormatYAML, "a:\n  b: 1\n c: 2\n", "invalid YAML: "},
+		{"yaml unclosed", domain.ConfigFormatYAML, "a: [1, 2\n", "line"},
+		{"json ok", domain.ConfigFormatJSON, "{}", ""},
+		{"json empty", domain.ConfigFormatJSON, "  \n", "invalid JSON: empty file"},
+		{"json trailing comma", domain.ConfigFormatJSON, "{\n  \"a\": 1,\n}", "(line 3, column 2)"},
+		{"json truncated", domain.ConfigFormatJSON, "{\"a\":", "invalid JSON: "},
+	}
+	for _, c := range cases {
+		err := validateConfigSyntax(c.format, c.raw)
+		switch {
+		case c.wantErr == "" && err != nil:
+			t.Errorf("%s: unexpected error %v", c.name, err)
+		case c.wantErr != "" && (err == nil || !strings.Contains(err.Error(), c.wantErr)):
+			t.Errorf("%s: err=%v, want substring %q", c.name, err, c.wantErr)
+		}
+	}
+}
+
+func TestRemoveConfigFiles_YAML(t *testing.T) {
+	paths, dir := newConfigDirPaths(t)
+	for _, n := range []string{"X.yml", "Y.yml"} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte("{}"), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := removeConfigFiles(paths, []string{"X.yml", "missing.json"}); err != nil {
+		t.Fatal(err)
+	}
+	if fileExists(filepath.Join(dir, "X.yml")) || !fileExists(filepath.Join(dir, "Y.yml")) {
+		t.Error("only X.yml should have been removed")
+	}
+	if err := removeConfigFiles(paths, []string{"../evil.yml"}); err == nil {
+		t.Error("expected validation error")
 	}
 }

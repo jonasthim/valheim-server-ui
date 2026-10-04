@@ -670,13 +670,13 @@ func TestEnqueueUninstall_RemovesRequestedConfigs(t *testing.T) {
 	if err := os.MkdirAll(cfgDir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	for _, n := range []string{"Alice.CoreLib.cfg", "Other.Keep.cfg"} {
+	for _, n := range []string{"Alice.CoreLib.cfg", "Other.Keep.cfg", "Alice.CoreLib.yml", "Other.Keep.yml"} {
 		if err := os.WriteFile(filepath.Join(cfgDir, n), []byte("x"), 0o640); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	ujob, err := modSvc.EnqueueUninstall(ctx, "main", modID, []string{"Alice.CoreLib.cfg"}, "tester")
+	ujob, err := modSvc.EnqueueUninstall(ctx, "main", modID, []string{"Alice.CoreLib.cfg", "Alice.CoreLib.yml"}, "tester")
 	if err != nil {
 		t.Fatalf("uninstall: %v", err)
 	}
@@ -684,6 +684,12 @@ func TestEnqueueUninstall_RemovesRequestedConfigs(t *testing.T) {
 
 	if _, err := os.Stat(filepath.Join(cfgDir, "Alice.CoreLib.cfg")); !os.IsNotExist(err) {
 		t.Errorf("Alice.CoreLib.cfg should have been removed")
+	}
+	if _, err := os.Stat(filepath.Join(cfgDir, "Alice.CoreLib.yml")); !os.IsNotExist(err) {
+		t.Errorf("Alice.CoreLib.yml should have been removed")
+	}
+	if _, err := os.Stat(filepath.Join(cfgDir, "Other.Keep.yml")); err != nil {
+		t.Errorf("Other.Keep.yml should have survived: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(cfgDir, "Other.Keep.cfg")); err != nil {
 		t.Errorf("Other.Keep.cfg should have survived: %v", err)

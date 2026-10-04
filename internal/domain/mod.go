@@ -70,10 +70,20 @@ type ModsOverview struct {
 	PendingRestart bool          `json:"pending_restart"`
 }
 
+// ConfigFileFormat is the on-disk format of a mod config file.
+type ConfigFileFormat string
+
+const (
+	ConfigFormatCfg  ConfigFileFormat = "cfg"
+	ConfigFormatYAML ConfigFileFormat = "yaml"
+	ConfigFormatJSON ConfigFileFormat = "json"
+)
+
 type ConfigFileInfo struct {
-	Name       string    `json:"name"`
-	SizeBytes  int64     `json:"size_bytes"`
-	ModifiedAt time.Time `json:"modified_at"`
+	Name       string           `json:"name"`
+	Format     ConfigFileFormat `json:"format"`
+	SizeBytes  int64            `json:"size_bytes"`
+	ModifiedAt time.Time        `json:"modified_at"`
 }
 
 type ConfigRange struct {
@@ -93,10 +103,11 @@ type ConfigEntry struct {
 }
 
 type ConfigFile struct {
-	Name       string        `json:"name"`
-	Raw        string        `json:"raw"`
-	Entries    []ConfigEntry `json:"entries"`
-	ModifiedAt time.Time     `json:"modified_at"`
+	Name       string           `json:"name"`
+	Format     ConfigFileFormat `json:"format"`
+	Raw        string           `json:"raw"`
+	Entries    []ConfigEntry    `json:"entries"`
+	ModifiedAt time.Time        `json:"modified_at"`
 }
 
 type ConfigValueUpdate struct {
