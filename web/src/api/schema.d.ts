@@ -3407,7 +3407,7 @@ export interface paths {
         delete: {
             parameters: {
                 query?: {
-                    /** @description Config file name(s) in BepInEx/config to also delete (repeatable). Config files are otherwise preserved on uninstall. */
+                    /** @description Config file name(s) in BepInEx/config to also delete (repeatable; .cfg, .yml, .yaml or .json). Config files are otherwise preserved on uninstall. */
                     remove_config?: string[];
                 };
                 header?: never;
@@ -3500,6 +3500,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * List the mod config files directly in BepInEx/config
+         * @description Regular files named *.cfg, *.yml, *.yaml or *.json (case-insensitive) directly in `server/BepInEx/config`, sorted by name. Dotfiles (editor swap files), other extensions and subdirectories are not listed.
+         */
         get: {
             parameters: {
                 query?: never;
@@ -3563,7 +3567,7 @@ export interface paths {
                 };
             };
         };
-        /** @description Send either `raw` (whole file) or `values` (key updates, comments preserved). */
+        /** @description Send either `raw` (whole file) or `values` (key updates, comments preserved). `values` is only valid for cfg files. For yaml and json files `raw` is syntax-checked before anything is written (400 `validation_failed` with field `raw` and the parser's message, e.g. the line number) and then stored byte for byte, so comments and formatting are kept. */
         put: {
             parameters: {
                 query?: never;
@@ -4715,8 +4719,14 @@ export interface components {
             mods: components["schemas"]["Mod"][];
             pending_restart?: boolean;
         };
+        /**
+         * @description cfg = BepInEx's own format (typed entries, form editing); yaml (.yml/.yaml) and json are mod-specific files edited as raw text only.
+         * @enum {string}
+         */
+        ConfigFileFormat: "cfg" | "yaml" | "json";
         ConfigFileInfo: {
             name: string;
+            format: components["schemas"]["ConfigFileFormat"];
             /** Format: int64 */
             size_bytes: number;
             /** Format: date-time */
@@ -4738,7 +4748,9 @@ export interface components {
         };
         ConfigFile: {
             name: string;
+            format: components["schemas"]["ConfigFileFormat"];
             raw: string;
+            /** @description Parsed entries of a cfg file; always empty for yaml and json */
             entries: components["schemas"]["ConfigEntry"][];
             /** Format: date-time */
             modified_at?: string;

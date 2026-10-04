@@ -1430,7 +1430,7 @@ paths:
       summary: Uninstall a mod (optionally deleting its config files)
       x-role: operator
       parameters:
-        - { in: query, name: remove_config, description: 'Config file name(s) in BepInEx/config to also delete (repeatable). Config files are otherwise preserved on uninstall.', schema: { type: array, items: { type: string } } }
+        - { in: query, name: remove_config, description: 'Config file name(s) in BepInEx/config to also delete (repeatable; .cfg, .yml, .yaml or .json). Config files are otherwise preserved on uninstall.', schema: { type: array, items: { type: string } } }
       responses:
         '202': { $ref: '#/components/responses/JobResponse' }
   /instances/{instanceId}/mods/{modId}/update:
@@ -1453,6 +1453,11 @@ paths:
   /instances/{instanceId}/mods/configs:
     get:
       tags: [mods]
+      summary: List the mod config files directly in BepInEx/config
+      description: >
+        Regular files named *.cfg, *.yml, *.yaml or *.json (case-insensitive) directly in
+        `server/BepInEx/config`, sorted by name. Dotfiles (editor swap files), other extensions
+        and subdirectories are not listed.
       x-role: viewer
       parameters: [{ $ref: '#/components/parameters/instanceId' }]
       responses:
@@ -1481,7 +1486,11 @@ paths:
               schema: { $ref: '#/components/schemas/ConfigFile' }
     put:
       tags: [mods]
-      description: Send either `raw` (whole file) or `values` (key updates, comments preserved).
+      description: >
+        Send either `raw` (whole file) or `values` (key updates, comments preserved). `values` is
+        only valid for cfg files. For yaml and json files `raw` is syntax-checked before anything is
+        written (400 `validation_failed` with field `raw` and the parser's message, e.g. the line
+        number) and then stored byte for byte, so comments and formatting are kept.
       x-role: operator
       requestBody:
         required: true
@@ -2451,11 +2460,19 @@ components:
         mods: { type: array, items: { $ref: '#/components/schemas/Mod' } }
         pending_restart: { type: boolean }
 
+    ConfigFileFormat:
+      type: string
+      enum: [cfg, yaml, json]
+      description: >
+        cfg = BepInEx's own format (typed entries, form editing); yaml (.yml/.yaml) and json are
+        mod-specific files edited as raw text only.
+
     ConfigFileInfo:
       type: object
-      required: [name, size_bytes, modified_at]
+      required: [name, format, size_bytes, modified_at]
       properties:
         name: { type: string }
+        format: { $ref: '#/components/schemas/ConfigFileFormat' }
         size_bytes: { type: integer, format: int64 }
         modified_at: { type: string, format: date-time }
 
@@ -2474,11 +2491,12 @@ components:
 
     ConfigFile:
       type: object
-      required: [name, raw, entries]
+      required: [name, format, raw, entries]
       properties:
         name: { type: string }
+        format: { $ref: '#/components/schemas/ConfigFileFormat' }
         raw: { type: string }
-        entries: { type: array, items: { $ref: '#/components/schemas/ConfigEntry' } }
+        entries: { type: array, items: { $ref: '#/components/schemas/ConfigEntry' }, description: Parsed entries of a cfg file; always empty for yaml and json }
         modified_at: { type: string, format: date-time }
 
     ConfigFileUpdate:

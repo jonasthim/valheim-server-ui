@@ -1,0 +1,80 @@
+# Below you can find example groups. Groups are used to exclude or includeOverride quickly. They are reusable lists! 
+# Please note that some of these groups/container limitations are kinda pointless but are here for example.
+# Make sure to follow the format of the example below. If you have any questions, please ask in my discord.
+
+# Full vanilla prefab name list: https://valheim-modding.github.io/Jotunn/data/prefabs/prefab-list.html
+# Item prefab name list: https://valheim-modding.github.io/Jotunn/data/objects/item-list.html
+
+# There are several predefined groups set up for you that are not listed. You can use these just like you would any group you create yourself.
+# The criteria for these groups are as follows:
+# groups:
+#   Food:
+#     - Criteria: Both of the following properties must have a value greater than 0.0 on the sharedData property of the ItemDrop script:
+#         - food
+#         - foodStamina
+#   Fish:
+#     - itemType: Fish
+#   All:
+#     - Criteria: Item has an ItemDrop script and all needed fields are populated. (all items)
+
+
+
+
+groups:
+  BronzeGear: # Group name
+    - ArmorBronzeChest # Item prefab name, note that this is case sensitive and must be the prefab name
+    - ArmorBronzeLegs
+    - ArmorBronzeHelmet
+  Tier 2 Items:
+    - Bronze
+    - PickaxeBronze
+    - ArmorBronzeChest
+    - ArmorBronzeLegs
+
+
+# By default, if you don't specify a container below, it will be considered as you want to allow storing all objects into it.
+# rk_barrel:
+#   range: 30
+#  includeOverride: []
+
+# NOTE: Container prefab names ARE case-sensitive (e.g. "Cart" not "cart").
+
+## Please note that the below containers are just examples. You can add as many containers as you want.
+
+Player_tombstone: # This is to exclude the tombstone from randomly picking up items that fall near it.
+  range: 10
+  exclude:
+    - All
+
+piece_chest:
+  range: 15 # This is the range that the container will store items. This overrides the global range set in the config.
+  exclude: # Exclude these items from being able to be stored into the container
+    #- Food # Exclude all in group
+    - PickaxeBronze # Allow prefab names as well, in this case we will use something that isn't a food
+  includeOverride:
+    # - Food # This would not work, you cannot includeOverride a group that is excluded. You can only override prefabs from that group.
+    - PickaxeBronze # You can however, be weird, and override a prefab name you have excluded.
+
+# It's highly unlikely that you will need the armor, swords, bows, etc. groups below. These are just in case you want to use them. 
+
+piece_chest_wood:
+  range: 15
+  exclude:
+    - Swords # Exclude all in group
+    - Tier 2 Items # Exclude all in group
+    - Bows # Exclude all in group
+  includeOverride: # If the item is in the groups above, say, you were using a predefined group but want to override just one item to be ignored and allow pulling it
+    - BowFineWood
+    - Wood
+
+piece_chest_private:
+  range: 10
+  exclude:
+    - All # Exclude everything
+
+rk_cabinet: # rk_ is typically the prefix for containers coming from RockerKitten's mods
+  range: 10
+  exclude:
+    - Food
+  includeOverride:
+    - Food
