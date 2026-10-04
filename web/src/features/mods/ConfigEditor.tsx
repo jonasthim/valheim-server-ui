@@ -1,5 +1,6 @@
-// BepInEx plugin config (.cfg) editor: a typed "Form" view (grouped by
-// section, one input per entry) and a "Raw" textarea fallback.
+// BepInEx plugin config editor: .cfg files get a typed Form view (grouped by
+// section, one input per entry) and a Raw view; .yml/.yaml/.json files are
+// edited as raw text.
 // See docs/ARCHITECTURE.md §12 for the on-disk format this mirrors.
 import { useMemo, useState, type ReactNode } from 'react'
 import {
@@ -29,6 +30,7 @@ import { IconAlertTriangle, IconDeviceFloppy, IconFileText, IconRestore } from '
 import { useAuth } from '../../auth/useAuth'
 import { fmtAgo, fmtBytes } from '../../lib/format'
 import { useLeaveGuard } from '../../lib/useUnsavedChanges'
+import { ApiError } from '../../api/client'
 import type { ConfigEntry } from '../../api/types'
 import { EmptyState, SectionCard } from '../../ui'
 import { entryKey, isBooleanEntry, isClientSideSetting, isKeybindEntry, isNumericEntry } from './helpers'
@@ -95,6 +97,9 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
   const [mode, setMode] = useState<Mode>('form')
   const [pending, setPending] = useState<Record<string, string>>({})
   const [rawDraft, setRawDraft] = useState<string | undefined>(undefined)
+  const [rawError, setRawError] = useState<string | undefined>(undefined)
+  const isCfg = fileQuery.data?.format === 'cfg'
+  const effectiveMode: Mode = isCfg ? mode : 'raw'
 
   const entries = fileQuery.data?.entries ?? EMPTY_ENTRIES
   // Server-synced keys lead the file; client-side ("[Not Synced with
@@ -124,7 +129,7 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
 
   const formDirty = Object.keys(pending).length > 0
   const rawDirty = rawDraft !== undefined && rawDraft !== fileQuery.data?.raw
-  const dirty = mode === 'form' ? formDirty : rawDirty
+  const dirty = effectiveMode === 'form' ? formDirty : rawDirty
   useLeaveGuard(dirty && !readOnly)
 
   function setEntryValue(entry: ConfigEntry, value: string) {
@@ -151,8 +156,17 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
   )
 
   function handleSave() {
-    if (mode === 'raw') {
-      save.mutate({ raw: rawDraft ?? fileQuery.data?.raw ?? '' }, { onSuccess: () => setRawDraft(undefined) })
+    if (effectiveMode === 'raw') {
+      setRawError(undefined)
+      save.mutate(
+        { raw: rawDraft ?? fileQuery.data?.raw ?? '' },
+        {
+          onSuccess: () => setRawDraft(undefined),
+          onError: (err) => {
+            if (err instanceof ApiError) setRawError(err.fieldErrors().raw)
+          },
+        },
+      )
       return
     }
     const values = Object.entries(pending)
@@ -175,15 +189,21 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
   return (
     <Stack gap="sm">
       <Group justify="space-between" wrap="wrap">
-        <SegmentedControl
-          size="xs"
-          value={mode}
-          onChange={(v) => setMode(v as Mode)}
-          data={[
-            { label: 'Form', value: 'form' },
-            { label: 'Raw', value: 'raw' },
-          ]}
-        />
+        {isCfg ? (
+          <SegmentedControl
+            size="xs"
+            value={mode}
+            onChange={(v) => setMode(v as Mode)}
+            data={[
+              { label: 'Form', value: 'form' },
+              { label: 'Raw', value: 'raw' },
+            ]}
+          />
+        ) : (
+          <Badge size="xs" variant="light" color="gray">
+            {fileQuery.data.format === 'yaml' ? 'YAML' : 'JSON'}
+          </Badge>
+        )}
         <Group gap="xs">
           {dirty && (
             <Badge color="straw" variant="light">
@@ -210,16 +230,30 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
         </Alert>
       )}
 
-      {mode === 'raw' ? (
-        <Textarea
-          value={rawDraft ?? fileQuery.data.raw}
-          onChange={(e) => setRawDraft(e.currentTarget.value)}
-          autosize
-          minRows={10}
-          maxRows={30}
-          disabled={readOnly}
-          styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)', fontSize: 12 } }}
-        />
+      {effectiveMode === 'raw' ? (
+        <Stack gap="xs">
+          {!isCfg && (
+            <Text c="dimmed" size="sm">
+              This file is edited as text. Comments and formatting are kept exactly as written; the syntax is
+              checked when you save.
+            </Text>
+          )}
+          <Textarea
+            aria-label={isCfg ? 'Raw config' : `${fileName} contents`}
+            value={rawDraft ?? fileQuery.data.raw}
+            onChange={(e) => {
+              setRawDraft(e.currentTarget.value)
+              setRawError(undefined)
+            }}
+            error={rawError}
+            autosize
+            minRows={isCfg ? 10 : 16}
+            maxRows={isCfg ? 30 : 40}
+            spellCheck={false}
+            disabled={readOnly}
+            styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)', fontSize: 12 } }}
+          />
+        </Stack>
       ) : serverSections.length === 0 && clientSections.length === 0 ? (
         <Text c="dimmed" size="sm">
           No parsed entries in this file — use Raw mode to edit it directly.

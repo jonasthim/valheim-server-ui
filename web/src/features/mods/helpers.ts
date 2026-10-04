@@ -68,7 +68,7 @@ export function matchModConfigs(mod: { owner: string; name: string }, files: { n
   const ownerDotName = `${mod.owner}.${mod.name}`.toLowerCase()
   return files
     .filter((f) => {
-      const stem = f.name.replace(/\.cfg$/i, '').toLowerCase()
+      const stem = f.name.replace(/\.(cfg|ya?ml|json)$/i, '').toLowerCase()
       return stem === ownerDotName || stem === name || stem.split('.').includes(name)
     })
     .map((f) => f.name)
