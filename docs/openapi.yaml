@@ -2327,7 +2327,7 @@ components:
         world: { type: string, description: The world the copy belongs to (the part before _backup_) }
         kind: { type: string, enum: [auto, cloud, restore] }
         layout: { type: string, enum: [directory, legacy], description: 'directory = <name>/ with _main.<N>.* files (game 1.0+); legacy = flat <name>.db/.fwl' }
-        created_at: { type: string, format: date-time, description: Parsed from the timestamp in the name (UTC); the newest file's mtime when the name carries none }
+        created_at: { type: string, format: date-time, description: "Parsed from the timestamp in the name (the game server's local time; yyyyMMdd-HHmmss or the older yyyyMMddHHmmss); the newest file's mtime when the name carries none" }
         size_bytes: { type: integer, format: int64 }
         restorable: { type: boolean, description: 'false when the copy has no committed save (directory: no _main.<N>.ok with a .db2; legacy: no .db)' }
 

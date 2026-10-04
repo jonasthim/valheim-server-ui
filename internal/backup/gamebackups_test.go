@@ -13,7 +13,7 @@ import (
 )
 
 func TestGameBackupParseStem(t *testing.T) {
-	ts := time.Date(2026, 9, 9, 14, 48, 3, 0, time.UTC)
+	ts := time.Date(2026, 9, 9, 14, 48, 3, 0, time.Local)
 	tests := []struct {
 		name   string
 		stem   string
@@ -24,6 +24,7 @@ func TestGameBackupParseStem(t *testing.T) {
 	}{
 		{"auto", "Midgard_backup_auto-20260909144803", "Midgard", "auto", ts, true},
 		{"cloud", "Midgard_backup_cloud-20260909144803", "Midgard", "cloud", ts, true},
+		{"current game format with a dash", "Midgard_backup_auto-20260909-144803", "Midgard", "auto", ts, true},
 		{"restore", "Midgard_backup_restore-20260909144803", "Midgard", "restore", ts, true},
 		{"world name contains _backup_", "My_backup_World_backup_auto-20260909144803", "My_backup_World", "auto", ts, true},
 		{"world name contains a marker", "A_backup_auto-1_backup_cloud-20260909144803", "A_backup_auto-1", "cloud", ts, true},
@@ -119,7 +120,7 @@ func TestGameBackupScan(t *testing.T) {
 	if got[4].SizeBytes != int64(len("db")+len("fwl")) {
 		t.Errorf("legacy size = %d, want sum of the pair", got[4].SizeBytes)
 	}
-	if got[0].World != "Midgard" || !got[0].CreatedAt.Equal(time.Date(2026, 9, 10, 9, 0, 0, 0, time.UTC)) {
+	if got[0].World != "Midgard" || !got[0].CreatedAt.Equal(time.Date(2026, 9, 10, 9, 0, 0, 0, time.Local)) {
 		t.Errorf("unexpected world/created_at: %+v", got[0])
 	}
 }

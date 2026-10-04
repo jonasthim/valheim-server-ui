@@ -4597,7 +4597,7 @@ export interface components {
             layout: "directory" | "legacy";
             /**
              * Format: date-time
-             * @description Parsed from the timestamp in the name (UTC); the newest file's mtime when the name carries none
+             * @description Parsed from the timestamp in the name (the game server's local time; yyyyMMdd-HHmmss or the older yyyyMMddHHmmss); the newest file's mtime when the name carries none
              */
             created_at: string;
             /** Format: int64 */

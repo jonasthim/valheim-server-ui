@@ -17,8 +17,14 @@ import (
 const (
 	gameBackupLayoutDirectory = "directory"
 	gameBackupLayoutLegacy    = "legacy"
-	gameBackupTimeLayout      = "20060102150405"
 )
+
+// gameBackupTimeLayouts are the timestamp forms Valheim has used in rolling
+// copy names: SaveSystem.s_defaultDateFormat is "yyyyMMdd-HHmmss" in the
+// current game; older builds wrote fourteen digits without the dash. The
+// game formats DateTime.Now, i.e. the server's local time, and the manager
+// runs on the same host, so the stamps are parsed in time.Local.
+var gameBackupTimeLayouts = []string{"20060102-150405", "20060102150405"}
 
 // gameBackupMarkers maps each separator Valheim puts between a world name and
 // the timestamp to the kind it denotes.
@@ -45,8 +51,11 @@ func parseGameBackupStem(stem string) (world, kind string, ts time.Time, ok bool
 	if !validWorldName(world) {
 		return "", "", time.Time{}, false
 	}
-	if t, err := time.ParseInLocation(gameBackupTimeLayout, stem[best+bestLen:], time.UTC); err == nil {
-		ts = t
+	for _, layout := range gameBackupTimeLayouts {
+		if t, err := time.ParseInLocation(layout, stem[best+bestLen:], time.Local); err == nil {
+			ts = t
+			break
+		}
 	}
 	return world, bestKind, ts, true
 }

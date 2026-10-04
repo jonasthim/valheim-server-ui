@@ -75,6 +75,18 @@ function fakeInstall(id, worlds = []) {
     fs.writeFileSync(path.join(wdir, `${w}.fwl`), Buffer.alloc(2048, 1))
     fs.writeFileSync(path.join(wdir, `${w}.db`), Buffer.alloc(6 * 1024 * 1024, 2))
   }
+  // Two of Valheim's own rolling copies of the first world (1.0 directory
+  // layout), so the Backups tab's "Game backups" section renders populated.
+  if (worlds.length > 0) {
+    for (const stamp of ['20260924-180000', '20260925-060000']) {
+      const cdir = path.join(wdir, `${worlds[0]}_backup_auto-${stamp}`)
+      fs.mkdirSync(cdir, { recursive: true })
+      fs.writeFileSync(path.join(cdir, '_main.7.fwl2'), Buffer.alloc(2048, 1))
+      fs.writeFileSync(path.join(cdir, '_main.7.db2'), Buffer.alloc(5 * 1024 * 1024, 2))
+      fs.writeFileSync(path.join(cdir, '_main.7.chunks'), Buffer.alloc(1024, 3))
+      fs.writeFileSync(path.join(cdir, '_main.7.ok'), '')
+    }
+  }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
