@@ -19,12 +19,12 @@ saved again (the directory is then the live copy).
     _main.<N>.chunks               index of the chunk files
     _main.<N>.ok                   written last; marks generation N as complete
     <x>_<y>__<kind>_<gen>.chunk    terrain chunks, each rewritten only when changed
-  <name>_backup_auto-<timestamp>/  Valheim's own rolling copies (-backups); hidden in the UI
+  <name>_backup_auto-<timestamp>/  Valheim's own rolling copies (-backups); listed under Backups → Game backups, restorable from there
 
   <name>.fwl                       legacy (before 1.0) metadata: name and seed
   <name>.db                        legacy world data
   <name>.db.old                    Valheim's previous copy
-  <name>_backup_auto-<timestamp>.* legacy rolling copies; hidden in the UI
+  <name>_backup_auto-<timestamp>.* legacy rolling copies; listed under Backups → Game backups, restorable from there
 ```
 
 The UI treats a directory and a legacy pair with the same name as one world. A

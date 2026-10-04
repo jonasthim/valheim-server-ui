@@ -354,6 +354,14 @@ Every long-running or exclusive operation is a `Job`: `install`, `update`,
 - Worlds tab lists worlds in either layout, shows which is active, allows upload of a
   `.db`+`.fwl` pair or a zip containing a pair or a world directory, download as zip,
   delete inactive.
+- **Game backups.** Valheim's own rolling copies (`-backups N`; sibling entries named
+  `<World>_backup_auto|cloud|restore-<YYYYMMDDHHMMSS>` in `worlds_local`) are hidden from
+  the worlds list and shown on the Backups tab under "Game backups"
+  (`GET /instances/{id}/game-backups`, viewer). Restore
+  (`POST /instances/{id}/game-backups/{name}/restore`, operator, `stop_if_running`) is a
+  job: stop the instance, take a `pre_restore` backup of the current save, swap the copy
+  in (the copy itself stays in place), switch the active world if needed, start again.
+  Copies without a committed save are listed but not restorable.
 
 ## 11. Scheduling and updates
 

@@ -5,6 +5,7 @@ import { useInstance } from './useInstance'
 import { BackupNowCard } from './backups/BackupNowCard'
 import { BackupUploadCard } from './backups/BackupUploadCard'
 import { BackupsTable } from './backups/BackupsTable'
+import { GameBackupsCard } from './backups/GameBackupsCard'
 import { RetentionInfo } from './backups/RetentionInfo'
 import { useBackups, useDeleteBackup, useRestoreBackup } from './backups/useBackups'
 
@@ -39,6 +40,8 @@ export function BackupsTab({ id }: { id: string }) {
         onRestore={(backupId, stopIfRunning) => restore.mutate({ backupId, stopIfRunning })}
         onDelete={(backupId) => del.mutate(backupId)}
       />
+
+      <GameBackupsCard id={id} canManage={canManage} instanceState={instanceQ.data?.status.state} />
 
       {canManage && <BackupUploadCard id={id} />}
     </Stack>

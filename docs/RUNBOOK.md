@@ -217,6 +217,7 @@ proven.
 | Start fails with "unitctl" or sudo errors | `visudo -cf /etc/sudoers.d/valheim-ui`; confirm `/usr/local/lib/valheim-ui/unitctl` is root-owned 0755; `sudo -u valheim sudo -n /usr/local/lib/valheim-ui/unitctl start <id>`. |
 | Console shows `Failed to open plugin: .../libparty.so` or an `ArgumentNullException` during startup | Stock Valheim dedicated-server noise, seen on every install; the server continues to "Game server connected". Not a permissions or sandbox problem. |
 | Instance goes to `failed` right after start | `journalctl -u valheim@<id>` and `logs/console.log`. Common causes: port already in use, missing 32-bit libs, password shorter than 5 characters. |
+| I need to restore one of Valheim's own automatic backups | Instance → Backups → Game backups → Restore (runs as a job with a safety backup). Manual fallback: stop the instance, move `<World>/` out of `worlds_local`, then as the game user `cp -a <World>_backup_auto-<ts> <World>`. |
 | Players cannot connect | UDP ports not forwarded; server name contains the password (Valheim refuses); wrong crossplay setting for console players. |
 | Player count shows "?" / "from log" | The A2S query port (port+1) is not answering yet; names come from the log heuristic until it does. |
 | OIDC login fails | Settings → Test connection; ensure `base_url` matches the browser URL exactly; check the provider's redirect URI. |

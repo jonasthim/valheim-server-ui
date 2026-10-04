@@ -54,3 +54,16 @@ export async function createInstance(
   await page.getByRole('button', { name: /create instance/i }).click()
   await expect(page).toHaveURL(new RegExp(`/instances/${opts.id}/overview`))
 }
+
+/** Seeds one of Valheim's own rolling copies (1.0 directory layout); the .db2 body is a recognisable marker. */
+export const GAME_BACKUP_MARKER = 'game-backup-marker'
+export function seedGameBackup(id: string, world: string, stamp: string): string {
+  const name = `${world}_backup_auto-${stamp}`
+  const dir = path.join(dataDir, 'instances', id, 'save', 'worlds_local', name)
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, '_main.1.fwl2'), 'fake-fwl2')
+  fs.writeFileSync(path.join(dir, '_main.1.db2'), GAME_BACKUP_MARKER)
+  fs.writeFileSync(path.join(dir, '_main.1.chunks'), 'fake-chunks')
+  fs.writeFileSync(path.join(dir, '_main.1.ok'), '')
+  return name
+}

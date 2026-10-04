@@ -28,7 +28,7 @@ server into a Docker puzzle.
 | **Configuration** | Real form controls for every server option: name, world, password, port, public, crossplay, difficulty preset, every combat/death/resource/raid/portal modifier, world keys, save interval, Valheim's own rolling saves. Validation with the same rules Valheim enforces. |
 | **Live console** | Streams the server log in real time with filter, follow, download, and highlighting for ready/join/leave/save events. |
 | **Players** | Online players (via the query port and the log), a history of everyone who ever joined, and editors for the admin, banned and permitted lists. |
-| **Backups & worlds** | One-click or scheduled world backups, retention policy, restore with an automatic safety backup, world upload/download, switch the active world. |
+| **Backups & worlds** | One-click or scheduled world backups, retention policy, restore with an automatic safety backup (including Valheim's own rolling copies), world upload/download, switch the active world. |
 | **Mods** | Install BepInEx, browse and install from Thunderstore with dependency resolution, upload zips or DLLs, enable/disable/update/uninstall, and edit plugin `.cfg` files with typed inputs. |
 | **Live world (agent)** | Our own server plugin, installed with BepInEx: day, in-game clock, weather, world keys and players with positions straight from the running server, plus save-now, kick and an in-game broadcast to all players. Nothing to install for players. |
 | **Gameplay helpers** | Autofeed from sign-marked chests, per-raid switches — server-side, players install nothing. A second, separately bundled plugin: turn it off without touching the agent or the live map. |
