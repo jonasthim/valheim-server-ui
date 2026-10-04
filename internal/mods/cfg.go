@@ -287,6 +287,51 @@ func configFileName(name string) error {
 	return nil
 }
 
+// yamlLinePrefix matches the "line N: " yaml.v3 puts in front of a message.
+var yamlLinePrefix = regexp.MustCompile(`^line (\d+): `)
+
+// maxYAMLLocateLines bounds the extra parses yamlSyntaxError does to locate
+// a mistake; larger files keep the parser's own position.
+const maxYAMLLocateLines = 4000
+
+// yamlSyntaxError turns a yaml.v3 parse error into a message that points at
+// the mistake. yaml.v3 reports the line where the enclosing block starts
+// (its context mark), which for a wrong indent deep in a file is far above
+// the offending line. The real position is found by looking for the longest
+// leading run of whole lines that still parses: the mistake is on the line
+// after it. Scanning from the end handles constructs that span lines
+// (quoted strings, flow collections), where a shorter prefix fails only
+// because it was cut in the middle.
+func yamlSyntaxError(raw string, err error) error {
+	msg := strings.TrimPrefix(err.Error(), "yaml: ")
+	reason := yamlLinePrefix.ReplaceAllString(msg, "")
+	lines := strings.SplitAfter(raw, "\n")
+	if len(lines) > maxYAMLLocateLines {
+		return fmt.Errorf("invalid YAML: %s", msg)
+	}
+	for n := len(lines) - 1; n >= 0; n-- {
+		if yamlParses(strings.Join(lines[:n], "")) {
+			return fmt.Errorf("invalid YAML near line %d: %s", n+1, reason)
+		}
+	}
+	return fmt.Errorf("invalid YAML: %s", msg)
+}
+
+// yamlParses reports whether every document in raw parses.
+func yamlParses(raw string) bool {
+	dec := yaml.NewDecoder(strings.NewReader(raw))
+	for {
+		var n yaml.Node
+		err := dec.Decode(&n)
+		if errors.Is(err, io.EOF) {
+			return true
+		}
+		if err != nil {
+			return false
+		}
+	}
+}
+
 // validateConfigSyntax checks that raw is syntactically valid for a yaml or
 // json config file. The text itself is never rewritten.
 func validateConfigSyntax(format domain.ConfigFileFormat, raw string) error {
@@ -300,7 +345,7 @@ func validateConfigSyntax(format domain.ConfigFileFormat, raw string) error {
 				return nil
 			}
 			if err != nil {
-				return fmt.Errorf("invalid YAML: %s", strings.TrimPrefix(err.Error(), "yaml: "))
+				return yamlSyntaxError(raw, err)
 			}
 		}
 	case domain.ConfigFormatJSON:

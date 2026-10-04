@@ -2,7 +2,7 @@
 // section, one input per entry) and a Raw view; .yml/.yaml/.json files are
 // edited as raw text.
 // See docs/ARCHITECTURE.md §12 for the on-disk format this mirrors.
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   Accordion,
   ActionIcon,
@@ -98,6 +98,22 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
   const [pending, setPending] = useState<Record<string, string>>({})
   const [rawDraft, setRawDraft] = useState<string | undefined>(undefined)
   const [rawError, setRawError] = useState<string | undefined>(undefined)
+  const rawRef = useRef<HTMLTextAreaElement>(null)
+
+  // A plain textarea has no line numbers, so when the server names a line
+  // ("... line 62 ..."), select that line and scroll it into view.
+  function revealLine(message: string | undefined) {
+    const el = rawRef.current
+    const m = message?.match(/line (\d+)/)
+    if (!el || !m) return
+    const lines = el.value.split('\n')
+    const idx = Math.min(Math.max(Number(m[1]) - 1, 0), lines.length - 1)
+    const start = lines.slice(0, idx).reduce((n, l) => n + l.length + 1, 0)
+    el.focus()
+    el.setSelectionRange(start, start + lines[idx].length)
+    const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight) || 18
+    el.scrollTop = Math.max(0, idx * lineHeight - el.clientHeight / 2)
+  }
   const isCfg = fileQuery.data?.format === 'cfg'
   const effectiveMode: Mode = isCfg ? mode : 'raw'
 
@@ -163,7 +179,10 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
         {
           onSuccess: () => setRawDraft(undefined),
           onError: (err) => {
-            if (err instanceof ApiError) setRawError(err.fieldErrors().raw)
+            if (!(err instanceof ApiError)) return
+            const message = err.fieldErrors().raw
+            setRawError(message)
+            revealLine(message)
           },
         },
       )
@@ -239,6 +258,7 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
             </Text>
           )}
           <Textarea
+            ref={rawRef}
             aria-label={isCfg ? 'Raw config' : `${fileName} contents`}
             value={rawDraft ?? fileQuery.data.raw}
             onChange={(e) => {
@@ -251,7 +271,15 @@ function ConfigFileEditor({ id, fileName, readOnly }: { id: string; fileName: st
             maxRows={isCfg ? 30 : 40}
             spellCheck={false}
             disabled={readOnly}
-            styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)', fontSize: 12 } }}
+            // Keep the text readable in the error state: only the border and
+            // the message below turn red, not a whole file of YAML.
+            styles={{
+              input: {
+                fontFamily: 'var(--mantine-font-family-monospace)',
+                fontSize: 12,
+                color: 'var(--mantine-color-text)',
+              },
+            }}
           />
         </Stack>
       ) : serverSections.length === 0 && clientSections.length === 0 ? (

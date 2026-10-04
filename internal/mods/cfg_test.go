@@ -2,6 +2,7 @@ package mods
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -463,7 +464,7 @@ func TestValidateConfigSyntax(t *testing.T) {
 	}{
 		{"yaml empty", domain.ConfigFormatYAML, "", ""},
 		{"yaml comment only", domain.ConfigFormatYAML, "# hi\n", ""},
-		{"yaml bad indent", domain.ConfigFormatYAML, "a:\n  b: 1\n c: 2\n", "invalid YAML: "},
+		{"yaml bad indent", domain.ConfigFormatYAML, "a:\n  b: 1\n c: 2\n", "invalid YAML"},
 		{"yaml unclosed", domain.ConfigFormatYAML, "a: [1, 2\n", "line"},
 		{"json ok", domain.ConfigFormatJSON, "{}", ""},
 		{"json empty", domain.ConfigFormatJSON, "  \n", "invalid JSON: empty file"},
@@ -496,5 +497,54 @@ func TestRemoveConfigFiles_YAML(t *testing.T) {
 	}
 	if err := removeConfigFiles(paths, []string{"../evil.yml"}); err == nil {
 		t.Error("expected validation error")
+	}
+}
+
+func TestYAMLSyntaxError_PointsAtTheMistake(t *testing.T) {
+	fixture, err := os.ReadFile(filepath.Join("testdata", "Azumatt.AzuAutoStore.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	good := string(fixture)
+	lineOf := func(s, needle string) int {
+		i := strings.Index(s, needle)
+		if i < 0 {
+			t.Fatalf("needle %q not found", needle)
+		}
+		return strings.Count(s[:i], "\n") + 1
+	}
+	cases := []struct {
+		name     string
+		old, new string
+		wantLine func(broken string) int
+	}{
+		{
+			name:     "wrong indent deep in the file",
+			old:      "piece_chest_wood:\n  range: 15\n  exclude:",
+			new:      "piece_chest_wood:\n  range: 15\n exclude:",
+			wantLine: func(b string) int { return lineOf(b, "piece_chest_wood:") + 2 },
+		},
+		{
+			name:     "unclosed flow sequence",
+			old:      "piece_chest_private:\n  range: 10",
+			new:      "piece_chest_private:\n  range: [10",
+			wantLine: func(b string) int { return lineOf(b, "piece_chest_private:") + 1 },
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if !strings.Contains(good, tc.old) {
+				t.Fatalf("fixture no longer contains %q", tc.old)
+			}
+			broken := strings.Replace(good, tc.old, tc.new, 1)
+			err := validateConfigSyntax(domain.ConfigFormatYAML, broken)
+			if err == nil {
+				t.Fatal("expected a syntax error")
+			}
+			want := fmt.Sprintf("near line %d:", tc.wantLine(broken))
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error = %q, want it to contain %q", err, want)
+			}
+		})
 	}
 }
