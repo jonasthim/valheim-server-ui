@@ -87,3 +87,17 @@ type World struct {
 	HasDB      bool      `json:"has_db"`
 	HasFWL     bool      `json:"has_fwl"`
 }
+
+// GameBackup is one of Valheim's own rolling world copies
+// (<World>_backup_auto-<ts> and friends) found next to the worlds. Kind is
+// auto|cloud|restore, Layout is directory|legacy. Restorable is false when
+// the copy holds no committed save.
+type GameBackup struct {
+	Name       string    `json:"name"`
+	World      string    `json:"world"`
+	Kind       string    `json:"kind"`
+	Layout     string    `json:"layout"`
+	CreatedAt  time.Time `json:"created_at"`
+	SizeBytes  int64     `json:"size_bytes"`
+	Restorable bool      `json:"restorable"`
+}

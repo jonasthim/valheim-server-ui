@@ -91,13 +91,22 @@ func isBusyState(st domain.InstanceState) bool {
 // update job), by the restore job's pre_restore step, and directly by the
 // scheduler (WP-07).
 func (s *Service) Create(ctx context.Context, instanceID string, kind domain.BackupKind, note string) (*domain.Backup, error) {
+	return s.createForWorld(ctx, instanceID, "", kind, note)
+}
+
+// createForWorld is Create for a named world of the instance; an empty world
+// means the active one. The game-backup restore uses it to protect the world
+// it is about to replace, which need not be the active world.
+func (s *Service) createForWorld(ctx context.Context, instanceID, world string, kind domain.BackupKind, note string) (*domain.Backup, error) {
 	inst, err := s.inst.Get(ctx, instanceID)
 	if err != nil {
 		return nil, err
 	}
 
 	paths := s.inst.Paths(instanceID)
-	world := inst.Config.World
+	if world == "" {
+		world = inst.Config.World
+	}
 	worldsDir := paths.WorldsDir()
 	save, err := scanWorld(worldsDir, world)
 	if err != nil {

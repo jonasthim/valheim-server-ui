@@ -431,3 +431,99 @@ func TestBackupsHandlers_ListTargets_StripsAdminFields(t *testing.T) {
 		t.Errorf("expected path to be stripped from the viewer-facing list, got %q", body.Targets[0].Path)
 	}
 }
+
+func writeGameBackupCopy(t *testing.T, worldsDir, stem, marker string) {
+	t.Helper()
+	dir := filepath.Join(worldsDir, stem)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	for n, body := range map[string]string{"_main.1.fwl2": "fwl", "_main.1.db2": marker, "_main.1.chunks": "c", "_main.1.ok": ""} {
+		if err := os.WriteFile(filepath.Join(dir, n), []byte(body), 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestGameBackupHandlers_ListAndRestore(t *testing.T) {
+	api := newBackupTestAPI(t)
+	paths := api.createInstance(t, "main", "Dedicated", 2456)
+	const stem = "Dedicated_backup_auto-20260909144803"
+	writeGameBackupCopy(t, paths.WorldsDir(), stem, "copy-marker")
+
+	rec := api.request(t, http.MethodGet, "/api/v1/instances/main/game-backups", nil, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", rec.Code, rec.Body.String())
+	}
+	var list struct {
+		Copies []domain.GameBackup `json:"copies"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Copies) != 1 || list.Copies[0].Name != stem || !list.Copies[0].Restorable || list.Copies[0].Kind != "auto" {
+		t.Fatalf("unexpected copies: %+v", list.Copies)
+	}
+
+	rec = api.postJSON(t, "/api/v1/instances/main/game-backups/"+stem+"/restore", map[string]any{"stop_if_running": false})
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("restore: %d %s", rec.Code, rec.Body.String())
+	}
+	job := api.waitForJob(t, rec)
+	if job.Status != domain.JobSucceeded {
+		t.Fatalf("job = %v err=%s", job.Status, job.Error)
+	}
+	call, ok := api.audit.last()
+	if !ok || call.action != "game_backup.restore" || call.target != stem || call.instanceID != "main" {
+		t.Fatalf("audit = %+v ok=%v", call, ok)
+	}
+	b, err := os.ReadFile(filepath.Join(paths.WorldsDir(), "Dedicated", "_main.1.db2"))
+	if err != nil || string(b) != "copy-marker" {
+		t.Errorf("restored db2 = %q err=%v", b, err)
+	}
+}
+
+func TestGameBackupHandlers_EmptyListAndUnknown(t *testing.T) {
+	api := newBackupTestAPI(t)
+	api.createInstance(t, "main", "Dedicated", 2456)
+
+	rec := api.request(t, http.MethodGet, "/api/v1/instances/main/game-backups", nil, "")
+	if rec.Code != http.StatusOK || !bytes.Contains(rec.Body.Bytes(), []byte(`"copies":[]`)) {
+		t.Fatalf("want 200 with an empty array, got %d %s", rec.Code, rec.Body.String())
+	}
+	rec = api.postJSON(t, "/api/v1/instances/main/game-backups/Nope_backup_auto-1/restore", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown copy: want 404, got %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestGameBackupHandlers_RoleGates(t *testing.T) {
+	api := newBackupTestAPI(t)
+	paths := api.createInstance(t, "main", "Dedicated", 2456)
+	const stem = "Dedicated_backup_auto-20260909144803"
+	writeGameBackupCopy(t, paths.WorldsDir(), stem, "m")
+
+	router := NewRouter(&Deps{
+		Cfg: config.Default(), Log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Instances: api.inst, Backups: api.svc, Audit: api.audit,
+		Auth: systemFakeAuth{user: &domain.User{ID: 2, Username: "viewer", Role: domain.RoleViewer}},
+	}, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/instances/main/game-backups", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("viewer list: want 200, got %d %s", rec.Code, rec.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/instances/main/game-backups/"+stem+"/restore", nil)
+	req.Header.Set(CSRFHeader, CSRFHeaderValue)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer restore: want 403, got %d %s", rec.Code, rec.Body.String())
+	}
+	if _, ok := api.audit.last(); ok {
+		t.Errorf("a forbidden restore must not be audited")
+	}
+}

@@ -112,6 +112,12 @@ type BackupService interface {
 	// ExportWorld writes a zip of <world>.db/.fwl to w.
 	ExportWorld(ctx context.Context, instanceID, world string, w io.Writer) error
 
+	// ListGameBackups lists Valheim's own rolling world copies (newest first).
+	ListGameBackups(ctx context.Context, instanceID string) ([]domain.GameBackup, error)
+	// EnqueueGameBackupRestore restores one of those copies over its world as
+	// a restore job; the copy is left in place.
+	EnqueueGameBackupRestore(ctx context.Context, instanceID, name string, stopIfRunning bool, requestedBy string) (*domain.Job, error)
+
 	// EnqueueRemoteUpload retries an existing backup's off-site copy as a
 	// backup_upload job (F-1.4).
 	EnqueueRemoteUpload(ctx context.Context, instanceID string, backupID int64, requestedBy string) (*domain.Job, error)

@@ -519,9 +519,10 @@ func (s *Service) ExportWorld(ctx context.Context, instanceID, world string, w i
 
 // isValheimBackupStem reports whether a world file stem is one of Valheim's
 // own automatic copies (e.g. "Midgard_backup_auto-20260909144803",
-// "_backup_cloud-", "_backup_restore-"), which the manager lists under
-// neither Worlds nor Backups: they are not loadable by name and the manager
-// keeps its own zip backups.
+// "_backup_cloud-", "_backup_restore-"). They are not worlds: they are not
+// loadable by name, so ListWorlds and scanWorlds skip them. They are listed
+// under Backups -> Game backups (ListGameBackups) and can be restored from
+// there; the manager keeps its own zip backups separately.
 func isValheimBackupStem(stem string) bool {
 	return strings.Contains(stem, "_backup_auto-") ||
 		strings.Contains(stem, "_backup_cloud-") ||

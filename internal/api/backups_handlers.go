@@ -22,6 +22,8 @@ func registerBackupRoutes(r chi.Router, d *Deps) {
 	r.With(RequireRole(domain.RoleOperator)).Get("/instances/{instanceId}/backups/{backupId}/download", handleDownloadBackup(d))
 	r.With(RequireRole(domain.RoleOperator)).Post("/instances/{instanceId}/backups/{backupId}/restore", handleRestoreBackup(d))
 	r.With(RequireRole(domain.RoleOperator)).Post("/instances/{instanceId}/backups/{backupId}/upload", handleRetryRemoteUpload(d))
+	r.With(RequireRole(domain.RoleViewer)).Get("/instances/{instanceId}/game-backups", handleListGameBackups(d))
+	r.With(RequireRole(domain.RoleOperator)).Post("/instances/{instanceId}/game-backups/{gameBackupName}/restore", handleRestoreGameBackup(d))
 }
 
 // backupIDParam reads and validates the {backupId} URL parameter.
@@ -255,5 +257,58 @@ func handleListBackupTargets(d *Deps) http.HandlerFunc {
 			targets = []domain.BackupTarget{}
 		}
 		WriteJSON(w, http.StatusOK, map[string]any{"targets": targets})
+	}
+}
+
+// handleListGameBackups is GET /instances/{instanceId}/game-backups: Valheim's
+// own rolling world copies, newest first.
+func handleListGameBackups(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if d.Backups == nil {
+			WriteError(w, domain.E(domain.CodeInternal, "backup service not configured"))
+			return
+		}
+		copies, err := d.Backups.ListGameBackups(r.Context(), id)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		if copies == nil {
+			copies = []domain.GameBackup{}
+		}
+		WriteJSON(w, http.StatusOK, map[string]any{"copies": copies})
+	}
+}
+
+// handleRestoreGameBackup is POST /instances/{instanceId}/game-backups/{gameBackupName}/restore.
+func handleRestoreGameBackup(d *Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := InstanceID(r)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		name := chi.URLParam(r, "gameBackupName")
+		if d.Backups == nil {
+			WriteError(w, domain.E(domain.CodeInternal, "backup service not configured"))
+			return
+		}
+		var req restoreBackupRequest
+		if err := DecodeOptionalJSON(r, &req); err != nil {
+			WriteError(w, err)
+			return
+		}
+		job, err := d.Backups.EnqueueGameBackupRestore(r.Context(), id, name, req.StopIfRunning, RequestedBy(r))
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		d.audit(r, "game_backup.restore", id, name, map[string]any{"stop_if_running": req.StopIfRunning})
+		WriteJSON(w, http.StatusAccepted, map[string]any{"job": job})
 	}
 }
