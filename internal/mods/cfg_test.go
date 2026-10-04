@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
@@ -546,5 +547,42 @@ func TestYAMLSyntaxError_PointsAtTheMistake(t *testing.T) {
 				t.Errorf("error = %q, want it to contain %q", err, want)
 			}
 		})
+	}
+}
+
+func TestYAMLSyntaxError_SkipsMultiLineConstructsAndBoundsWork(t *testing.T) {
+	// A valid multi-line quoted scalar comes first: a prefix cut inside it
+	// does not parse, but that is not the mistake.
+	doc := "a: 1\nnote: \"first line\n  second line\n  third line\"\nb:\n  c: 2\n d: 3\ne: 4\n"
+	err := validateConfigSyntax(domain.ConfigFormatYAML, doc)
+	if err == nil {
+		t.Fatal("expected a syntax error")
+	}
+	if want := "near line 7:"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to contain %q", err, want)
+	}
+
+	// Large inputs are rejected without the locating pass.
+	big := strings.Repeat("k: v\n", (maxYAMLLocateBytes/5)+10) + " broken: [\n"
+	err = validateConfigSyntax(domain.ConfigFormatYAML, big)
+	if err == nil {
+		t.Fatal("expected a syntax error for the large input")
+	}
+	if strings.Contains(err.Error(), "near line") {
+		t.Errorf("large input should keep the parser's own message, got %q", err)
+	}
+
+	// The search stays logarithmic: count parses through a wrapper would
+	// need a hook, so assert on time instead with a generous bound.
+	mid := strings.Repeat("k: v\n", 20000) + " broken: [\n"
+	if len(mid) > maxYAMLLocateBytes {
+		t.Fatalf("test input (%d bytes) exceeds the locate limit", len(mid))
+	}
+	start := time.Now()
+	if err := validateConfigSyntax(domain.ConfigFormatYAML, mid); err == nil || !strings.Contains(err.Error(), "near line 20001:") {
+		t.Errorf("error = %v, want near line 20001", err)
+	}
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("locating took %s, want well under 5s", d)
 	}
 }

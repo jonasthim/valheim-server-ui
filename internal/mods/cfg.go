@@ -290,31 +290,71 @@ func configFileName(name string) error {
 // yamlLinePrefix matches the "line N: " yaml.v3 puts in front of a message.
 var yamlLinePrefix = regexp.MustCompile(`^line (\d+): `)
 
-// maxYAMLLocateLines bounds the extra parses yamlSyntaxError does to locate
-// a mistake; larger files keep the parser's own position.
-const maxYAMLLocateLines = 4000
+// Locating a YAML mistake re-parses leading parts of the text, so the work
+// is bounded: inputs above maxYAMLLocateBytes keep the parser's own position,
+// and the search does a binary search plus a short look-ahead, at most
+// yamlLocateRounds times (a few dozen parses in total, never one per line).
+const (
+	maxYAMLLocateBytes = 256 << 10
+	yamlLocateAhead    = 20
+	yamlLocateRounds   = 2
+)
 
 // yamlSyntaxError turns a yaml.v3 parse error into a message that points at
 // the mistake. yaml.v3 reports the line where the enclosing block starts
 // (its context mark), which for a wrong indent deep in a file is far above
-// the offending line. The real position is found by looking for the longest
-// leading run of whole lines that still parses: the mistake is on the line
-// after it. Scanning from the end handles constructs that span lines
-// (quoted strings, flow collections), where a shorter prefix fails only
-// because it was cut in the middle.
+// the offending line. The real position is the line after the longest
+// leading run of whole lines that still parses. That boundary is found by
+// binary search (the empty text parses, the whole text does not). A cut in
+// the middle of a multi-line construct (quoted string, flow collection) also
+// fails, so after each search a few following prefixes are tried: if one
+// parses, the boundary was such a cut and the search continues after it.
 func yamlSyntaxError(raw string, err error) error {
 	msg := strings.TrimPrefix(err.Error(), "yaml: ")
-	reason := yamlLinePrefix.ReplaceAllString(msg, "")
-	lines := strings.SplitAfter(raw, "\n")
-	if len(lines) > maxYAMLLocateLines {
+	if len(raw) > maxYAMLLocateBytes {
 		return fmt.Errorf("invalid YAML: %s", msg)
 	}
-	for n := len(lines) - 1; n >= 0; n-- {
-		if yamlParses(strings.Join(lines[:n], "")) {
-			return fmt.Errorf("invalid YAML near line %d: %s", n+1, reason)
+	reason := yamlLinePrefix.ReplaceAllString(msg, "")
+
+	// ends[n] is the byte offset just after line n (ends[0] = 0), so
+	// raw[:ends[n]] is the first n lines without any copying.
+	ends := []int{0}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] == '\n' {
+			ends = append(ends, i+1)
 		}
 	}
-	return fmt.Errorf("invalid YAML: %s", msg)
+	if ends[len(ends)-1] != len(raw) {
+		ends = append(ends, len(raw))
+	}
+	total := len(ends) - 1
+	parses := func(n int) bool { return yamlParses(raw[:ends[n]]) }
+
+	lo, hi := 0, total // invariant: the first lo lines parse, the first hi do not
+	for round := 0; ; round++ {
+		for hi-lo > 1 {
+			mid := lo + (hi-lo)/2
+			if parses(mid) {
+				lo = mid
+			} else {
+				hi = mid
+			}
+		}
+		if round >= yamlLocateRounds {
+			break
+		}
+		resumed := false
+		for m := lo + 2; m < total && m <= lo+1+yamlLocateAhead; m++ {
+			if parses(m) {
+				lo, hi, resumed = m, total, true
+				break
+			}
+		}
+		if !resumed {
+			break
+		}
+	}
+	return fmt.Errorf("invalid YAML near line %d: %s", lo+1, reason)
 }
 
 // yamlParses reports whether every document in raw parses.
