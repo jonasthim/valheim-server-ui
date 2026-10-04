@@ -899,6 +899,49 @@ paths:
                 note: { type: string, maxLength: 200 }
       responses:
         '202': { $ref: '#/components/responses/JobResponse' }
+  /instances/{instanceId}/game-backups:
+    parameters: [{ $ref: '#/components/parameters/instanceId' }]
+    get:
+      tags: [backups]
+      summary: List Valheim's own rolling world copies (the game's -backups files next to the worlds)
+      description: >
+        The game server writes `<World>_backup_auto-<timestamp>` copies (also `_backup_cloud-` and
+        `_backup_restore-`) into `save/worlds_local`: sibling directories in the 1.0 world layout,
+        flat `.db`/`.fwl` pairs in the legacy one. They are not manager backups and never appear
+        under `/backups`; this lists them, newest first, for every world in the save directory.
+      x-role: viewer
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [copies]
+                properties:
+                  copies: { type: array, items: { $ref: '#/components/schemas/GameBackup' } }
+  /instances/{instanceId}/game-backups/{gameBackupName}/restore:
+    post:
+      tags: [backups]
+      summary: Restore one of the game's rolling copies over its world (creates a pre_restore backup first)
+      description: >
+        Runs as a `restore` job: stops the instance when `stop_if_running` is set (409
+        `instance_running` otherwise), takes a manager `pre_restore` backup of the current save,
+        replaces the world's save with the copy (the copy itself is left in place), switches the
+        active world when the copy belongs to another world, and starts the instance again if it
+        was running. 404 when the name is not one of the listed copies; 409 `validation_failed`
+        when the copy is not restorable.
+      x-role: operator
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - { in: path, name: gameBackupName, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StopIfRunning' }
+      responses:
+        '202': { $ref: '#/components/responses/JobResponse' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409': { $ref: '#/components/responses/Error' }
   /instances/{instanceId}/backups/upload:
     post:
       tags: [backups]
@@ -2274,6 +2317,19 @@ components:
         modified_at: { type: string, format: date-time }
         has_db: { type: boolean }
         has_fwl: { type: boolean }
+
+    GameBackup:
+      type: object
+      description: One of Valheim's own rolling world copies in save/worlds_local.
+      required: [name, world, kind, layout, created_at, size_bytes, restorable]
+      properties:
+        name: { type: string, description: 'File stem or directory name, e.g. Midgard_backup_auto-20260909144803; the id for the restore call' }
+        world: { type: string, description: The world the copy belongs to (the part before _backup_) }
+        kind: { type: string, enum: [auto, cloud, restore] }
+        layout: { type: string, enum: [directory, legacy], description: 'directory = <name>/ with _main.<N>.* files (game 1.0+); legacy = flat <name>.db/.fwl' }
+        created_at: { type: string, format: date-time, description: Parsed from the timestamp in the name (UTC); the newest file's mtime when the name carries none }
+        size_bytes: { type: integer, format: int64 }
+        restorable: { type: boolean, description: 'false when the copy has no committed save (directory: no _main.<N>.ok with a .db2; legacy: no .db)' }
 
     BackupKind:
       type: string

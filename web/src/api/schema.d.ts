@@ -2137,6 +2137,90 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/game-backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                instanceId: components["parameters"]["instanceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * List Valheim's own rolling world copies (the game's -backups files next to the worlds)
+         * @description The game server writes `<World>_backup_auto-<timestamp>` copies (also `_backup_cloud-` and `_backup_restore-`) into `save/worlds_local`: sibling directories in the 1.0 world layout, flat `.db`/`.fwl` pairs in the legacy one. They are not manager backups and never appear under `/backups`; this lists them, newest first, for every world in the save directory.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            copies: components["schemas"]["GameBackup"][];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/instances/{instanceId}/game-backups/{gameBackupName}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore one of the game's rolling copies over its world (creates a pre_restore backup first)
+         * @description Runs as a `restore` job: stops the instance when `stop_if_running` is set (409 `instance_running` otherwise), takes a manager `pre_restore` backup of the current save, replaces the world's save with the copy (the copy itself is left in place), switches the active world when the copy belongs to another world, and starts the instance again if it was running. 404 when the name is not one of the listed copies; 409 `validation_failed` when the copy is not restorable.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                    gameBackupName: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["StopIfRunning"];
+                };
+            };
+            responses: {
+                202: components["responses"]["JobResponse"];
+                404: components["responses"]["Error"];
+                409: components["responses"]["Error"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/backups/upload": {
         parameters: {
             query?: never;
@@ -4497,6 +4581,29 @@ export interface components {
             modified_at: string;
             has_db?: boolean;
             has_fwl?: boolean;
+        };
+        /** @description One of Valheim's own rolling world copies in save/worlds_local. */
+        GameBackup: {
+            /** @description File stem or directory name, e.g. Midgard_backup_auto-20260909144803; the id for the restore call */
+            name: string;
+            /** @description The world the copy belongs to (the part before _backup_) */
+            world: string;
+            /** @enum {string} */
+            kind: "auto" | "cloud" | "restore";
+            /**
+             * @description directory = <name>/ with _main.<N>.* files (game 1.0+); legacy = flat <name>.db/.fwl
+             * @enum {string}
+             */
+            layout: "directory" | "legacy";
+            /**
+             * Format: date-time
+             * @description Parsed from the timestamp in the name (UTC); the newest file's mtime when the name carries none
+             */
+            created_at: string;
+            /** Format: int64 */
+            size_bytes: number;
+            /** @description false when the copy has no committed save (directory: no _main.<N>.ok with a .db2; legacy: no .db) */
+            restorable: boolean;
         };
         /** @enum {string} */
         BackupKind: "manual" | "scheduled" | "pre_update" | "pre_restore" | "uploaded";
