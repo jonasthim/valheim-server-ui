@@ -308,6 +308,20 @@ Installs learn about the release at their next update check (Settings →
 Application, hourly by default); press Upgrade there or re-run the install
 one-liner on the host.
 
+### Publish the optional Survival Client plugin on Hexium
+
+After the GitHub release succeeds, download its
+`valheim-ui-survival-client.zip` asset. Check that the archive root contains
+`manifest.json`, `README.md`, and a 256×256 `icon.png`, plus
+`plugins/ValheimUI.SurvivalClient.dll`; the manifest version must match the
+release. Sign in at [Hexium](https://hexium.gg/login), choose or create a team,
+open the Valheim submit page, upload the ZIP, and mark it **client-only**.
+Hexium accepts this Thunderstore-compatible layout; see its
+[packaging guide](https://hexium.gg/packaging). Keep the GitHub release ZIP as
+the reproducible source package and link the published Hexium page from the
+Survival tab once it exists. Each player needs the client plugin for their own
+killer and cause details; the server agent still records deaths without it.
+
 If the `release` job fails at the publish step with `Resource not accessible
 by integration`, the workflow token is not allowed to write releases. Check
 Settings → Actions → General → Workflow permissions ("Read and write

@@ -3,7 +3,10 @@
 Server-side BepInEx plugin installed by [Valheim Server UI](https://github.com/jonasthim/valheim-server-ui)
 together with BepInEx. It exposes the running world to the manager over a
 loopback-only HTTP API (bearer token written by the manager before each start)
-and executes a fixed set of admin commands. Players need nothing installed.
+and executes a fixed set of admin commands. Players need nothing installed for
+live status, maps, or confirmed death counts. The optional
+[Survival Client plugin](ValheimUI.SurvivalClient/README.md) adds killer and cause
+details for deaths on clients that install it.
 
 - `GET /v1/status`: players with positions, day, time of day, weather, global
   keys (progression only) and world modifiers.

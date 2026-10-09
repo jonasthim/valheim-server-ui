@@ -797,8 +797,13 @@ on the dedicated server. A `Player.RPC_OnDeath` postfix can capture a death
 when a Player component exists; the ZDO path covers dedicated servers that
 do not instantiate one. Both paths deduplicate by character ZDO ID. The agent
 derives the biome from the death position with `WorldGenerator.GetBiome`.
-Neither death signal carries the client's last hit details, so enemy and cause
-are left unknown. The manager also records changes to boss keys and world
+Neither server death signal carries the client's last hit details. The optional
+`ValheimUI.SurvivalClient` plugin writes the fatal attacker's display name,
+level, and `HitData.HitType` to the dying player's owned ZDO before Valheim
+sets its `dead` flag. The server reads those values only when it observes the
+confirmed death. Clients without the plugin leave killer and cause unknown;
+environmental deaths can have a cause without a killer. The manager also
+records changes to boss keys and world
 modifiers as world milestones. Survival history is scoped to
 an instance and world, and deleting an instance cascades to its history.
 
@@ -1092,12 +1097,13 @@ driven from `Update()`:
 
 **Manager side** (`internal/agent`, `internal/mods/service.go`).
 
-- **Bundling.** `plugin/build.sh` builds both plugin projects and packages
-  two zips, `valheim-ui-agent.zip` and `valheim-ui-gameplay.zip` (same
-  Thunderstore layout). CI's `plugin` job uploads both in one `agent-plugin`
-  artifact; the release job copies both into `internal/agent/assets/`
-  (`//go:embed assets/*`) and lists both in `SHA256SUMS` and the release
-  notes.
+- **Bundling.** `plugin/build.sh` builds three plugin projects and packages
+  `valheim-ui-agent.zip`, `valheim-ui-gameplay.zip`, and the optional
+  `valheim-ui-survival-client.zip` (all Thunderstore layout). CI's `plugin`
+  job uploads all three in one `agent-plugin` artifact. The release job
+  embeds the two server plugins in `internal/agent/assets/`
+  (`//go:embed assets/*`) and publishes all three as release assets with
+  `SHA256SUMS`. Players install the client zip in their own game.
 - `domain.BundledPlugin{Owner, Name, DLL, ConfigFile, Asset, Title,
   EnvOverride}` describes each plugin; `domain.BundledAgent` and
   `domain.BundledGameplay` are the two values. Env override

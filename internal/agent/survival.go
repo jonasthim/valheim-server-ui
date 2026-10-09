@@ -17,6 +17,9 @@ type deathPayload struct {
 	CharacterID string   `json:"character_id"`
 	PlayerName  string   `json:"player_name"`
 	Day         int      `json:"day"`
+	Enemy       string   `json:"enemy"`
+	EnemyLevel  int      `json:"enemy_level"`
+	Situation   string   `json:"situation"`
 	Biome       string   `json:"biome"`
 	X           *float64 `json:"x"`
 	Z           *float64 `json:"z"`
@@ -71,7 +74,7 @@ func (s *Service) pollSurvival(ctx context.Context, id string, c *Client, st *do
 		if run == "" {
 			run = "legacy"
 		}
-		m := domain.SurvivalMoment{InstanceID: id, WorldUID: d.WorldUID, WorldName: d.WorldName, RunID: run, SourceSeq: ev.Seq, Kind: "death", CharacterID: d.CharacterID, PlayerName: d.PlayerName, Day: d.Day, At: ev.At, Label: "Death", Biome: d.Biome, X: d.X, Z: d.Z, Visible: d.Visible}
+		m := domain.SurvivalMoment{InstanceID: id, WorldUID: d.WorldUID, WorldName: d.WorldName, RunID: run, SourceSeq: ev.Seq, Kind: "death", CharacterID: d.CharacterID, PlayerName: d.PlayerName, Day: d.Day, At: ev.At, Label: "Death", Enemy: d.Enemy, EnemyLevel: d.EnemyLevel, Situation: d.Situation, Biome: d.Biome, X: d.X, Z: d.Z, Visible: d.Visible}
 		if err := store.Insert(ctx, m); err != nil {
 			s.log.Warn("agent: survival insert", "instance", id, "err", err)
 			return

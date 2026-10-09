@@ -1,0 +1,8 @@
+{
+  "name": "ValheimUI_SurvivalClient",
+  "author": "jonasthim",
+  "version_number": "__VERSION__",
+  "website_url": "https://github.com/jonasthim/valheim-server-ui",
+  "description": "Optional client plugin that reports the fatal hit's killer and cause to a Valheim Server UI server agent.",
+  "dependencies": ["denikson-BepInExPack_Valheim-5.4.2333"]
+}
