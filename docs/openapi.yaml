@@ -2867,8 +2867,8 @@ components:
         enemy_level: { type: integer }
         situation: { type: string }
         biome: { type: string }
-        x: { type: number, description: Omitted for a viewer when this player hides their map position }
-        z: { type: number, description: Omitted for a viewer when this player hides their map position }
+        x: { type: number, description: Operator-only coordinate; omitted from every viewer response }
+        z: { type: number, description: Operator-only coordinate; omitted from every viewer response }
 
     JobType:
       type: string

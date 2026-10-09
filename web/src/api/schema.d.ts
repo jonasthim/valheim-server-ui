@@ -5160,9 +5160,9 @@ export interface components {
             enemy_level?: number;
             situation?: string;
             biome?: string;
-            /** @description Omitted for a viewer when this player hides their map position */
+            /** @description Operator-only coordinate; omitted from every viewer response */
             x?: number;
-            /** @description Omitted for a viewer when this player hides their map position */
+            /** @description Operator-only coordinate; omitted from every viewer response */
             z?: number;
         };
         /**

@@ -35,18 +35,21 @@ function DeathChart({ deaths, moments, highlighted, range, focus, onSelect }: {
   const y = (rank: number) => 300 - ((rank - minY) / (maxY - minY)) * 250
   const ticks = [...new Set([0, 0.25, 0.5, 0.75, 1].map((fraction) => Math.round(minY + (maxY - minY) * fraction)))]
   return <div className={classes.chartScroll}>
-    <svg className={classes.chart} viewBox="0 0 1000 340" role="img" aria-label="Deaths by world day, with notable world events">
+    <svg className={classes.chart} viewBox="0 0 1000 340" role="group" aria-label="Deaths by world day, with notable world events">
       {ticks.map((count) => <g key={count}>
         <line x1="48" x2="958" y1={y(count)} y2={y(count)} className={classes.grid} />
         <text x="40" y={y(count) + 4} textAnchor="end" className={classes.axis}>{count}</text>
       </g>)}
-      {moments.filter((m) => m.kind !== 'death' && m.day >= first && m.day <= last).map((m) => <g key={m.id} onClick={() => onSelect(m)} className={classes.marker}>
+      {moments.filter((m) => m.kind !== 'death' && m.day >= first && m.day <= last).map((m) => <g key={m.id} role="button" tabIndex={0}
+        aria-label={`Day ${m.day}: ${m.label}`} onClick={() => onSelect(m)}
+        onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(m) } }} className={classes.marker}>
         <line x1={x(m.day)} x2={x(m.day)} y1="36" y2="300" className={classes.milestone} />
         <title>{`Day ${m.day}: ${m.label}`}</title>
       </g>)}
-      {plotted.map((m) => <circle key={m.id} cx={x(m.day)} cy={y(rankById.get(m.id) ?? 0)} r="5" tabIndex={0}
+      {plotted.map((m) => <circle key={m.id} cx={x(m.day)} cy={y(rankById.get(m.id) ?? 0)} r="5" role="button" tabIndex={0}
+        aria-label={`Death ${rankById.get(m.id)}, day ${m.day}${m.player_name ? `, ${m.player_name}` : ''}`}
         className={highlighted.has(m.id) ? classes.point : classes.pointMuted}
-        onClick={() => onSelect(m)} onKeyDown={(event) => { if (event.key === 'Enter') onSelect(m) }}>
+        onClick={() => onSelect(m)} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onSelect(m) } }}>
         <title>{`Death ${rankById.get(m.id)}, day ${m.day}${m.player_name ? `, ${m.player_name}` : ''}`}</title>
       </circle>)}
       <text x="48" y="330" className={classes.axis}>{`Day ${first}`}</text>

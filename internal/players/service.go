@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
@@ -23,6 +24,7 @@ type serviceStore interface {
 // import internal/api to avoid a cycle — wiring happens in
 // cmd/valheim-ui/wire_players.go).
 type Service struct {
+	listMu sync.Mutex
 	mgr    *Manager
 	store  serviceStore
 	paths  func(string) domain.InstancePaths
@@ -97,6 +99,12 @@ func (s *Service) Players(ctx context.Context, instanceID string) (*domain.Playe
 
 // GetList implements api.PlayerService.
 func (s *Service) GetList(ctx context.Context, instanceID string, kind domain.ListKind) (*domain.PlayerList, error) {
+	s.listMu.Lock()
+	defer s.listMu.Unlock()
+	return s.getList(ctx, instanceID, kind)
+}
+
+func (s *Service) getList(ctx context.Context, instanceID string, kind domain.ListKind) (*domain.PlayerList, error) {
 	if err := s.checkExists(ctx, instanceID); err != nil {
 		return nil, err
 	}
@@ -113,11 +121,13 @@ func (s *Service) GetList(ctx context.Context, instanceID string, kind domain.Li
 	if err != nil {
 		return nil, err
 	}
-	legacyInline := false
+	repair := false
+	seen := make(map[string]int, len(list.Entries))
+	unique := make([]domain.PlayerListEntry, 0, len(list.Entries))
 	for i := range list.Entries {
-		entry := &list.Entries[i]
+		entry := list.Entries[i]
 		if inlineComments[i] {
-			legacyInline = true
+			repair = true
 			if entry.Comment != "" {
 				if _, exists := comments[entry.ID]; !exists {
 					comments[entry.ID] = entry.Comment
@@ -125,8 +135,18 @@ func (s *Service) GetList(ctx context.Context, instanceID string, kind domain.Li
 			}
 		}
 		entry.Comment = comments[entry.ID]
+		if first, duplicate := seen[entry.ID]; duplicate {
+			repair = true
+			if unique[first].Comment == "" {
+				unique[first].Comment = entry.Comment
+			}
+			continue
+		}
+		seen[entry.ID] = len(unique)
+		unique = append(unique, entry)
 	}
-	if legacyInline {
+	list.Entries = unique
+	if repair {
 		// Move comments written by older manager versions out of the live
 		// Valheim file before answering. Keep its standalone header intact.
 		if err := s.store.ReplaceListComments(ctx, instanceID, kind, list.Entries); err != nil {
@@ -141,6 +161,8 @@ func (s *Service) GetList(ctx context.Context, instanceID string, kind domain.Li
 
 // PutList implements api.PlayerService.
 func (s *Service) PutList(ctx context.Context, instanceID string, list domain.PlayerList) (*domain.PlayerList, error) {
+	s.listMu.Lock()
+	defer s.listMu.Unlock()
 	if err := s.checkExists(ctx, instanceID); err != nil {
 		return nil, err
 	}
@@ -175,7 +197,7 @@ func (s *Service) PutList(ctx context.Context, instanceID string, list domain.Pl
 		}
 		return nil, err
 	}
-	return s.GetList(ctx, instanceID, list.Kind)
+	return s.getList(ctx, instanceID, list.Kind)
 }
 
 // SetNote implements api.PlayerService: stores (or clears, when note is

@@ -35,6 +35,7 @@
 .axis { fill: var(--vh-text-soft); font-size: 12px; font-family: var(--mantine-font-family); }
 .milestone { stroke: var(--vh-ember); stroke-width: 1.5; stroke-dasharray: 4 5; opacity: .7; }
 .marker, .point, .pointMuted { cursor: pointer; }
+.marker:focus-visible, .point:focus-visible, .pointMuted:focus-visible { outline: 3px solid var(--vh-ember); outline-offset: 3px; }
 .point { fill: var(--vh-ember); stroke: var(--vh-surface); stroke-width: 2; }
 .pointMuted { fill: var(--vh-text-soft); opacity: .35; stroke: var(--vh-surface); stroke-width: 2; }
 .categoriesHead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; border-top: 1px solid var(--vh-border); padding-top: 20px; margin-top: 20px; }

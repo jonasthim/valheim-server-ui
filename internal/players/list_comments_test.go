@@ -116,6 +116,26 @@ func TestServiceRepairsEmptyLegacyInlineComment(t *testing.T) {
 	}
 }
 
+func TestServiceRepairsDuplicateLegacyIDs(t *testing.T) {
+	ctx := context.Background()
+	store, _ := newSeededStore(t, "main")
+	root := t.TempDir()
+	id := "V_76561198002701519"
+	path := filepath.Join(root, domain.ListAdmin.FileName())
+	if err := os.WriteFile(path, []byte(id+" // Bjorn\n"+id+" // duplicate\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(nil, store, func(string) domain.InstancePaths { return domain.InstancePaths{Save: root} }, nil)
+	got, err := svc.GetList(ctx, "main", domain.ListAdmin)
+	if err != nil || len(got.Entries) != 1 || got.Entries[0].Comment != "Bjorn" {
+		t.Fatalf("duplicate repair: %+v, %v", got, err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || string(raw) != id+"\n" {
+		t.Fatalf("game file after repair: %q, %v", raw, err)
+	}
+}
+
 func TestServiceDoesNotChangeGameListWhenCommentStoreFails(t *testing.T) {
 	ctx := context.Background()
 	store, sqlDB := newSeededStore(t, "main")

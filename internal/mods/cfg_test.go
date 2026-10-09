@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
@@ -572,17 +571,20 @@ func TestYAMLSyntaxError_SkipsMultiLineConstructsAndBoundsWork(t *testing.T) {
 		t.Errorf("large input should keep the parser's own message, got %q", err)
 	}
 
-	// The search stays logarithmic: count parses through a wrapper would
-	// need a hook, so assert on time instead with a generous bound.
+	// Count parse attempts instead of wall-clock time, which varies with CI load.
 	mid := strings.Repeat("k: v\n", 20000) + " broken: [\n"
 	if len(mid) > maxYAMLLocateBytes {
 		t.Fatalf("test input (%d bytes) exceeds the locate limit", len(mid))
 	}
-	start := time.Now()
-	if err := validateConfigSyntax(domain.ConfigFormatYAML, mid); err == nil || !strings.Contains(err.Error(), "near line 20001:") {
+	parses := 0
+	err = yamlSyntaxErrorWithParser(mid, errors.New("yaml: invalid"), func(prefix string) bool {
+		parses++
+		return yamlParses(prefix)
+	})
+	if err == nil || !strings.Contains(err.Error(), "near line 20001:") {
 		t.Errorf("error = %v, want near line 20001", err)
 	}
-	if d := time.Since(start); d > 5*time.Second {
-		t.Errorf("locating took %s, want well under 5s", d)
+	if parses > 100 {
+		t.Errorf("locating used %d parses, want at most 100", parses)
 	}
 }

@@ -310,6 +310,10 @@ const (
 // fails, so after each search a few following prefixes are tried: if one
 // parses, the boundary was such a cut and the search continues after it.
 func yamlSyntaxError(raw string, err error) error {
+	return yamlSyntaxErrorWithParser(raw, err, yamlParses)
+}
+
+func yamlSyntaxErrorWithParser(raw string, err error, parse func(string) bool) error {
 	msg := strings.TrimPrefix(err.Error(), "yaml: ")
 	if len(raw) > maxYAMLLocateBytes {
 		return fmt.Errorf("invalid YAML: %s", msg)
@@ -328,7 +332,7 @@ func yamlSyntaxError(raw string, err error) error {
 		ends = append(ends, len(raw))
 	}
 	total := len(ends) - 1
-	parses := func(n int) bool { return yamlParses(raw[:ends[n]]) }
+	parses := func(n int) bool { return parse(raw[:ends[n]]) }
 
 	lo, hi := 0, total // invariant: the first lo lines parse, the first hi do not
 	for round := 0; ; round++ {

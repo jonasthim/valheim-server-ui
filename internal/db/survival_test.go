@@ -15,6 +15,11 @@ func TestSurvivalStoreSeparatesWorldsAndCharactersAndDeduplicates(t *testing.T) 
 		t.Fatal(err)
 	}
 	defer sqlDB.Close()
+	for _, id := range []string{"main", "other"} {
+		if _, err := sqlDB.ExecContext(ctx, `INSERT INTO instances(id,name,config_json,created_at,updated_at) VALUES (?,?,?,?,?)`, id, id, "{}", "2026-10-09T10:00:00Z", "2026-10-09T10:00:00Z"); err != nil {
+			t.Fatal(err)
+		}
+	}
 	store := NewSurvivalRepo(sqlDB)
 	at := time.Date(2026, 10, 9, 10, 0, 0, 0, time.UTC)
 	items := []domain.SurvivalMoment{
@@ -51,5 +56,12 @@ func TestSurvivalStoreSeparatesWorldsAndCharactersAndDeduplicates(t *testing.T) 
 	}
 	if len(worlds) != 2 || worlds[0] != 11 || worlds[1] != 10 {
 		t.Fatalf("worlds: %v", worlds)
+	}
+	if _, err := sqlDB.ExecContext(ctx, `DELETE FROM instances WHERE id=?`, "main"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = store.List(ctx, "main", 10, "")
+	if err != nil || len(got) != 0 {
+		t.Fatalf("deleted instance retained survival history: %+v, %v", got, err)
 	}
 }

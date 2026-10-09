@@ -334,6 +334,31 @@ namespace ValheimUI.Agent
             catch (Exception e) { Logger.LogWarning("death journal read failed: " + e.Message); }
         }
 
+        // The manager only advances `since` after storing every death in that
+        // response. Once it asks for a later sequence, older journal records
+        // can be removed without losing replay after either process restarts.
+        private void CompactDeathJournal(long acknowledged)
+        {
+            int count = 0;
+            while (count < _deathEvents.Count && _deathEvents[count].Key <= acknowledged) count++;
+            if (count == 0) return;
+            var temp = _deathJournalPath + ".tmp";
+            try
+            {
+                using (var writer = new StreamWriter(temp, false, new UTF8Encoding(false)))
+                {
+                    for (int i = count; i < _deathEvents.Count; i++) writer.WriteLine(_deathEvents[i].Value);
+                }
+                File.Replace(temp, _deathJournalPath, null);
+                _deathEvents.RemoveRange(0, count);
+            }
+            catch (Exception e)
+            {
+                Logger.LogWarning("death journal compaction failed: " + e.Message);
+                try { if (File.Exists(temp)) File.Delete(temp); } catch (Exception) { }
+            }
+        }
+
         internal void RecordDeath(Player player)
         {
             var snap = _latestSnapshot;
@@ -380,8 +405,24 @@ namespace ValheimUI.Agent
             var w = new System.Text.StringBuilder(1024);
             lock (_eventsLock)
             {
+                if (since > 0 && since <= _eventSeq) CompactDeathJournal(since);
                 var merged = new SortedDictionary<long, string>();
-                foreach (var kv in _deathEvents) if (kv.Key > since) merged[kv.Key] = kv.Value;
+                // The journal is ordered by sequence. Find the first unread
+                // death directly, and only build one response page.
+                int low = 0, high = _deathEvents.Count;
+                while (low < high)
+                {
+                    int mid = low + (high - low) / 2;
+                    if (_deathEvents[mid].Key <= since) low = mid + 1;
+                    else high = mid;
+                }
+                int bytes = 0;
+                for (int i = low; i < _deathEvents.Count && bytes < 1024 * 1024; i++)
+                {
+                    var kv = _deathEvents[i];
+                    merged[kv.Key] = kv.Value;
+                    bytes += kv.Value.Length;
+                }
                 foreach (var kv in _events) if (kv.Key > since) merged[kv.Key] = kv.Value;
                 long next = since;
                 w.Append("{\"next\":");

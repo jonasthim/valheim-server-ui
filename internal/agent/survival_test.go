@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"io"
 	"log/slog"
@@ -19,6 +20,13 @@ type transientSurvivalStore struct {
 	fail bool
 }
 
+func seedSurvivalInstance(t *testing.T, sqlDB *sql.DB) {
+	t.Helper()
+	if _, err := sqlDB.Exec(`INSERT INTO instances(id,name,config_json,created_at,updated_at) VALUES ('main','main','{}','2026-10-09T10:00:00Z','2026-10-09T10:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func (s *transientSurvivalStore) Insert(ctx context.Context, m domain.SurvivalMoment) error {
 	if m.Kind == "progression" && s.fail {
 		s.fail = false
@@ -34,6 +42,7 @@ func TestSurvivalPollPersistsDeathOnceAndWorldMilestone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqlDB.Close()
+	seedSurvivalInstance(t, sqlDB)
 	store := db.NewSurvivalRepo(sqlDB)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/events" {
@@ -85,6 +94,7 @@ func TestSurvivalViewerCannotSeeHiddenDeathPosition(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqlDB.Close()
+	seedSurvivalInstance(t, sqlDB)
 	store := db.NewSurvivalRepo(sqlDB)
 	x, z := 4.0, 7.0
 	if err := store.Insert(ctx, domain.SurvivalMoment{InstanceID: "main", WorldUID: 55, RunID: "r", SourceSeq: 1, Kind: "death", CharacterID: "991", At: time.Now(), X: &x, Z: &z, Visible: false}); err != nil {
@@ -120,6 +130,7 @@ func TestSurvivalPollRetriesFailedMilestone(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer sqlDB.Close()
+	seedSurvivalInstance(t, sqlDB)
 	store := &transientSurvivalStore{SurvivalRepo: db.NewSurvivalRepo(sqlDB), fail: true}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(`{"next":0,"events":[]}`)) }))
 	defer server.Close()
