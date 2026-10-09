@@ -97,6 +97,7 @@ namespace ValheimUI.Agent
         private readonly object _eventsLock = new object();
         private readonly LinkedList<KeyValuePair<long, string>> _events = new LinkedList<KeyValuePair<long, string>>();
         private readonly List<KeyValuePair<long, string>> _deathEvents = new List<KeyValuePair<long, string>>();
+        private readonly HashSet<ZDOID> _recordedDeaths = new HashSet<ZDOID>();
         private string _deathJournalPath = "";
         private long _eventSeq;
         private Dictionary<long, string> _lastPeers = new Dictionary<long, string>();
@@ -211,6 +212,7 @@ namespace ValheimUI.Agent
                         _discoveries.MaybeSave(false);
                     }
                     _statusJson = snap.ToJson(BuildInfo.Version, _gameVersion, now - _startedAt, _pings.Snapshot());
+                    if (snap.Ready) RecordDeathsFromZDOs(snap);
                     DiffPeers(snap);
                 }
                 catch (Exception e)
@@ -367,21 +369,52 @@ namespace ValheimUI.Agent
             if (playerID == 0) return;
             var pos = player.transform.position;
             bool visible = false;
+            ZDOID objectID = ZDOID.None;
             try
             {
                 var zdo = player.GetComponent<ZNetView>()?.GetZDO();
                 if (zdo != null)
                 {
-                    string objectID = zdo.m_uid.ToString();
+                    objectID = zdo.m_uid;
                     foreach (var peer in snap.Players)
                     {
-                        if (peer.CharacterId == objectID) { visible = peer.Visible; break; }
+                        if (peer.CharacterId == objectID.ToString()) { visible = peer.Visible; break; }
                     }
                 }
             }
             catch (Exception) { }
             string biome = "";
             try { biome = player.GetCurrentBiome().ToString(); } catch (Exception) { }
+            EmitDeath(snap, objectID, playerID, player.GetPlayerName(), pos, visible, biome);
+        }
+
+        // Dedicated servers can receive a player's ZDO without instantiating
+        // its Player component, so RPC_OnDeath alone cannot capture every death.
+        // The owning client sets this replicated flag before sending the RPC.
+        private void RecordDeathsFromZDOs(StateSnapshot snap)
+        {
+            var zdoMan = ZDOMan.instance;
+            var znet = ZNet.instance;
+            if (zdoMan == null || znet == null || snap.WorldUID == 0) return;
+            foreach (var peer in znet.GetPeers())
+            {
+                if (peer == null || !peer.IsReady() || peer.m_characterID == ZDOID.None) continue;
+                try
+                {
+                    var zdo = zdoMan.GetZDO(peer.m_characterID);
+                    if (zdo == null || !zdo.GetBool(ZDOVars.s_dead) || _recordedDeaths.Contains(peer.m_characterID)) continue;
+                    long playerID = zdo.GetLong(ZDOVars.s_playerID, 0L);
+                    if (playerID == 0) continue;
+                    var name = zdo.GetString(ZDOVars.s_playerName, peer.m_playerName ?? "");
+                    EmitDeath(snap, peer.m_characterID, playerID, name, zdo.GetPosition(), peer.m_publicRefPos, "");
+                }
+                catch (Exception e) { Logger.LogWarning("death ZDO capture failed: " + e.Message); }
+            }
+        }
+
+        private void EmitDeath(StateSnapshot snap, ZDOID objectID, long playerID, string playerName, Vector3 pos, bool visible, string biome)
+        {
+            if (objectID != ZDOID.None && _recordedDeaths.Contains(objectID)) return;
             int day = snap.Day;
             try { day = EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds()); } catch (Exception) { }
             var w = new JsonWriter();
@@ -390,7 +423,7 @@ namespace ValheimUI.Agent
             w.Prop("world_uid", snap.WorldUID);
             w.Prop("world_name", snap.WorldName);
             w.Prop("character_id", playerID.ToString(CultureInfo.InvariantCulture));
-            w.Prop("player_name", player.GetPlayerName());
+            w.Prop("player_name", playerName);
             w.Prop("day", day);
             w.Prop("biome", biome);
             w.Prop("x", (double)pos.x);
@@ -398,6 +431,7 @@ namespace ValheimUI.Agent
             w.Prop("visible", visible);
             w.EndObject();
             PushEvent("player.death", w.ToString());
+            if (objectID != ZDOID.None) _recordedDeaths.Add(objectID);
         }
 
         private string EventsSince(long since)
