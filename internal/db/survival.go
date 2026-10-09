@@ -37,7 +37,7 @@ func (r *SurvivalRepo) List(ctx context.Context, instanceID string, worldUID int
 	if err != nil {
 		return nil, fmt.Errorf("list survival moments: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []domain.SurvivalMoment
 	for rows.Next() {
 		var m domain.SurvivalMoment
@@ -63,7 +63,7 @@ func (r *SurvivalRepo) Worlds(ctx context.Context, instanceID string) ([]int64, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var out []int64
 	for rows.Next() {
 		var id int64
