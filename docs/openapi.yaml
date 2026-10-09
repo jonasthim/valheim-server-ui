@@ -2329,7 +2329,7 @@ components:
             required: [id]
             properties:
               id: { type: string, description: 'Platform id, e.g. Steam_76561198000000000 or 76561198000000000' }
-              comment: { type: string, description: 'Stored as a trailing // comment on the same line' }
+              comment: { type: string, description: 'Optional UI note stored in the manager database; never written to Valheim list files' }
 
     World:
       type: object

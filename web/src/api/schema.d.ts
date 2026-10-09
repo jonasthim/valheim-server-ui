@@ -4615,7 +4615,7 @@ export interface components {
             entries: {
                 /** @description Platform id, e.g. Steam_76561198000000000 or 76561198000000000 */
                 id: string;
-                /** @description Stored as a trailing // comment on the same line */
+                /** @description Optional UI note stored in the manager database; never written to Valheim list files */
                 comment?: string;
             }[];
         };
