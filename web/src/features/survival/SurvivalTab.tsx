@@ -11,6 +11,13 @@ import classes from './SurvivalTab.module.css'
 
 type Category = 'enemy' | 'enemy_level' | 'situation' | 'biome'
 
+const categoryTitles: Record<Category, string> = {
+  enemy: 'Deaths by killer',
+  enemy_level: 'Deaths by enemy level',
+  situation: 'Deaths by cause',
+  biome: 'Deaths by biome',
+}
+
 function categoryValue(moment: SurvivalMoment, category: Category): string {
   if (category === 'enemy') return moment.enemy || 'Unknown'
   if (category === 'enemy_level') return moment.enemy_level ? `Level ${moment.enemy_level}` : 'Unknown'
@@ -124,10 +131,10 @@ export function SurvivalTab({ id }: { id: string }) {
       <Paper withBorder className={classes.panel}>
         <Text size="xs" c="dimmed">The long road back</Text><Title order={3}>Death progression</Title><Text size="sm" c="dimmed">Each point is a death. Vertical lines mark world milestones. Select a point or line for details.</Text>
         <Group justify="space-between" mt="lg"><Text fw={600}>Highlight deaths <Text span size="xs" c="dimmed">{highlighted.length} match</Text></Text><Group><Switch label="Focus on matching days" checked={focus} onChange={(e) => setFocus(e.currentTarget.checked)} /><Button variant="subtle" size="xs" onClick={() => { setSelection(''); setRange(null) }}>Clear filters</Button></Group></Group>
-        <Group mt="sm">{hasEnemy && <Select label="Killer" value={category === 'enemy' ? selection : ''} data={[{ value: '', label: 'All' }, ...new Set(deaths.map((m) => m.enemy || 'Unknown'))].map((v) => typeof v === 'string' ? { value: v, label: v } : v)} onChange={(v) => { setCategory('enemy'); setSelection(v ?? '') }} />}<Select label="Location" value={category === 'biome' ? selection : ''} data={[{ value: '', label: 'All' }, ...new Set(deaths.map((m) => m.biome || 'Unknown'))].map((v) => typeof v === 'string' ? { value: v, label: v } : v)} onChange={(v) => { setCategory('biome'); setSelection(v ?? '') }} /></Group>
+        <Group mt="sm">{hasEnemy && <Select label="Killer" value={category === 'enemy' ? selection : ''} data={[{ value: '', label: 'All' }, ...new Set(deaths.map((m) => m.enemy || 'Unknown'))].map((v) => typeof v === 'string' ? { value: v, label: v } : v)} onChange={(v) => { setCategory('enemy'); setSelection(v ?? '') }} />}<Select label="Biome" value={category === 'biome' ? selection : ''} data={[{ value: '', label: 'All' }, ...new Set(deaths.map((m) => m.biome || 'Unknown'))].map((v) => typeof v === 'string' ? { value: v, label: v } : v)} onChange={(v) => { setCategory('biome'); setSelection(v ?? '') }} /></Group>
         <DeathChart deaths={deaths} moments={moments} highlighted={highlightedIds} range={selectedRange} focus={focus} onSelect={setDetail} />
         <RangeSlider min={0} max={maxDay} value={selectedRange} onChange={(value) => setRange(value)} minRange={0} marks={[{ value: 0, label: 'Day 0' }, { value: maxDay, label: `Day ${maxDay}` }]} mt="md" mb="xl" />
-        <div className={classes.categoriesHead}><div><Text size="xs" c="dimmed">The many ways to fall</Text><Title order={3}>Deaths by category</Title></div><Group gap="xs">{([...(hasEnemy ? ['enemy'] : []), ...(hasLevel ? ['enemy_level'] : []), ...(hasSituation ? ['situation'] : []), 'biome'] as Category[]).map((c) => <Button key={c} size="xs" variant={category === c ? 'filled' : 'default'} onClick={() => { setCategory(c); setSelection('') }}>{c === 'enemy' ? 'Killer' : c === 'enemy_level' ? 'Enemy level' : c === 'situation' ? 'Cause' : 'Location'}</Button>)}</Group></div>
+        <div className={classes.categoriesHead}><div><Text size="xs" c="dimmed">The many ways to fall</Text><Title order={3}>{categoryTitles[category]}</Title></div><Group gap="xs">{([...(hasEnemy ? ['enemy'] : []), ...(hasLevel ? ['enemy_level'] : []), ...(hasSituation ? ['situation'] : []), 'biome'] as Category[]).map((c) => <Button key={c} size="xs" variant={category === c ? 'filled' : 'default'} onClick={() => { setCategory(c); setSelection('') }}>{c === 'enemy' ? 'Killer' : c === 'enemy_level' ? 'Enemy level' : c === 'situation' ? 'Cause' : 'Biome'}</Button>)}</Group></div>
         <Text size="xs" c="dimmed">Counts use the selected day range. Select a bar to highlight its deaths.</Text>
         <div className={classes.bars}>{categories.map(({ label, count }) => <button type="button" key={label} className={`${classes.barRow} ${selection === label ? classes.barSelected : ''}`} onClick={() => setSelection(selection === label ? '' : label)}><span>{label}</span><span className={classes.barTrack}><span style={{ width: `${(count / Math.max(1, categories[0]?.count ?? 1)) * 100}%` }} /></span><strong>{count}</strong></button>)}</div>
       </Paper>
