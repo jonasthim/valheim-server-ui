@@ -231,6 +231,10 @@ type AgentService interface {
 	ChatHistory(ctx context.Context, instanceID string, limit int, before int64, q string) ([]domain.ChatLogEntry, error)
 }
 
+type SurvivalService interface {
+	Survival(ctx context.Context, instanceID string, worldUID int64, characterID string, includeHidden bool) (*domain.SurvivalHistory, error)
+}
+
 // SessionService lists and revokes the calling user's own sessions (F-2.7).
 type SessionService interface {
 	ListSessions(ctx context.Context, r *http.Request, userID int64) ([]domain.SessionInfo, error)

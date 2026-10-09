@@ -1705,6 +1705,49 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/instances/{instanceId}/survival": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stored player deaths and world milestones for an instance */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Decimal world UID; omit for the current or most recent world */
+                    world_uid?: string;
+                    /** @description Include this character's deaths and world milestones */
+                    character_id?: string;
+                };
+                header?: never;
+                path: {
+                    instanceId: components["parameters"]["instanceId"];
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["SurvivalHistory"];
+                    };
+                };
+                422: components["responses"]["Error"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/instances/{instanceId}/metrics": {
         parameters: {
             query?: never;
@@ -5094,6 +5137,33 @@ export interface components {
              * @description Disambiguates the agent's own per-run sequence number (AgentChatMessage.seq) across world restarts.
              */
             run_seq: number;
+        };
+        SurvivalHistory: {
+            worlds: string[];
+            moments: components["schemas"]["SurvivalMoment"][];
+        };
+        SurvivalMoment: {
+            /** Format: int64 */
+            id: number;
+            instance_id: string;
+            world_uid: string;
+            world_name: string;
+            /** @enum {string} */
+            kind: "death" | "progression" | "setting";
+            character_id?: string;
+            player_name?: string;
+            day: number;
+            /** Format: date-time */
+            at: string;
+            label: string;
+            enemy?: string;
+            enemy_level?: number;
+            situation?: string;
+            biome?: string;
+            /** @description Omitted for a viewer when this player hides their map position */
+            x?: number;
+            /** @description Omitted for a viewer when this player hides their map position */
+            z?: number;
         };
         /**
          * @description `agent_install` installs or updates the bundled Valheim UI plugins

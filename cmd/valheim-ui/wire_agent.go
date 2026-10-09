@@ -33,9 +33,11 @@ func wireAgent(ctx context.Context, deps *api.Deps, inst *instance.Service) (age
 	// F-2.3: persistent chat history, stored by the poller and served back
 	// through deps.Agent.ChatHistory.
 	svc.SetChatStore(db.NewChatLogRepo(deps.DB))
+	svc.SetSurvivalStore(db.NewSurvivalRepo(deps.DB))
 	inst.RegisterEnricher(svc)
 	inst.RegisterPreStart(svc.PreStart)
 	deps.Agent = svc
+	deps.Survival = svc
 	go svc.Run(ctx)
 	return agentBundle, gameplayBundle
 }

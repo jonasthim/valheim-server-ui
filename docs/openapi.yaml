@@ -723,6 +723,21 @@ paths:
                 required: [events]
                 properties:
                   events: { type: array, items: { $ref: '#/components/schemas/InstanceEvent' } }
+  /instances/{instanceId}/survival:
+    get:
+      tags: [agent]
+      summary: Stored player deaths and world milestones for an instance
+      x-role: viewer
+      parameters:
+        - { $ref: '#/components/parameters/instanceId' }
+        - { in: query, name: world_uid, schema: { type: string, pattern: '^-?[0-9]+$' }, description: Decimal world UID; omit for the current or most recent world }
+        - { in: query, name: character_id, schema: { type: string }, description: Include this character's deaths and world milestones }
+      responses:
+        '200':
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SurvivalHistory' }
+        '422': { $ref: '#/components/responses/Error' }
   /instances/{instanceId}/metrics:
     get:
       tags: [instances]
@@ -2826,6 +2841,34 @@ components:
           type: integer
           format: int64
           description: Disambiguates the agent's own per-run sequence number (AgentChatMessage.seq) across world restarts.
+
+    SurvivalHistory:
+      type: object
+      required: [worlds, moments]
+      properties:
+        worlds: { type: array, items: { type: string, pattern: '^-?[0-9]+$', description: Decimal world UID; string preserves full int64 precision in browsers } }
+        moments: { type: array, items: { $ref: '#/components/schemas/SurvivalMoment' } }
+
+    SurvivalMoment:
+      type: object
+      required: [id, instance_id, world_uid, world_name, kind, day, at, label]
+      properties:
+        id: { type: integer, format: int64 }
+        instance_id: { type: string }
+        world_uid: { type: string, pattern: '^-?[0-9]+$' }
+        world_name: { type: string }
+        kind: { type: string, enum: [death, progression, setting] }
+        character_id: { type: string }
+        player_name: { type: string }
+        day: { type: integer }
+        at: { type: string, format: date-time }
+        label: { type: string }
+        enemy: { type: string }
+        enemy_level: { type: integer }
+        situation: { type: string }
+        biome: { type: string }
+        x: { type: number, description: Omitted for a viewer when this player hides their map position }
+        z: { type: number, description: Omitted for a viewer when this player hides their map position }
 
     JobType:
       type: string
