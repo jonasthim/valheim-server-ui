@@ -15,17 +15,16 @@ import (
 // idPattern is the allowed shape of a platform id in a list file.
 var idPattern = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
 
-// parsedListFile is the file-level view used to preserve comments across a
-// write: entries for the API, plus enough of the original layout to
-// reproduce untouched comments verbatim.
+// parsedListFile retains existing file comments while reading older files.
 type parsedListFile struct {
 	// header holds standalone "//" comment lines that appear before the
 	// first entry (e.g. a file banner). Printed back verbatim, once, before
 	// any entries.
 	header []string
-	// entries are the ids in file order; Comment is populated only from a
-	// trailing "// ..." on the same line (the API's documented meaning).
-	entries []domain.PlayerListEntry
+	// entries are the ids in file order; Comment is populated from legacy
+	// trailing "// ..." text so the service can migrate it to the database.
+	entries        []domain.PlayerListEntry
+	inlineComments []bool
 	// preceding maps an id to a standalone comment line that appeared
 	// immediately above it (and not as its trailing comment). Re-emitted
 	// verbatim on write for entries that keep the same id and get no new
@@ -69,7 +68,9 @@ func parseListFile(path string) (parsedListFile, error) {
 
 		id := line
 		comment := ""
+		hasInlineComment := false
 		if idx := strings.Index(line, "//"); idx >= 0 {
+			hasInlineComment = true
 			id = strings.TrimSpace(line[:idx])
 			comment = strings.TrimSpace(line[idx+2:])
 		}
@@ -81,6 +82,7 @@ func parseListFile(path string) (parsedListFile, error) {
 		}
 		pendingComment = ""
 		pf.entries = append(pf.entries, domain.PlayerListEntry{ID: id, Comment: comment})
+		pf.inlineComments = append(pf.inlineComments, hasInlineComment)
 		haveEntry = true
 	}
 	if err := sc.Err(); err != nil {
@@ -92,15 +94,20 @@ func parseListFile(path string) (parsedListFile, error) {
 // ReadList returns the current contents of the list file for kind under
 // paths.Save. A missing file reads as an empty list, not an error.
 func ReadList(path string, kind domain.ListKind) (*domain.PlayerList, error) {
+	list, _, err := readListWithInlineComments(path, kind)
+	return list, err
+}
+
+func readListWithInlineComments(path string, kind domain.ListKind) (*domain.PlayerList, []bool, error) {
 	pf, err := parseListFile(path)
 	if err != nil {
-		return nil, domain.Wrap(domain.CodeInternal, "read player list", err)
+		return nil, nil, domain.Wrap(domain.CodeInternal, "read player list", err)
 	}
 	entries := pf.entries
 	if entries == nil {
 		entries = []domain.PlayerListEntry{}
 	}
-	return &domain.PlayerList{Kind: kind, Entries: entries}, nil
+	return &domain.PlayerList{Kind: kind, Entries: entries}, pf.inlineComments, nil
 }
 
 // validateEntries checks every id against idPattern and rejects duplicates,
@@ -123,8 +130,8 @@ func validateEntries(entries []domain.PlayerListEntry) error {
 			})
 		}
 		seen[e.ID] = true
-		// The comment is written verbatim after "//" on the same line; a
-		// newline would inject extra entries into the list file.
+		// Comments are stored in the manager database. Keep the API field
+		// bounded so it cannot be used to inject unexpected control text.
 		if strings.ContainsAny(e.Comment, "\r\n\x00") || len(e.Comment) > 200 {
 			fields = append(fields, domain.FieldError{
 				Field:   fmt.Sprintf("entries[%d].comment", i),
@@ -136,9 +143,8 @@ func validateEntries(entries []domain.PlayerListEntry) error {
 }
 
 // WriteList validates list and atomically replaces the file at path,
-// preserving a leading comment header verbatim and, for any entry that keeps
-// the same id and specifies no new Comment, whatever standalone comment line
-// preceded it before.
+// preserving a leading comment header and existing standalone notes. The
+// game file always gets bare platform IDs, regardless of UI comments.
 func WriteList(path string, list domain.PlayerList) error {
 	if err := validateEntries(list.Entries); err != nil {
 		return err
@@ -160,15 +166,12 @@ func WriteList(path string, list domain.PlayerList) error {
 		b.WriteByte('\n')
 	}
 	for _, e := range list.Entries {
-		switch {
-		case e.Comment != "":
-			fmt.Fprintf(&b, "%s // %s\n", e.ID, e.Comment)
-		case old.preceding[e.ID] != "":
+		if old.preceding[e.ID] != "" {
 			b.WriteString(old.preceding[e.ID])
 			b.WriteByte('\n')
 			b.WriteString(e.ID)
 			b.WriteByte('\n')
-		default:
+		} else {
 			b.WriteString(e.ID)
 			b.WriteByte('\n')
 		}
