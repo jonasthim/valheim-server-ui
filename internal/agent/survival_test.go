@@ -49,7 +49,7 @@ func TestSurvivalPollPersistsDeathOnceAndWorldMilestone(t *testing.T) {
 			t.Errorf("unexpected path %s", r.URL.Path)
 			return
 		}
-		_, _ = w.Write([]byte(`{"next":1,"events":[{"seq":1,"kind":"player.death","at":"2026-10-09T10:00:00Z","data":{"world_uid":55,"world_name":"Midgard","character_id":"991","player_name":"Quin","day":12,"biome":"Meadows","x":4,"z":7,"visible":false}}]}`))
+		_, _ = w.Write([]byte(`{"next":1,"events":[{"seq":1,"kind":"player.death","at":"2026-10-09T10:00:00Z","data":{"world_uid":55,"world_name":"Midgard","character_id":"991","player_name":"Quin","day":12,"enemy":"Greydwarf","enemy_level":2,"situation":"EnemyHit","biome":"Meadows","x":4,"z":7,"visible":false}}]}`))
 	}))
 	defer server.Close()
 	svc := NewService(nil, nil, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
@@ -62,7 +62,7 @@ func TestSurvivalPollPersistsDeathOnceAndWorldMilestone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].Kind != "death" || got[0].PlayerName != "Quin" || got[0].Visible {
+	if len(got) != 1 || got[0].Kind != "death" || got[0].PlayerName != "Quin" || got[0].Visible || got[0].Enemy != "Greydwarf" || got[0].EnemyLevel != 2 || got[0].Situation != "EnemyHit" {
 		t.Fatalf("death ingestion: %+v", got)
 	}
 	status.GlobalKeys = append(status.GlobalKeys, "defeated_gdking")

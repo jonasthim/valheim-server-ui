@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the Valheim UI Agent and Valheim UI Gameplay plugins and packages
+# Builds the server agent, gameplay, and optional Survival client plugins and packages
 # each as a Thunderstore-style zip the manager installs like any other mod.
 #
 #   plugin/build.sh [VERSION]      VERSION is X.Y.Z (default 0.0.0)
@@ -74,6 +74,19 @@ CS
 dotnet build ValheimUI.Gameplay/ValheimUI.Gameplay.csproj -c Release --nologo \
   -p:Version="$VERSION" -p:ValheimManaged="$MANAGED"
 
+echo "==> building ValheimUI.SurvivalClient $VERSION"
+cat > ValheimUI.SurvivalClient/Version.cs <<CS
+namespace ValheimUI.SurvivalClient
+{
+    internal static class BuildInfo
+    {
+        public const string Version = "$VERSION";
+    }
+}
+CS
+dotnet build ValheimUI.SurvivalClient/ValheimUI.SurvivalClient.csproj -c Release --nologo \
+  -p:Version="$VERSION" -p:ValheimManaged="$MANAGED"
+
 echo "==> packaging"
 OUT="$PWD/dist"
 rm -rf "$OUT"
@@ -91,6 +104,14 @@ sed "s/__VERSION__/$VERSION/" ValheimUI.Gameplay/manifest.json > "$OUT/gameplay-
 cp ValheimUI.Gameplay/README.md "$OUT/gameplay-pkg/README.md"
 package_zip "$OUT/gameplay-pkg" "$OUT/valheim-ui-gameplay.zip"
 
-( cd "$OUT" && sha256sum valheim-ui-agent.zip valheim-ui-gameplay.zip )
+mkdir -p "$OUT/survival-client-pkg/plugins"
+cp ValheimUI.SurvivalClient/bin/Release/net472/ValheimUI.SurvivalClient.dll "$OUT/survival-client-pkg/plugins/"
+sed "s/__VERSION__/$VERSION/" ValheimUI.SurvivalClient/manifest.json > "$OUT/survival-client-pkg/manifest.json"
+cp ValheimUI.SurvivalClient/README.md "$OUT/survival-client-pkg/README.md"
+cp ValheimUI.SurvivalClient/icon.png "$OUT/survival-client-pkg/icon.png"
+package_zip "$OUT/survival-client-pkg" "$OUT/valheim-ui-survival-client.zip"
+
+( cd "$OUT" && sha256sum valheim-ui-agent.zip valheim-ui-gameplay.zip valheim-ui-survival-client.zip )
 echo "artifact: $OUT/valheim-ui-agent.zip"
 echo "artifact: $OUT/valheim-ui-gameplay.zip"
+echo "artifact: $OUT/valheim-ui-survival-client.zip"

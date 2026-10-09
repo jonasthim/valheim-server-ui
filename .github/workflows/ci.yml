@@ -81,6 +81,7 @@ jobs:
           path: |
             plugin/dist/valheim-ui-agent.zip
             plugin/dist/valheim-ui-gameplay.zip
+            plugin/dist/valheim-ui-survival-client.zip
 
   frontend:
     runs-on: ubuntu-latest
@@ -241,7 +242,7 @@ jobs:
           # The raw binary's digest is listed too: `unitctl apply-upgrade`
           # re-verifies a staged binary against it before installing it as root.
           cp bin/valheim-ui dist/valheim-ui
-          ( cd dist && sha256sum valheim-ui_linux_amd64.tar.gz valheim-ui_windows_amd64.zip valheim-ui-agent.zip valheim-ui-gameplay.zip deploy.tar.gz install.sh install.ps1 valheim-ui > SHA256SUMS && rm valheim-ui )
+          ( cd dist && sha256sum valheim-ui_linux_amd64.tar.gz valheim-ui_windows_amd64.zip valheim-ui-agent.zip valheim-ui-gameplay.zip valheim-ui-survival-client.zip deploy.tar.gz install.sh install.ps1 valheim-ui > SHA256SUMS && rm valheim-ui )
           cat dist/SHA256SUMS
       # Keep the built assets as a workflow artifact too, so a failed publish
       # (e.g. the token lacking release permissions) never loses the build.
@@ -286,12 +287,13 @@ jobs:
             ```
 
             Running instances upgrade from the dashboard (Settings → Application → Upgrade).
-            Assets: `valheim-ui_linux_amd64.tar.gz` and `valheim-ui_windows_amd64.zip` (binaries), `valheim-ui-agent.zip` (server plugin, installed by the UI with BepInEx), `valheim-ui-gameplay.zip` (optional gameplay plugin), `install.sh`, `install.ps1`, `deploy.tar.gz`, `SHA256SUMS`.
+            Assets: `valheim-ui_linux_amd64.tar.gz` and `valheim-ui_windows_amd64.zip` (binaries), `valheim-ui-agent.zip` (server plugin, installed by the UI with BepInEx), `valheim-ui-gameplay.zip` (optional gameplay plugin), `valheim-ui-survival-client.zip` (optional client death details plugin), `install.sh`, `install.ps1`, `deploy.tar.gz`, `SHA256SUMS`.
           files: |
             dist/valheim-ui_linux_amd64.tar.gz
             dist/valheim-ui_windows_amd64.zip
             dist/valheim-ui-agent.zip
             dist/valheim-ui-gameplay.zip
+            dist/valheim-ui-survival-client.zip
             dist/deploy.tar.gz
             dist/install.sh
             dist/install.ps1

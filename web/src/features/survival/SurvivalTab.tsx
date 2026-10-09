@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Drawer, Group, Paper, RangeSlider, Select, Stack, Switch, Text, Title } from '@mantine/core'
+import { Anchor, Button, Drawer, Group, Paper, RangeSlider, Select, Stack, Switch, Text, Title } from '@mantine/core'
 import { IconRefresh } from '@tabler/icons-react'
 import { api } from '../../api/client'
 import type { SurvivalHistory, SurvivalMoment } from '../../api/types'
@@ -14,8 +14,23 @@ type Category = 'enemy' | 'enemy_level' | 'situation' | 'biome'
 function categoryValue(moment: SurvivalMoment, category: Category): string {
   if (category === 'enemy') return moment.enemy || 'Unknown'
   if (category === 'enemy_level') return moment.enemy_level ? `Level ${moment.enemy_level}` : 'Unknown'
-  if (category === 'situation') return moment.situation || 'Unknown'
+  if (category === 'situation') return situationLabel(moment)
   return moment.biome || 'Unknown'
+}
+
+function locationLabel(moment: SurvivalMoment): string {
+  if (moment.biome) return moment.biome
+  if (typeof moment.x === 'number' && typeof moment.z === 'number') return `Position ${Math.round(moment.x)}, ${Math.round(moment.z)}`
+  return 'Location unknown'
+}
+
+function situationLabel(moment: SurvivalMoment): string {
+  return moment.situation?.replace(/([a-z])([A-Z])/g, '$1 $2') || 'Unknown'
+}
+
+function causeLabel(moment: SurvivalMoment): string {
+  if (moment.enemy) return `Killed by ${moment.enemy}${moment.enemy_level > 1 ? ` (level ${moment.enemy_level})` : ''}`
+  return moment.situation ? situationLabel(moment) : 'Cause unknown'
 }
 
 function DeathChart({ deaths, moments, highlighted, range, focus, onSelect }: {
@@ -91,7 +106,7 @@ export function SurvivalTab({ id }: { id: string }) {
   return <Stack gap="md">
     <AgentSetupNotice id={id} context="survival" />
     <Group justify="space-between" align="start" gap="sm">
-      <div><Text size="xs" c="dimmed">The long road back</Text><Title order={2}>Survival log</Title><Text size="sm" c="dimmed">Confirmed deaths and milestones from this server, starting when tracking was installed.</Text></div>
+      <div><Text size="xs" c="dimmed">The long road back</Text><Title order={2}>Survival log</Title><Text size="sm" c="dimmed">Confirmed deaths and milestones from this server, starting when tracking was installed.</Text><Text size="xs" c="dimmed">For killers and causes, players can install the optional <Anchor href="https://github.com/jonasthim/valheim-server-ui/releases/latest/download/valheim-ui-survival-client.zip" target="_blank" rel="noreferrer">Survival Client plugin</Anchor> with BepInEx on their game.</Text></div>
       <Button variant="default" leftSection={<IconRefresh size={15} />} onClick={() => void history.refetch()}>Refresh</Button>
     </Group>
     {history.isError && <LoadError error={history.error} title="Survival history unavailable" onRetry={() => history.refetch()} />}
@@ -104,21 +119,21 @@ export function SurvivalTab({ id }: { id: string }) {
       </div>
       <Paper withBorder className={classes.panel}>
         <Group justify="space-between"><div><Text size="xs" c="dimmed">The latest moments</Text><Title order={3}>Recent events</Title></div><Button variant="subtle" size="xs" onClick={() => setShowAll(!showAll)}>{showAll ? 'Show less' : 'Show more'}</Button></Group>
-        <div className={classes.events}>{recent.slice(0, showAll ? 20 : 3).map((m) => <button type="button" key={m.id} className={classes.event} onClick={() => setDetail(m)}><strong>{m.kind === 'death' ? m.player_name || 'Player death' : m.kind === 'progression' ? 'Progression' : 'Setting change'}</strong><span>Day {m.day}</span><span>{m.kind === 'death' ? `${m.biome || 'Location unknown'} · Cause unknown` : m.label}</span></button>)}</div>
+        <div className={classes.events}>{recent.slice(0, showAll ? 20 : 3).map((m) => <button type="button" key={m.id} className={classes.event} onClick={() => setDetail(m)}><strong>{m.kind === 'death' ? m.player_name || 'Player death' : m.kind === 'progression' ? 'Progression' : 'Setting change'}</strong><span>Day {m.day}</span><span>{m.kind === 'death' ? `${locationLabel(m)} · ${causeLabel(m)}` : m.label}</span></button>)}</div>
       </Paper>
       <Paper withBorder className={classes.panel}>
         <Text size="xs" c="dimmed">The long road back</Text><Title order={3}>Death progression</Title><Text size="sm" c="dimmed">Each point is a death. Vertical lines mark world milestones. Select a point or line for details.</Text>
         <Group justify="space-between" mt="lg"><Text fw={600}>Highlight deaths <Text span size="xs" c="dimmed">{highlighted.length} match</Text></Text><Group><Switch label="Focus on matching days" checked={focus} onChange={(e) => setFocus(e.currentTarget.checked)} /><Button variant="subtle" size="xs" onClick={() => { setSelection(''); setRange(null) }}>Clear filters</Button></Group></Group>
-        <Group mt="sm">{hasEnemy && <Select label="Enemy" value={category === 'enemy' ? selection : ''} data={[{ value: '', label: 'All' }, ...new Set(deaths.map((m) => m.enemy || 'Unknown'))].map((v) => typeof v === 'string' ? { value: v, label: v } : v)} onChange={(v) => { setCategory('enemy'); setSelection(v ?? '') }} />}<Select label="Location" value={category === 'biome' ? selection : ''} data={[{ value: '', label: 'All' }, ...new Set(deaths.map((m) => m.biome || 'Unknown'))].map((v) => typeof v === 'string' ? { value: v, label: v } : v)} onChange={(v) => { setCategory('biome'); setSelection(v ?? '') }} /></Group>
+        <Group mt="sm">{hasEnemy && <Select label="Killer" value={category === 'enemy' ? selection : ''} data={[{ value: '', label: 'All' }, ...new Set(deaths.map((m) => m.enemy || 'Unknown'))].map((v) => typeof v === 'string' ? { value: v, label: v } : v)} onChange={(v) => { setCategory('enemy'); setSelection(v ?? '') }} />}<Select label="Location" value={category === 'biome' ? selection : ''} data={[{ value: '', label: 'All' }, ...new Set(deaths.map((m) => m.biome || 'Unknown'))].map((v) => typeof v === 'string' ? { value: v, label: v } : v)} onChange={(v) => { setCategory('biome'); setSelection(v ?? '') }} /></Group>
         <DeathChart deaths={deaths} moments={moments} highlighted={highlightedIds} range={selectedRange} focus={focus} onSelect={setDetail} />
         <RangeSlider min={0} max={maxDay} value={selectedRange} onChange={(value) => setRange(value)} minRange={0} marks={[{ value: 0, label: 'Day 0' }, { value: maxDay, label: `Day ${maxDay}` }]} mt="md" mb="xl" />
-        <div className={classes.categoriesHead}><div><Text size="xs" c="dimmed">The many ways to fall</Text><Title order={3}>Deaths by category</Title></div><Group gap="xs">{([...(hasEnemy ? ['enemy'] : []), ...(hasLevel ? ['enemy_level'] : []), ...(hasSituation ? ['situation'] : []), 'biome'] as Category[]).map((c) => <Button key={c} size="xs" variant={category === c ? 'filled' : 'default'} onClick={() => { setCategory(c); setSelection('') }}>{c === 'enemy' ? 'Enemy' : c === 'enemy_level' ? 'Enemy level' : c === 'situation' ? 'Situation' : 'Location'}</Button>)}</Group></div>
+        <div className={classes.categoriesHead}><div><Text size="xs" c="dimmed">The many ways to fall</Text><Title order={3}>Deaths by category</Title></div><Group gap="xs">{([...(hasEnemy ? ['enemy'] : []), ...(hasLevel ? ['enemy_level'] : []), ...(hasSituation ? ['situation'] : []), 'biome'] as Category[]).map((c) => <Button key={c} size="xs" variant={category === c ? 'filled' : 'default'} onClick={() => { setCategory(c); setSelection('') }}>{c === 'enemy' ? 'Killer' : c === 'enemy_level' ? 'Enemy level' : c === 'situation' ? 'Cause' : 'Location'}</Button>)}</Group></div>
         <Text size="xs" c="dimmed">Counts use the selected day range. Select a bar to highlight its deaths.</Text>
         <div className={classes.bars}>{categories.map(({ label, count }) => <button type="button" key={label} className={`${classes.barRow} ${selection === label ? classes.barSelected : ''}`} onClick={() => setSelection(selection === label ? '' : label)}><span>{label}</span><span className={classes.barTrack}><span style={{ width: `${(count / Math.max(1, categories[0]?.count ?? 1)) * 100}%` }} /></span><strong>{count}</strong></button>)}</div>
       </Paper>
     </>}
     <Drawer opened={detail !== null} onClose={() => setDetail(null)} title={detail?.kind === 'death' ? 'Recorded death' : 'World milestone'} position="right" closeButtonProps={{ 'aria-label': 'Close details' }}>
-      {detail && <Stack gap="xs"><Title order={3}>{detail.kind === 'death' ? detail.player_name || 'Player death' : detail.label}</Title><Text>Day {detail.day} · {new Date(detail.at).toLocaleString()}</Text>{detail.kind === 'death' && <><Text>Cause: {detail.enemy || 'Unknown'}</Text><Text>Location: {detail.biome || 'Unknown'}</Text></>}{detail.x !== undefined && detail.z !== undefined && <Text size="sm" c="dimmed">Position: {Math.round(detail.x)}, {Math.round(detail.z)}</Text>}</Stack>}
+      {detail && <Stack gap="xs"><Title order={3}>{detail.kind === 'death' ? detail.player_name || 'Player death' : detail.label}</Title><Text>Day {detail.day} · {new Date(detail.at).toLocaleString()}</Text>{detail.kind === 'death' && <><Text>Killer: {detail.enemy || 'Unknown'}</Text><Text>Cause: {situationLabel(detail)}</Text><Text>Location: {locationLabel(detail)}</Text></>}{(detail.kind !== 'death' || detail.biome) && detail.x !== undefined && detail.z !== undefined && <Text size="sm" c="dimmed">Position: {Math.round(detail.x)}, {Math.round(detail.z)}</Text>}</Stack>}
     </Drawer>
   </Stack>
 }

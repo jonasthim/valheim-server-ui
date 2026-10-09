@@ -406,15 +406,35 @@ namespace ValheimUI.Agent
                     long playerID = zdo.GetLong(ZDOVars.s_playerID, 0L);
                     if (playerID == 0) continue;
                     var name = zdo.GetString(ZDOVars.s_playerName, peer.m_playerName ?? "");
-                    EmitDeath(snap, peer.m_characterID, playerID, name, zdo.GetPosition(), peer.m_publicRefPos, "");
+                    EmitDeath(snap, peer.m_characterID, playerID, name, zdo.GetPosition(), peer.m_publicRefPos, "", zdo);
                 }
                 catch (Exception e) { Logger.LogWarning("death ZDO capture failed: " + e.Message); }
             }
         }
 
-        private void EmitDeath(StateSnapshot snap, ZDOID objectID, long playerID, string playerName, Vector3 pos, bool visible, string biome)
+        private void EmitDeath(StateSnapshot snap, ZDOID objectID, long playerID, string playerName, Vector3 pos, bool visible, string biome, ZDO deathZdo = null)
         {
             if (objectID != ZDOID.None && _recordedDeaths.Contains(objectID)) return;
+            if (deathZdo == null && objectID != ZDOID.None) deathZdo = ZDOMan.instance?.GetZDO(objectID);
+            string enemy = (deathZdo?.GetString(SurvivalDeathKeys.Enemy, "") ?? "").Trim();
+            if (enemy.Length > 120) enemy = enemy.Substring(0, 120);
+            int enemyLevel = enemy.Length == 0 ? 0 : Math.Max(0, Math.Min(100, deathZdo.GetInt(SurvivalDeathKeys.EnemyLevel)));
+            string situation = deathZdo?.GetString(SurvivalDeathKeys.Situation, "") ?? "";
+            if (situation.Length > 40 || !Enum.TryParse(situation, out HitData.HitType hitType)
+                || !Enum.IsDefined(typeof(HitData.HitType), hitType) || hitType == HitData.HitType.Undefined) situation = "";
+            if (string.IsNullOrEmpty(biome))
+            {
+                try
+                {
+                    var gen = WorldGenerator.instance;
+                    if (gen != null)
+                    {
+                        var resolved = gen.GetBiome(pos);
+                        if (resolved != Heightmap.Biome.None) biome = resolved.ToString();
+                    }
+                }
+                catch (Exception) { }
+            }
             int day = snap.Day;
             try { day = EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds()); } catch (Exception) { }
             var w = new JsonWriter();
@@ -425,6 +445,9 @@ namespace ValheimUI.Agent
             w.Prop("character_id", playerID.ToString(CultureInfo.InvariantCulture));
             w.Prop("player_name", playerName);
             w.Prop("day", day);
+            w.Prop("enemy", enemy);
+            w.Prop("enemy_level", enemyLevel);
+            w.Prop("situation", situation);
             w.Prop("biome", biome);
             w.Prop("x", (double)pos.x);
             w.Prop("z", (double)pos.z);
