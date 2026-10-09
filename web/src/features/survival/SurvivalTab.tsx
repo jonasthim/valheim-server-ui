@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Drawer, Group, Paper, RangeSlider, Select, Stack, Switch, Text, Title } from '@mantine/core'
-import { useNavigate } from 'react-router-dom'
 import { IconRefresh } from '@tabler/icons-react'
 import { api } from '../../api/client'
 import type { SurvivalHistory, SurvivalMoment } from '../../api/types'
@@ -59,7 +58,6 @@ function DeathChart({ deaths, moments, highlighted, range, focus, onSelect }: {
 }
 
 export function SurvivalTab({ id }: { id: string }) {
-  const navigate = useNavigate()
   const agent = useAgent(id)
   const [world, setWorld] = useState('0')
   const [character, setCharacter] = useState('')
@@ -94,7 +92,7 @@ export function SurvivalTab({ id }: { id: string }) {
     <AgentSetupNotice id={id} context="survival" />
     <Group justify="space-between" align="start" gap="sm">
       <div><Text size="xs" c="dimmed">The long road back</Text><Title order={2}>Survival log</Title><Text size="sm" c="dimmed">Confirmed deaths and milestones from this server, starting when tracking was installed.</Text></div>
-      <Group gap="xs"><Button variant="default" leftSection={<IconRefresh size={15} />} onClick={() => void history.refetch()}>Refresh</Button><Button variant="subtle" onClick={() => navigate(`/instances/${id}/console`)}>Search older logs</Button></Group>
+      <Button variant="default" leftSection={<IconRefresh size={15} />} onClick={() => void history.refetch()}>Refresh</Button>
     </Group>
     {history.isError && <LoadError error={history.error} title="Survival history unavailable" onRetry={() => history.refetch()} />}
     <Group gap="sm"><Select label="World" data={worldOptions} value={world} onChange={(value) => { setWorld(value ?? '0'); setRange(null); setSelection('') }} /><Select label="Player" data={[{ value: '', label: 'All players' }, ...players.map(([value, label]) => ({ value, label }))]} value={character} onChange={(value) => { setCharacter(value ?? ''); setSelection('') }} /></Group>
