@@ -18,6 +18,12 @@ function categoryValue(moment: SurvivalMoment, category: Category): string {
   return moment.biome || 'Unknown'
 }
 
+function locationLabel(moment: SurvivalMoment): string {
+  if (moment.biome) return moment.biome
+  if (typeof moment.x === 'number' && typeof moment.z === 'number') return `Position ${Math.round(moment.x)}, ${Math.round(moment.z)}`
+  return 'Location unknown'
+}
+
 function DeathChart({ deaths, moments, highlighted, range, focus, onSelect }: {
   deaths: SurvivalMoment[]; moments: SurvivalMoment[]; highlighted: Set<number>;
   range: [number, number]; focus: boolean; onSelect: (m: SurvivalMoment) => void
@@ -104,7 +110,7 @@ export function SurvivalTab({ id }: { id: string }) {
       </div>
       <Paper withBorder className={classes.panel}>
         <Group justify="space-between"><div><Text size="xs" c="dimmed">The latest moments</Text><Title order={3}>Recent events</Title></div><Button variant="subtle" size="xs" onClick={() => setShowAll(!showAll)}>{showAll ? 'Show less' : 'Show more'}</Button></Group>
-        <div className={classes.events}>{recent.slice(0, showAll ? 20 : 3).map((m) => <button type="button" key={m.id} className={classes.event} onClick={() => setDetail(m)}><strong>{m.kind === 'death' ? m.player_name || 'Player death' : m.kind === 'progression' ? 'Progression' : 'Setting change'}</strong><span>Day {m.day}</span><span>{m.kind === 'death' ? `${m.biome || 'Location unknown'} · Cause unknown` : m.label}</span></button>)}</div>
+        <div className={classes.events}>{recent.slice(0, showAll ? 20 : 3).map((m) => <button type="button" key={m.id} className={classes.event} onClick={() => setDetail(m)}><strong>{m.kind === 'death' ? m.player_name || 'Player death' : m.kind === 'progression' ? 'Progression' : 'Setting change'}</strong><span>Day {m.day}</span><span>{m.kind === 'death' ? `${locationLabel(m)} · Cause unknown` : m.label}</span></button>)}</div>
       </Paper>
       <Paper withBorder className={classes.panel}>
         <Text size="xs" c="dimmed">The long road back</Text><Title order={3}>Death progression</Title><Text size="sm" c="dimmed">Each point is a death. Vertical lines mark world milestones. Select a point or line for details.</Text>
@@ -118,7 +124,7 @@ export function SurvivalTab({ id }: { id: string }) {
       </Paper>
     </>}
     <Drawer opened={detail !== null} onClose={() => setDetail(null)} title={detail?.kind === 'death' ? 'Recorded death' : 'World milestone'} position="right" closeButtonProps={{ 'aria-label': 'Close details' }}>
-      {detail && <Stack gap="xs"><Title order={3}>{detail.kind === 'death' ? detail.player_name || 'Player death' : detail.label}</Title><Text>Day {detail.day} · {new Date(detail.at).toLocaleString()}</Text>{detail.kind === 'death' && <><Text>Cause: {detail.enemy || 'Unknown'}</Text><Text>Location: {detail.biome || 'Unknown'}</Text></>}{detail.x !== undefined && detail.z !== undefined && <Text size="sm" c="dimmed">Position: {Math.round(detail.x)}, {Math.round(detail.z)}</Text>}</Stack>}
+      {detail && <Stack gap="xs"><Title order={3}>{detail.kind === 'death' ? detail.player_name || 'Player death' : detail.label}</Title><Text>Day {detail.day} · {new Date(detail.at).toLocaleString()}</Text>{detail.kind === 'death' && <><Text>Cause: {detail.enemy || 'Unknown'}</Text><Text>Location: {locationLabel(detail)}</Text></>}{(detail.kind !== 'death' || detail.biome) && detail.x !== undefined && detail.z !== undefined && <Text size="sm" c="dimmed">Position: {Math.round(detail.x)}, {Math.round(detail.z)}</Text>}</Stack>}
     </Drawer>
   </Stack>
 }

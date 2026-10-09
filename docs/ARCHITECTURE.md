@@ -795,10 +795,11 @@ agent has read-only routed-RPC prefixes for Vegvisir discoveries and map
 pings/chat. For deaths, it observes the player's replicated ZDO `dead` flag
 on the dedicated server. A `Player.RPC_OnDeath` postfix can capture a death
 when a Player component exists; the ZDO path covers dedicated servers that
-do not instantiate one. Both paths deduplicate by character ZDO ID. Neither
-signal carries hit details, so enemy and cause are left unknown. The manager
-also records changes to boss
-keys and world modifiers as world milestones. Survival history is scoped to
+do not instantiate one. Both paths deduplicate by character ZDO ID. The agent
+derives the biome from the death position with `WorldGenerator.GetBiome`.
+Neither death signal carries the client's last hit details, so enemy and cause
+are left unknown. The manager also records changes to boss keys and world
+modifiers as world milestones. Survival history is scoped to
 an instance and world, and deleting an instance cascades to its history.
 
 ### 20.1 Live map

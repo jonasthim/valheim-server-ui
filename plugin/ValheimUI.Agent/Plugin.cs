@@ -415,6 +415,19 @@ namespace ValheimUI.Agent
         private void EmitDeath(StateSnapshot snap, ZDOID objectID, long playerID, string playerName, Vector3 pos, bool visible, string biome)
         {
             if (objectID != ZDOID.None && _recordedDeaths.Contains(objectID)) return;
+            if (string.IsNullOrEmpty(biome))
+            {
+                try
+                {
+                    var gen = WorldGenerator.instance;
+                    if (gen != null)
+                    {
+                        var resolved = gen.GetBiome(pos);
+                        if (resolved != Heightmap.Biome.None) biome = resolved.ToString();
+                    }
+                }
+                catch (Exception) { }
+            }
             int day = snap.Day;
             try { day = EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds()); } catch (Exception) { }
             var w = new JsonWriter();
