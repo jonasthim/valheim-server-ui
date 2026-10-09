@@ -34,8 +34,8 @@ function DeathChart({ deaths, moments, highlighted, range, focus, onSelect }: {
   const x = (day: number) => 48 + ((day - first) / (last - first)) * 910
   const y = (rank: number) => 300 - ((rank - minY) / (maxY - minY)) * 250
   const ticks = [...new Set([0, 0.25, 0.5, 0.75, 1].map((fraction) => Math.round(minY + (maxY - minY) * fraction)))]
-  return <div className={classes.chartScroll}>
-    <svg className={classes.chart} viewBox="0 0 1000 340" role="group" aria-label="Deaths by world day, with notable world events">
+  return <div className={classes.chartScroll} role="group" aria-label="Deaths by world day, with notable world events">
+    <svg className={classes.chart} viewBox="0 0 1000 340" role="presentation">
       {ticks.map((count) => <g key={count}>
         <line x1="48" x2="958" y1={y(count)} y2={y(count)} className={classes.grid} />
         <text x="40" y={y(count) + 4} textAnchor="end" className={classes.axis}>{count}</text>
