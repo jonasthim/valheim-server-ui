@@ -791,10 +791,13 @@ release asset verified against `SHA256SUMS`.
 optional ones (`GetBiomeHeight`, `GetForestFactor`, the ZDO table) by
 reflection with fallbacks, so game patches rarely break it; when they do, the
 fix ships with the next manager release and the UI offers the update. The
-agent has three Harmony patches: read-only routed-RPC prefixes for Vegvisir
-discoveries and map pings/chat, and a `Player.RPC_OnDeath` postfix that records
-a confirmed death on the dedicated server. That RPC has no hit details, so
-enemy and cause are left unknown. The manager also records changes to boss
+agent has read-only routed-RPC prefixes for Vegvisir discoveries and map
+pings/chat. For deaths, it observes the player's replicated ZDO `dead` flag
+on the dedicated server. A `Player.RPC_OnDeath` postfix can capture a death
+when a Player component exists; the ZDO path covers dedicated servers that
+do not instantiate one. Both paths deduplicate by character ZDO ID. Neither
+signal carries hit details, so enemy and cause are left unknown. The manager
+also records changes to boss
 keys and world modifiers as world milestones. Survival history is scoped to
 an instance and world, and deleting an instance cascades to its history.
 
