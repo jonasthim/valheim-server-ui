@@ -1,0 +1,65 @@
+.summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.stat, .panel {
+  background: var(--vh-surface);
+  border-color: var(--vh-border);
+  border-radius: 12px;
+}
+.stat { padding: 14px 18px; }
+.statValue { font-size: clamp(24px, 3vw, 34px); font-weight: 500; font-variant-numeric: tabular-nums; }
+.panel { padding: clamp(16px, 2.2vw, 28px); }
+.events { display: grid; gap: 6px; margin-top: 14px; }
+.event {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) 85px minmax(170px, 3fr);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--vh-border);
+  border-radius: 7px;
+  background: var(--vh-surface-2);
+  color: var(--mantine-color-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.event:hover, .barRow:hover { border-color: var(--vh-ember); }
+.event span { color: var(--vh-text-soft); font-size: 12px; }
+.chartScroll { overflow-x: auto; margin-top: 18px; }
+.chart { min-width: 610px; width: 100%; display: block; }
+.grid { stroke: var(--vh-border); stroke-width: 1; }
+.axis { fill: var(--vh-text-soft); font-size: 12px; font-family: var(--mantine-font-family); }
+.milestone { stroke: var(--vh-ember); stroke-width: 1.5; stroke-dasharray: 4 5; opacity: .7; }
+.marker, .point, .pointMuted { cursor: pointer; }
+.marker:focus-visible, .point:focus-visible, .pointMuted:focus-visible { outline: 3px solid var(--vh-ember); outline-offset: 3px; }
+.point { fill: var(--vh-ember); stroke: var(--vh-surface); stroke-width: 2; }
+.pointMuted { fill: var(--vh-text-soft); opacity: .35; stroke: var(--vh-surface); stroke-width: 2; }
+.categoriesHead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; border-top: 1px solid var(--vh-border); padding-top: 20px; margin-top: 20px; }
+.bars { display: grid; gap: 7px; margin-top: 18px; }
+.barRow {
+  display: grid;
+  grid-template-columns: minmax(92px, 145px) minmax(0, 1fr) 36px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mantine-color-text);
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+  font: inherit;
+}
+.barTrack { background: var(--vh-surface-2); height: 20px; border-radius: 3px; overflow: hidden; }
+.barTrack span { display: block; height: 100%; background: var(--vh-ember); opacity: .72; }
+.barSelected .barTrack span { opacity: 1; }
+@media (max-width: 660px) {
+  .summary { grid-template-columns: 1fr; }
+  .event { grid-template-columns: 1fr auto; }
+  .event span:last-child { grid-column: 1 / -1; }
+  .barRow { grid-template-columns: 90px minmax(0, 1fr) 30px; }
+}

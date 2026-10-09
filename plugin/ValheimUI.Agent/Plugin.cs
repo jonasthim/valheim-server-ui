@@ -2,6 +2,8 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
+using System.Text;
 using BepInEx;
 using HarmonyLib;
 using BepInEx.Configuration;
@@ -49,6 +51,7 @@ namespace ValheimUI.Agent
         internal static Pings Pings { get; private set; }
         /// <summary>For the Harmony patch that records chat.</summary>
         internal static ChatLog Chat { get; private set; }
+        internal static AgentPlugin Instance { get; private set; }
         private static ConfigEntry<string> _serverNameOverride;
 
         /// <summary>
@@ -88,9 +91,13 @@ namespace ValheimUI.Agent
         private float _lastCapture;
         private float _startedAt;
         private string _gameVersion = "";
+        private StateSnapshot _latestSnapshot;
+        private readonly string _runId = System.Guid.NewGuid().ToString("N");
 
         private readonly object _eventsLock = new object();
         private readonly LinkedList<KeyValuePair<long, string>> _events = new LinkedList<KeyValuePair<long, string>>();
+        private readonly List<KeyValuePair<long, string>> _deathEvents = new List<KeyValuePair<long, string>>();
+        private string _deathJournalPath = "";
         private long _eventSeq;
         private Dictionary<long, string> _lastPeers = new Dictionary<long, string>();
 
@@ -121,6 +128,12 @@ namespace ValheimUI.Agent
                 return;
             }
             Log = Logger;
+            Instance = this;
+            _deathJournalPath = Path.Combine(Paths.ConfigPath, "valheimui-agent", "survival-events.jsonl");
+            LoadDeathJournal();
+            // New runs start above the previous event cursor even if the manager
+            // was offline too long to detect the agent uptime resetting.
+            _eventSeq = Math.Max(_eventSeq, DateTime.UtcNow.Ticks);
             try
             {
                 new Harmony("se.jonasthim.valheimui.agent").PatchAll(typeof(AgentPlugin).Assembly);
@@ -161,6 +174,7 @@ namespace ValheimUI.Agent
 
         private void OnDestroy()
         {
+            Instance = null;
             _explored.MaybeSave(true);
             _discoveries.MaybeSave(true);
             _api?.Stop();
@@ -177,6 +191,7 @@ namespace ValheimUI.Agent
                 try
                 {
                     var snap = GameState.Capture();
+                    _latestSnapshot = snap;
                     if (snap.Ready && _gameVersion.Length == 0) _gameVersion = GameState.GameVersion();
                     if (snap.Ready && _worldReadyAt < 0f)
                     {
@@ -283,8 +298,106 @@ namespace ValheimUI.Agent
                            + ",\"at\":" + JsonWriter.Quote(DateTime.UtcNow.ToString("o"))
                            + ",\"data\":" + dataJson + "}";
                 _events.AddLast(new KeyValuePair<long, string>(_eventSeq, json));
+                if (kind == "player.death")
+                {
+                    _deathEvents.Add(new KeyValuePair<long, string>(_eventSeq, json));
+                    try
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(_deathJournalPath));
+                        File.AppendAllText(_deathJournalPath, json + "\n", Encoding.UTF8);
+                    }
+                    catch (Exception e) { Logger.LogWarning("death journal write failed: " + e.Message); }
+                }
                 while (_events.Count > EventBuffer) _events.RemoveFirst();
             }
+        }
+
+        private void LoadDeathJournal()
+        {
+            try
+            {
+                if (!File.Exists(_deathJournalPath)) return;
+                foreach (var line in File.ReadLines(_deathJournalPath))
+                {
+                    // Journal lines are written by this plugin, one complete event per line.
+                    // Ignore an incomplete final line after a crash.
+                    var marker = "\"seq\":";
+                    int start = line.IndexOf(marker, StringComparison.Ordinal);
+                    if (start < 0 || !line.EndsWith("}}", StringComparison.Ordinal) || line.IndexOf("\"kind\":\"player.death\"", StringComparison.Ordinal) < 0) continue;
+                    start += marker.Length;
+                    int end = line.IndexOf(',', start);
+                    if (end < 0 || !long.TryParse(line.Substring(start, end - start), NumberStyles.None, CultureInfo.InvariantCulture, out var seq)) continue;
+                    _deathEvents.Add(new KeyValuePair<long, string>(seq, line));
+                    if (seq > _eventSeq) _eventSeq = seq;
+                }
+            }
+            catch (Exception e) { Logger.LogWarning("death journal read failed: " + e.Message); }
+        }
+
+        // The manager only advances `since` after storing every death in that
+        // response. Once it asks for a later sequence, older journal records
+        // can be removed without losing replay after either process restarts.
+        private void CompactDeathJournal(long acknowledged)
+        {
+            int count = 0;
+            while (count < _deathEvents.Count && _deathEvents[count].Key <= acknowledged) count++;
+            if (count == 0) return;
+            var temp = _deathJournalPath + ".tmp";
+            try
+            {
+                using (var writer = new StreamWriter(temp, false, new UTF8Encoding(false)))
+                {
+                    for (int i = count; i < _deathEvents.Count; i++) writer.WriteLine(_deathEvents[i].Value);
+                }
+                File.Replace(temp, _deathJournalPath, null);
+                _deathEvents.RemoveRange(0, count);
+            }
+            catch (Exception e)
+            {
+                Logger.LogWarning("death journal compaction failed: " + e.Message);
+                try { if (File.Exists(temp)) File.Delete(temp); } catch (Exception) { }
+            }
+        }
+
+        internal void RecordDeath(Player player)
+        {
+            var snap = _latestSnapshot;
+            if (player == null || snap == null || !snap.Ready || snap.WorldUID == 0) return;
+            long playerID = player.GetPlayerID();
+            if (playerID == 0) return;
+            var pos = player.transform.position;
+            bool visible = false;
+            try
+            {
+                var zdo = player.GetComponent<ZNetView>()?.GetZDO();
+                if (zdo != null)
+                {
+                    string objectID = zdo.m_uid.ToString();
+                    foreach (var peer in snap.Players)
+                    {
+                        if (peer.CharacterId == objectID) { visible = peer.Visible; break; }
+                    }
+                }
+            }
+            catch (Exception) { }
+            string biome = "";
+            try { biome = player.GetCurrentBiome().ToString(); } catch (Exception) { }
+            int day = snap.Day;
+            try { day = EnvMan.instance.GetDay(ZNet.instance.GetTimeSeconds()); } catch (Exception) { }
+            var w = new JsonWriter();
+            w.BeginObject();
+            w.Prop("run_id", _runId);
+            w.Prop("world_uid", snap.WorldUID);
+            w.Prop("world_name", snap.WorldName);
+            w.Prop("character_id", playerID.ToString(CultureInfo.InvariantCulture));
+            w.Prop("player_name", player.GetPlayerName());
+            w.Prop("day", day);
+            w.Prop("biome", biome);
+            w.Prop("x", (double)pos.x);
+            w.Prop("z", (double)pos.z);
+            w.Prop("visible", visible);
+            w.EndObject();
+            PushEvent("player.death", w.ToString());
         }
 
         private string EventsSince(long since)
@@ -292,16 +405,40 @@ namespace ValheimUI.Agent
             var w = new System.Text.StringBuilder(1024);
             lock (_eventsLock)
             {
-                w.Append("{\"next\":").Append(_eventSeq.ToString(CultureInfo.InvariantCulture)).Append(",\"events\":[");
+                if (since > 0 && since <= _eventSeq) CompactDeathJournal(since);
+                var merged = new SortedDictionary<long, string>();
+                // The journal is ordered by sequence. Find the first unread
+                // death directly, and only build one response page.
+                int low = 0, high = _deathEvents.Count;
+                while (low < high)
+                {
+                    int mid = low + (high - low) / 2;
+                    if (_deathEvents[mid].Key <= since) low = mid + 1;
+                    else high = mid;
+                }
+                int bytes = 0;
+                for (int i = low; i < _deathEvents.Count && bytes < 1024 * 1024; i++)
+                {
+                    var kv = _deathEvents[i];
+                    merged[kv.Key] = kv.Value;
+                    bytes += kv.Value.Length;
+                }
+                foreach (var kv in _events) if (kv.Key > since) merged[kv.Key] = kv.Value;
+                long next = since;
+                w.Append("{\"next\":");
+                var entries = new StringBuilder(1024);
                 bool first = true;
-                foreach (var kv in _events)
+                foreach (var kv in merged)
                 {
                     if (kv.Key <= since) continue;
-                    if (!first) w.Append(',');
+                    if (!first) entries.Append(',');
                     first = false;
-                    w.Append(kv.Value);
+                    entries.Append(kv.Value);
+                    next = kv.Key;
+                    if (entries.Length >= 1024 * 1024) break;
                 }
-                w.Append("]}");
+                if (first) next = _eventSeq;
+                w.Append(next.ToString(CultureInfo.InvariantCulture)).Append(",\"events\":[").Append(entries).Append("]}");
             }
             return w.ToString();
         }

@@ -28,7 +28,7 @@ func validateSlug(s string) error {
 }
 
 func fileExists(p string) bool {
-	_, err := os.Stat(p)
+	_, err := os.Stat(p) //nolint:gosec // callers use instance-owned paths; archive paths are checked before reaching this helper
 	return err == nil
 }
 
@@ -356,6 +356,12 @@ func setFilesEnabled(serverDir string, files []string, enabled bool) ([]string, 
 }
 
 func renameManaged(serverDir, from, to string) error {
+	for _, rel := range []string{from, to} {
+		clean, err := safeZipEntryPath(rel)
+		if err != nil || clean == "" || clean != rel {
+			return fmt.Errorf("invalid managed file path %q", rel)
+		}
+	}
 	fromAbs := filepath.Join(serverDir, filepath.FromSlash(from))
 	toAbs := filepath.Join(serverDir, filepath.FromSlash(to))
 	if !fileExists(fromAbs) {

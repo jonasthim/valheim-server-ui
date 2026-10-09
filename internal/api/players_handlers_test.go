@@ -12,7 +12,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/jonasthim/valheim-server-ui/internal/db"
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 	"github.com/jonasthim/valheim-server-ui/internal/players"
 )
@@ -55,7 +57,7 @@ func (a *fakeAuditor) last() (auditCall, bool) {
 // a fake instance layout in a temp dir (WP-02's instance service is not
 // depended on), and deps.Auth left nil so devFakeAdmin injects an admin user
 // for every request.
-func newPlayersTestRouter(t *testing.T) (http.Handler, string, *fakeAuditor) {
+func newPlayersTestRouter(t *testing.T, knownPlayers ...string) (http.Handler, string, *fakeAuditor) {
 	t.Helper()
 	root := t.TempDir()
 	knownID := "main"
@@ -71,7 +73,22 @@ func newPlayersTestRouter(t *testing.T) (http.Handler, string, *fakeAuditor) {
 		return id == knownID, nil
 	}
 
-	svc := players.NewService(nil, players.NewSQLStore(nil), paths, exists)
+	sqlDB, err := db.OpenMemory(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	now := time.Now().UTC().Format(time.RFC3339)
+	if _, err := sqlDB.Exec(`INSERT INTO instances(id,name,config_json,created_at,updated_at) VALUES (?,?, '{}',?,?)`, knownID, knownID, now, now); err != nil {
+		t.Fatal(err)
+	}
+	store := players.NewSQLStore(sqlDB)
+	for _, platformID := range knownPlayers {
+		if err := store.Upsert(context.Background(), knownID, platformID, "", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := players.NewService(nil, store, paths, exists)
 	auditor := &fakeAuditor{}
 
 	deps := &Deps{
@@ -176,9 +193,13 @@ func TestPlayersHandler_PutList_RoundTripsAndAudits(t *testing.T) {
 		t.Fatalf("Entries = %#v, want 2", got.Entries)
 	}
 
-	// The file must actually exist under the instance's save dir.
-	if _, err := os.Stat(filepath.Join(root, "main", "save", "bannedlist.txt")); err != nil {
+	// Valheim must see only bare IDs, even when the API retains a comment.
+	raw, err := os.ReadFile(filepath.Join(root, "main", "save", "bannedlist.txt"))
+	if err != nil {
 		t.Fatalf("bannedlist.txt not written: %v", err)
+	}
+	if string(raw) != "76561198000000001\n76561198000000002\n" {
+		t.Fatalf("bannedlist.txt contains non-ID content: %q", raw)
 	}
 
 	// A subsequent GET reflects the write.
@@ -225,7 +246,7 @@ func TestPlayersHandler_PutList_ValidationFailure(t *testing.T) {
 }
 
 func TestPlayersHandler_SetNote_SuccessAndAudit(t *testing.T) {
-	h, _, auditor := newPlayersTestRouter(t)
+	h, _, auditor := newPlayersTestRouter(t, "76561198000000001")
 
 	rec := doJSON(t, h, http.MethodPut, "/api/v1/instances/main/players/76561198000000001",
 		map[string]string{"note": "friendly builder"})

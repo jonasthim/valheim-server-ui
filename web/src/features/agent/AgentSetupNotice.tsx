@@ -12,10 +12,11 @@ import { openConfirmInstallAgent } from './openConfirmInstallAgent'
 import { useInstallAgent } from './useAgent'
 import { useAgentSetup } from './useAgentSetup'
 
-const BODY_BY_CONTEXT: Record<'overview' | 'map' | 'players', string> = {
+const BODY_BY_CONTEXT: Record<'overview' | 'map' | 'players' | 'survival', string> = {
   overview: 'The agent shows the live world here: day, weather, players, and lets you save, broadcast and kick.',
   map: 'The agent renders the live map with fog of war, players and pins.',
   players: 'The agent shows live positions and lets you kick players.',
+  survival: 'The agent records confirmed player deaths and world milestones while this server runs.',
 }
 
 export function AgentSetupNotice({
@@ -24,7 +25,7 @@ export function AgentSetupNotice({
   compact,
 }: {
   id: string
-  context: 'overview' | 'map' | 'players'
+  context: 'overview' | 'map' | 'players' | 'survival'
   compact?: boolean
 }) {
   const { hasRole } = useAuth()

@@ -132,7 +132,26 @@ func TestWriteList_CreatesFileAndIsAtomic(t *testing.T) {
 	}
 }
 
-func TestList_RoundTripPreservesComments(t *testing.T) {
+func TestWriteListNeverWritesUICommentNextToID(t *testing.T) {
+	for _, kind := range []domain.ListKind{domain.ListAdmin, domain.ListBanned, domain.ListPermitted} {
+		t.Run(string(kind), func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), kind.FileName())
+			id := "V_76561198002701519"
+			if err := WriteList(path, domain.PlayerList{Kind: kind, Entries: []domain.PlayerListEntry{{ID: id, Comment: "Bjorn"}}}); err != nil {
+				t.Fatal(err)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != id+"\n" {
+				t.Fatalf("game list must contain one bare ID per line, got %q", raw)
+			}
+		})
+	}
+}
+
+func TestList_RoundTripPreservesStandaloneCommentsAndStripsInline(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "adminlist.txt")
 	content := "// header comment, kept verbatim\n" +
@@ -148,9 +167,8 @@ func TestList_RoundTripPreservesComments(t *testing.T) {
 		t.Fatalf("ReadList: %v", err)
 	}
 
-	// Write the same entries back unchanged (as a PUT with no new comments
-	// would, aside from what the API surfaced): the header and the
-	// standalone note above 76561198000000002 must survive verbatim.
+	// The header and standalone note survive; the inline comment is removed
+	// because Valheim needs a bare ID on that line.
 	if err := WriteList(path, *list); err != nil {
 		t.Fatalf("WriteList: %v", err)
 	}
@@ -162,7 +180,7 @@ func TestList_RoundTripPreservesComments(t *testing.T) {
 	got := string(raw)
 	for _, want := range []string{
 		"// header comment, kept verbatim",
-		"76561198000000001 // Bjorn",
+		"76561198000000001\n",
 		"// standalone note above this entry",
 		"76561198000000002",
 	} {
@@ -170,8 +188,12 @@ func TestList_RoundTripPreservesComments(t *testing.T) {
 			t.Errorf("round-tripped file missing %q; got:\n%s", want, got)
 		}
 	}
+	if strings.Contains(got, "// Bjorn") {
+		t.Fatalf("inline UI comment remained in game file: %s", got)
+	}
 
-	// And parsing it again reproduces the same PlayerList.
+	// Parsing again returns the same IDs. The service stores the comment in
+	// SQLite before making this low-level file rewrite.
 	list2, err := ReadList(path, domain.ListAdmin)
 	if err != nil {
 		t.Fatalf("ReadList (2nd pass): %v", err)
@@ -180,8 +202,8 @@ func TestList_RoundTripPreservesComments(t *testing.T) {
 		t.Fatalf("2nd pass entries = %#v, want %#v", list2.Entries, list.Entries)
 	}
 	for i := range list.Entries {
-		if list2.Entries[i] != list.Entries[i] {
-			t.Errorf("2nd pass entries[%d] = %#v, want %#v", i, list2.Entries[i], list.Entries[i])
+		if list2.Entries[i].ID != list.Entries[i].ID || list2.Entries[i].Comment != "" {
+			t.Errorf("2nd pass entries[%d] = %#v, want bare ID %q", i, list2.Entries[i], list.Entries[i].ID)
 		}
 	}
 }

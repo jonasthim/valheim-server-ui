@@ -697,8 +697,15 @@ Every request but `/v1/health` carries `Authorization: Bearer <token>`.
   day, day_fraction, is_night, weather, time_seconds}, global_keys[],
   players[{uid, name, host, character_id, visible, position?}]}`, captured on
   the Unity main thread every 500 ms and served as an immutable snapshot.
-- `GET /v1/events?since=N`: ring buffer of `player.join`, `player.leave`,
-  `command`.
+- `GET /v1/events?since=N`: a 500-event ring for `player.join`,
+  `player.leave`, and `command`, plus durable `player.death` events. Deaths
+  are journaled as JSONL under `BepInEx/config/valheimui-agent/` before
+  delivery. Responses page at about 1 MiB; `next` is the last returned
+  sequence. The manager polls every two seconds, inserts deaths into SQLite
+  with `(instance_id, run_id, source_seq)` deduplication, and only then
+  advances `since`. The agent compacts acknowledged death records from the
+  journal on the next poll, so retained history tracks undelivered events.
+  Previously stored deaths remain in the manager database across restarts.
 - `POST /v1/commands/{save|kick|ban|unban|broadcast|time|say|setkey|removekey|event|eventstop}`
   with query parameters or a text body: queued to the main thread, answered
   within 5 s as `{"ok","message"}` plus an optional `data` object. Broadcast
@@ -783,9 +790,13 @@ release asset verified against `SHA256SUMS`.
 `ZoneSystem` global keys, `WorldGenerator`, `MessageHud` RPC) and binds the
 optional ones (`GetBiomeHeight`, `GetForestFactor`, the ZDO table) by
 reflection with fallbacks, so game patches rarely break it; when they do, the
-fix ships with the next manager release and the UI offers the update. Its two
-Harmony patches are read-only prefixes on routed-RPC handling (Vegvisir
-discoveries; map pings and chat) that never alter the call.
+fix ships with the next manager release and the UI offers the update. The
+agent has three Harmony patches: read-only routed-RPC prefixes for Vegvisir
+discoveries and map pings/chat, and a `Player.RPC_OnDeath` postfix that records
+a confirmed death on the dedicated server. That RPC has no hit details, so
+enemy and cause are left unknown. The manager also records changes to boss
+keys and world modifiers as world milestones. Survival history is scoped to
+an instance and world, and deleting an instance cascades to its history.
 
 ### 20.1 Live map
 
@@ -920,7 +931,7 @@ therefore reconstructs it (`plugin/ValheimUI.Agent/Exploration.cs`):
   Discoveries join `pins` with `source: vegvisir` (table pins carry
   `source: table`), and a boss pin from either source within 80 m of a
   location icon marks that location `discovered`, so it shows through the
-  fog; this is the only Harmony patch in the plugin;
+  fog;
 - the union is persisted per world at
   `BepInEx/cache/valheimui-agent/explored-<seed>-1024.bin` (once a minute
   when changed, and on shutdown).

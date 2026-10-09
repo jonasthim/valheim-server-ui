@@ -27,6 +27,8 @@ func registerAgentRoutes(r chi.Router, d *Deps) {
 		Get("/instances/{instanceId}/agent/chat", getAgentChatHandler(d))
 	r.With(RequireRole(domain.RoleViewer), guard).
 		Get("/instances/{instanceId}/chat", getChatHistoryHandler(d))
+	r.With(RequireRole(domain.RoleViewer), requireService(func() bool { return d.Survival != nil }, "survival service not configured")).
+		Get("/instances/{instanceId}/survival", getSurvivalHandler(d))
 	r.With(RequireRole(domain.RoleOperator), modsGuard).
 		Post("/instances/{instanceId}/agent/install", installAgentHandler(d))
 

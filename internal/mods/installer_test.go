@@ -140,6 +140,15 @@ func TestSetFilesEnabled_TogglesDllSuffix(t *testing.T) {
 	}
 }
 
+func TestSetFilesEnabled_RejectsEscapingManagedPath(t *testing.T) {
+	serverDir := t.TempDir()
+	for _, rel := range []string{"../outside.dll", "/tmp/outside.dll", "BepInEx/../outside.dll"} {
+		if _, err := setFilesEnabled(serverDir, []string{rel}, false); err == nil {
+			t.Errorf("accepted managed path %q", rel)
+		}
+	}
+}
+
 func TestRemoveManagedFiles_SkipsCfgAndPrunesEmptyDirs(t *testing.T) {
 	serverDir := t.TempDir()
 	files := []string{

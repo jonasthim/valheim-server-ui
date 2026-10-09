@@ -2,7 +2,9 @@ package players
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/jonasthim/valheim-server-ui/internal/domain"
 )
@@ -14,12 +16,15 @@ import (
 type serviceStore interface {
 	PlayerStore
 	SetNote(ctx context.Context, instanceID, platformID, note string) error
+	ListComments(ctx context.Context, instanceID string, kind domain.ListKind) (map[string]string, error)
+	ReplaceListComments(ctx context.Context, instanceID string, kind domain.ListKind, entries []domain.PlayerListEntry) error
 }
 
 // Service implements api.PlayerService (structurally; this package does not
 // import internal/api to avoid a cycle — wiring happens in
 // cmd/valheim-ui/wire_players.go).
 type Service struct {
+	listMu sync.Mutex
 	mgr    *Manager
 	store  serviceStore
 	paths  func(string) domain.InstancePaths
@@ -94,6 +99,12 @@ func (s *Service) Players(ctx context.Context, instanceID string) (*domain.Playe
 
 // GetList implements api.PlayerService.
 func (s *Service) GetList(ctx context.Context, instanceID string, kind domain.ListKind) (*domain.PlayerList, error) {
+	s.listMu.Lock()
+	defer s.listMu.Unlock()
+	return s.getList(ctx, instanceID, kind)
+}
+
+func (s *Service) getList(ctx context.Context, instanceID string, kind domain.ListKind) (*domain.PlayerList, error) {
 	if err := s.checkExists(ctx, instanceID); err != nil {
 		return nil, err
 	}
@@ -101,11 +112,57 @@ func (s *Service) GetList(ctx context.Context, instanceID string, kind domain.Li
 		return nil, domain.NotFound("list")
 	}
 	p := s.paths(instanceID)
-	return ReadList(p.ListFile(kind), kind)
+	file := p.ListFile(kind)
+	list, inlineComments, err := readListWithInlineComments(file, kind)
+	if err != nil || s.store == nil {
+		return list, err
+	}
+	comments, err := s.store.ListComments(ctx, instanceID, kind)
+	if err != nil {
+		return nil, err
+	}
+	repair := false
+	seen := make(map[string]int, len(list.Entries))
+	unique := make([]domain.PlayerListEntry, 0, len(list.Entries))
+	for i := range list.Entries {
+		entry := list.Entries[i]
+		if inlineComments[i] {
+			repair = true
+			if entry.Comment != "" {
+				if _, exists := comments[entry.ID]; !exists {
+					comments[entry.ID] = entry.Comment
+				}
+			}
+		}
+		entry.Comment = comments[entry.ID]
+		if first, duplicate := seen[entry.ID]; duplicate {
+			repair = true
+			if unique[first].Comment == "" {
+				unique[first].Comment = entry.Comment
+			}
+			continue
+		}
+		seen[entry.ID] = len(unique)
+		unique = append(unique, entry)
+	}
+	list.Entries = unique
+	if repair {
+		// Move comments written by older manager versions out of the live
+		// Valheim file before answering. Keep its standalone header intact.
+		if err := s.store.ReplaceListComments(ctx, instanceID, kind, list.Entries); err != nil {
+			return nil, err
+		}
+		if err := WriteList(file, *list); err != nil {
+			return nil, err
+		}
+	}
+	return list, nil
 }
 
 // PutList implements api.PlayerService.
 func (s *Service) PutList(ctx context.Context, instanceID string, list domain.PlayerList) (*domain.PlayerList, error) {
+	s.listMu.Lock()
+	defer s.listMu.Unlock()
 	if err := s.checkExists(ctx, instanceID); err != nil {
 		return nil, err
 	}
@@ -114,10 +171,33 @@ func (s *Service) PutList(ctx context.Context, instanceID string, list domain.Pl
 	}
 	p := s.paths(instanceID)
 	file := p.ListFile(list.Kind)
-	if err := WriteList(file, list); err != nil {
+	if err := validateEntries(list.Entries); err != nil {
 		return nil, err
 	}
-	return ReadList(file, list.Kind)
+	var previous map[string]string
+	if s.store != nil {
+		var err error
+		previous, err = s.store.ListComments(ctx, instanceID, list.Kind)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.store.ReplaceListComments(ctx, instanceID, list.Kind, list.Entries); err != nil {
+			return nil, err
+		}
+	}
+	if err := WriteList(file, list); err != nil {
+		if s.store != nil {
+			oldEntries := make([]domain.PlayerListEntry, 0, len(previous))
+			for id, comment := range previous {
+				oldEntries = append(oldEntries, domain.PlayerListEntry{ID: id, Comment: comment})
+			}
+			if rollbackErr := s.store.ReplaceListComments(ctx, instanceID, list.Kind, oldEntries); rollbackErr != nil {
+				return nil, errors.Join(err, fmt.Errorf("restore list comments: %w", rollbackErr))
+			}
+		}
+		return nil, err
+	}
+	return s.getList(ctx, instanceID, list.Kind)
 }
 
 // SetNote implements api.PlayerService: stores (or clears, when note is

@@ -7,7 +7,7 @@ and executes a fixed set of admin commands. Players need nothing installed.
 
 - `GET /v1/status`: players with positions, day, time of day, weather, global
   keys (progression only) and world modifiers.
-- `GET /v1/events?since=N`: join/leave and executed commands.
+- `GET /v1/events?since=N`: join/leave, executed commands and confirmed player deaths. Death events include world UID, character ID, day, biome and position. The plugin retains a death journal in `BepInEx/config/valheimui-agent/survival-events.jsonl` across restarts, and the manager stores those events for the Survival tab; historical coordinates are restricted to operators.
 - `POST /v1/commands/{save|kick|ban|unban|broadcast|time|say|setkey|removekey|event|eventstop}`:
   results are `{"ok","message"}` plus an optional `data` object (see the
   contract in docs/ARCHITECTURE.md §20).

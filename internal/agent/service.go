@@ -40,6 +40,12 @@ type ChatStore interface {
 	List(ctx context.Context, instanceID string, limit int, before int64, q string) ([]domain.ChatLogEntry, error)
 }
 
+type SurvivalStore interface {
+	Insert(context.Context, domain.SurvivalMoment) error
+	List(context.Context, string, int64, string) ([]domain.SurvivalMoment, error)
+	Worlds(context.Context, string) ([]int64, error)
+}
+
 type state struct {
 	explored        *domain.ExploredInfo
 	connected       bool
@@ -55,9 +61,15 @@ type state struct {
 	// started over). chatRun disambiguates seq numbers across restarts in
 	// the stored rows (run_seq): it increments every time a restart is
 	// detected.
-	chatSeq    int64
-	chatUptime float64
-	chatRun    int64
+	chatSeq            int64
+	chatUptime         float64
+	chatRun            int64
+	survivalSeq        int64
+	survivalUptime     float64
+	survivalWorld      int64
+	survivalKeys       map[string]bool
+	survivalModifiers  map[string]string
+	survivalTransition int64
 }
 
 // Service polls agents, enriches instance status and executes commands.
@@ -74,7 +86,9 @@ type Service struct {
 	now     func() time.Time
 	// chatStore persists chat lines poll sees; nil (the default) means chat
 	// history is unavailable and polling never fetches it.
-	chatStore ChatStore
+	chatStore     ChatStore
+	survivalStore SurvivalStore
+	survivalRunID string
 }
 
 // SetChatStore wires the chat_log repository (F-2.3). Without it the poller
@@ -85,6 +99,12 @@ func (s *Service) SetChatStore(store ChatStore) {
 	s.chatStore = store
 }
 
+func (s *Service) SetSurvivalStore(store SurvivalStore) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.survivalStore = store
+}
+
 // NewService wires the agent integration. bundle may be nil (no bundled
 // version known).
 func NewService(inst InstanceSource, bus domain.Publisher, log *slog.Logger, bundle Versioner) *Service {
@@ -93,10 +113,11 @@ func NewService(inst InstanceSource, bus domain.Publisher, log *slog.Logger, bun
 	}
 	return &Service{
 		inst: inst, bus: bus, log: log, bundle: bundle,
-		http:   &http.Client{Timeout: 3 * time.Second},
-		states: map[string]*state{},
-		maps:   map[string]*mapState{},
-		now:    time.Now,
+		http:          &http.Client{Timeout: 3 * time.Second},
+		states:        map[string]*state{},
+		maps:          map[string]*mapState{},
+		now:           time.Now,
+		survivalRunID: fmt.Sprintf("manager-%d", time.Now().UnixNano()),
 	}
 }
 
@@ -223,6 +244,7 @@ func (s *Service) poll(ctx context.Context, id string, port int, paths domain.In
 		return
 	}
 	s.pollChat(ctx, id, c, st.UptimeSeconds)
+	s.pollSurvival(ctx, id, c, st)
 	// Fog state rides along so the map hears about new masks within a
 	// poll instead of its own slower refresh.
 	s.mu.Lock()

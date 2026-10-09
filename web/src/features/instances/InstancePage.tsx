@@ -18,6 +18,7 @@ import { NotFoundPage } from '../system'
 const OverviewTab = lazy(() => import('./OverviewTab').then((m) => ({ default: m.OverviewTab })))
 const ConsoleTab = lazy(() => import('./ConsoleTab').then((m) => ({ default: m.ConsoleTab })))
 const MapTab = lazy(() => import('../map/MapTab').then((m) => ({ default: m.MapTab })))
+const SurvivalTab = lazy(() => import('../survival/SurvivalTab').then((m) => ({ default: m.SurvivalTab })))
 const ConfigTab = lazy(() => import('./ConfigTab').then((m) => ({ default: m.ConfigTab })))
 const PlayersTab = lazy(() => import('./PlayersTab').then((m) => ({ default: m.PlayersTab })))
 const WorldsTab = lazy(() => import('./WorldsTab').then((m) => ({ default: m.WorldsTab })))
@@ -122,6 +123,7 @@ export function InstancePage() {
           <Tabs.Panel value="overview" pt="md"><OverviewTab id={id} /></Tabs.Panel>
           <Tabs.Panel value="console" pt="md"><ConsoleTab key={id} id={id} /></Tabs.Panel>
           <Tabs.Panel value="map" pt="md"><MapTab id={id} /></Tabs.Panel>
+          <Tabs.Panel value="survival" pt="md"><SurvivalTab id={id} /></Tabs.Panel>
           <Tabs.Panel value="config" pt="md"><ConfigTab id={id} /></Tabs.Panel>
           <Tabs.Panel value="players" pt="md"><PlayersTab id={id} /></Tabs.Panel>
           <Tabs.Panel value="worlds" pt="md"><WorldsTab id={id} /></Tabs.Panel>
