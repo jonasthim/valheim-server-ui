@@ -23,7 +23,8 @@ type parsedListFile struct {
 	header []string
 	// entries are the ids in file order; Comment is populated from legacy
 	// trailing "// ..." text so the service can migrate it to the database.
-	entries []domain.PlayerListEntry
+	entries        []domain.PlayerListEntry
+	inlineComments []bool
 	// preceding maps an id to a standalone comment line that appeared
 	// immediately above it (and not as its trailing comment). Re-emitted
 	// verbatim on write for entries that keep the same id and get no new
@@ -67,7 +68,9 @@ func parseListFile(path string) (parsedListFile, error) {
 
 		id := line
 		comment := ""
+		hasInlineComment := false
 		if idx := strings.Index(line, "//"); idx >= 0 {
+			hasInlineComment = true
 			id = strings.TrimSpace(line[:idx])
 			comment = strings.TrimSpace(line[idx+2:])
 		}
@@ -79,6 +82,7 @@ func parseListFile(path string) (parsedListFile, error) {
 		}
 		pendingComment = ""
 		pf.entries = append(pf.entries, domain.PlayerListEntry{ID: id, Comment: comment})
+		pf.inlineComments = append(pf.inlineComments, hasInlineComment)
 		haveEntry = true
 	}
 	if err := sc.Err(); err != nil {
@@ -90,15 +94,20 @@ func parseListFile(path string) (parsedListFile, error) {
 // ReadList returns the current contents of the list file for kind under
 // paths.Save. A missing file reads as an empty list, not an error.
 func ReadList(path string, kind domain.ListKind) (*domain.PlayerList, error) {
+	list, _, err := readListWithInlineComments(path, kind)
+	return list, err
+}
+
+func readListWithInlineComments(path string, kind domain.ListKind) (*domain.PlayerList, []bool, error) {
 	pf, err := parseListFile(path)
 	if err != nil {
-		return nil, domain.Wrap(domain.CodeInternal, "read player list", err)
+		return nil, nil, domain.Wrap(domain.CodeInternal, "read player list", err)
 	}
 	entries := pf.entries
 	if entries == nil {
 		entries = []domain.PlayerListEntry{}
 	}
-	return &domain.PlayerList{Kind: kind, Entries: entries}, nil
+	return &domain.PlayerList{Kind: kind, Entries: entries}, pf.inlineComments, nil
 }
 
 // validateEntries checks every id against idPattern and rejects duplicates,

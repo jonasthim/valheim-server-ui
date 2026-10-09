@@ -79,6 +79,43 @@ func TestServiceRepairsLegacyInlineComment(t *testing.T) {
 	}
 }
 
+func TestServiceRepairsEmptyLegacyInlineComment(t *testing.T) {
+	for _, suffix := range []string{" //", " // \t"} {
+		t.Run(suffix, func(t *testing.T) {
+			ctx := context.Background()
+			store, _ := newSeededStore(t, "main")
+			root := t.TempDir()
+			id := "V_76561198002701519"
+			path := filepath.Join(root, domain.ListAdmin.FileName())
+			if err := os.WriteFile(path, []byte(id+suffix+"\n"), 0o640); err != nil {
+				t.Fatal(err)
+			}
+
+			svc := NewService(nil, store, func(string) domain.InstancePaths {
+				return domain.InstancePaths{Save: root}
+			}, nil)
+			got, err := svc.GetList(ctx, "main", domain.ListAdmin)
+			if err != nil || len(got.Entries) != 1 || got.Entries[0].Comment != "" {
+				t.Fatalf("empty legacy comment was not handled: %+v, %v", got, err)
+			}
+			raw, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(raw) != id+"\n" {
+				t.Fatalf("legacy delimiter remained in game list: %q", raw)
+			}
+			comments, err := store.ListComments(ctx, "main", domain.ListAdmin)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(comments) != 0 {
+				t.Fatalf("empty legacy comment was persisted: %+v", comments)
+			}
+		})
+	}
+}
+
 func TestServiceDoesNotChangeGameListWhenCommentStoreFails(t *testing.T) {
 	ctx := context.Background()
 	store, sqlDB := newSeededStore(t, "main")

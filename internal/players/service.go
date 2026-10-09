@@ -105,7 +105,7 @@ func (s *Service) GetList(ctx context.Context, instanceID string, kind domain.Li
 	}
 	p := s.paths(instanceID)
 	file := p.ListFile(kind)
-	list, err := ReadList(file, kind)
+	list, inlineComments, err := readListWithInlineComments(file, kind)
 	if err != nil || s.store == nil {
 		return list, err
 	}
@@ -116,10 +116,12 @@ func (s *Service) GetList(ctx context.Context, instanceID string, kind domain.Li
 	legacyInline := false
 	for i := range list.Entries {
 		entry := &list.Entries[i]
-		if entry.Comment != "" {
+		if inlineComments[i] {
 			legacyInline = true
-			if _, exists := comments[entry.ID]; !exists {
-				comments[entry.ID] = entry.Comment
+			if entry.Comment != "" {
+				if _, exists := comments[entry.ID]; !exists {
+					comments[entry.ID] = entry.Comment
+				}
 			}
 		}
 		entry.Comment = comments[entry.ID]
