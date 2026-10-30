@@ -196,8 +196,8 @@ namespace ValheimUI.Agent
 
         /// <summary>
         /// Imports the shared map of a cartography table (its "data" ZDO field):
-        /// a gzip'd ZPackage with version, texture size, one bool per map
-        /// pixel (12 m each, centred on the world) and, from version 2, the
+        /// a gzip'd ZPackage with version, length-prefixed explored-map bytes
+        /// (12 m pixels at 2048², centred on the world) and, from version 2, the
         /// pins players shared. The table's pin list replaces what was read
         /// from it before, so pins removed from a table disappear. Best
         /// effort per table.
@@ -210,11 +210,14 @@ namespace ValheimUI.Agent
             {
                 int seen;
                 if (_importedTables.TryGetValue(table, out seen) && seen == key) return;
-                _importedTables[table] = key;
             }
             var pins = new List<MapPin>();
             if (ImportMapData(data, pins) < 0) return;
-            lock (_lock) _tablePins[table] = pins;
+            lock (_lock)
+            {
+                _tablePins[table] = pins;
+                _importedTables[table] = key;
+            }
         }
 
         /// <summary>
@@ -240,7 +243,7 @@ namespace ValheimUI.Agent
 
         /// <summary>
         /// Merges Minimap shared-map data: a gzip'd ZPackage with version,
-        /// texture size and one bool per 12 m pixel, then (version 2+) the
+        /// length-prefixed explored-map bytes, then (version 2+) the
         /// pin list, which is appended to <paramref name="pins"/> when given.
         /// Returns the number of newly revealed cells, or -1 when the data
         /// could not be parsed.
@@ -267,17 +270,26 @@ namespace ValheimUI.Agent
             {
                 var pkg = new ZPackage(raw);
                 int version = pkg.ReadInt();
-                int textureSize = pkg.ReadInt();
-                if (version < 1 || textureSize < 64 || textureSize > 8192) return -1;
+                if (version < 1 || version > 3)
+                    throw new InvalidDataException("unsupported shared-map version " + version);
+                int length = pkg.ReadInt();
+                int textureSize = (int)Math.Sqrt(length);
+                if (textureSize < 64 || textureSize > 8192 || textureSize * textureSize != length ||
+                    length > raw.Length - 8)
+                    throw new InvalidDataException("invalid explored-map byte length " + length);
+                pkg.SetPos(4);
+                byte[] explored = pkg.ReadByteArray();
+                var parsedPins = new List<MapPin>();
+                if (version >= 2) ReadPins(pkg, version, parsedPins);
                 float pixelSize = 12f * (2048f / textureSize); // Minimap.m_pixelSize at its default texture size
                 float half = textureSize / 2f;
                 float step = 2f * MapRenderer.WorldRadius / Size;
                 int added = 0;
                 lock (_lock)
                 {
-                    for (int i = 0; i < textureSize * textureSize; i++)
+                    for (int i = 0; i < explored.Length; i++)
                     {
-                        if (!pkg.ReadBool()) continue;
+                        if (explored[i] == 0) continue;
                         float wx = (i % textureSize - half) * pixelSize;
                         float wz = (i / textureSize - half) * pixelSize;
                         int x = Mathf.FloorToInt((wx + MapRenderer.WorldRadius) / step);
@@ -293,11 +305,12 @@ namespace ValheimUI.Agent
                         _updatedAt = DateTime.UtcNow;
                     }
                 }
-                if (version >= 2 && pins != null) ReadPins(pkg, version, pins);
+                if (pins != null) pins.AddRange(parsedPins);
                 return added;
             }
-            catch (Exception)
+            catch (Exception e)
             {
+                AgentPlugin.Log?.LogWarning("cartography map import failed: " + e.Message);
                 return -1;
             }
         }
@@ -305,28 +318,23 @@ namespace ValheimUI.Agent
         /// <summary>
         /// The pin list after the explored bits (Minimap.AddSharedMapData):
         /// count, then per pin owner id, name, position, type, checked and,
-        /// from version 3, the author. Stops quietly at the first field that
-        /// does not read, keeping the pins before it.
+        /// from version 3, the author. Invalid or truncated lists fail the
+        /// import so the table can be retried without replacing its pins.
         /// </summary>
         private static void ReadPins(ZPackage pkg, int version, List<MapPin> pins)
         {
-            try
+            int n = pkg.ReadInt();
+            if (n < 0 || n > 100000)
+                throw new InvalidDataException("invalid shared-map pin count " + n);
+            for (int i = 0; i < n; i++)
             {
-                int n = pkg.ReadInt();
-                if (n < 0 || n > 100000) return;
-                for (int i = 0; i < n; i++)
-                {
-                    pkg.ReadLong();
-                    string name = pkg.ReadString() ?? "";
-                    Vector3 pos = pkg.ReadVector3();
-                    int type = pkg.ReadInt();
-                    bool isChecked = pkg.ReadBool();
-                    string author = version >= 3 ? (pkg.ReadString() ?? "") : "";
-                    pins.Add(new MapPin { Name = name, Pos = pos, Type = type, Checked = isChecked, Author = author });
-                }
-            }
-            catch (Exception)
-            {
+                pkg.ReadLong();
+                string name = pkg.ReadString() ?? "";
+                Vector3 pos = pkg.ReadVector3();
+                int type = pkg.ReadInt();
+                bool isChecked = pkg.ReadBool();
+                string author = version >= 3 ? (pkg.ReadString() ?? "") : "";
+                pins.Add(new MapPin { Name = name, Pos = pos, Type = type, Checked = isChecked, Author = author });
             }
         }
 
