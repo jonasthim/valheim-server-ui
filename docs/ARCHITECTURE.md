@@ -918,10 +918,12 @@ therefore reconstructs it (`plugin/ValheimUI.Agent/Exploration.cs`):
   with the status snapshot) reveals a disc of the game's own explore radius
   (100 m) on a 1024² grid over the same ±10 500 m square as the map image;
 - the shared map of every cartography table in the world is imported: the
-  table's `data` ZDO field is a gzip'd `ZPackage` (version, texture size, one
-  bool per 12 m map pixel, then pins, which are ignored). This brings in what
+  table's `data` ZDO field is a gzip'd `ZPackage` (version, length-prefixed
+  explored-map byte array, then pins from version 2). The square array's length
+  determines the texture size (2048² by default, with 12 m pixels). This brings in what
   players explored before the agent existed, as long as someone wrote their
-  map to a table. A table is re-read when its data changes;
+  map to a table. A table is re-read when its data changes; failed imports are
+  logged and retried without changing the existing exploration or pins;
 - the same table data carries, from format version 2, the pins the writers
   shared: owner id, name, position, `PinType`, checked flag and (version 3)
   author. `Exploration` keeps the pin list per table (a rewrite replaces
